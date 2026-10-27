@@ -1,0 +1,45 @@
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[lint]
+select = [
+  "E", "W", "F",   # pycodestyle and pyflakes
+  "I",             # import order
+  "N",             # PEP 8 names
+  "B",             # likely bugs
+  "UP",            # modern Python
+  "SIM", "C4", "PIE", "RET",  # simpler code
+  "C90",           # complexity
+  "PL",            # pylint checks
+  "RUF",
+  "PTH",           # pathlib over os.path
+  "S",             # security
+  "T20",           # no print outside the CLI
+  "DTZ",           # no naive datetimes
+  "BLE",           # no blind except
+  "ERA",           # no commented-out code
+]
+ignore = [
+  "E501",     # the formatter owns line length
+  "PLR2004",  # status codes and fixture values read better inline
+  "S603",     # subprocess without a shell is how connectors run
+]
+
+[lint.mccabe]
+max-complexity = 10
+
+[lint.pylint]
+max-args = 10
+max-branches = 12
+max-statements = 50
+
+[lint.isort]
+known-first-party = ["tfs"]
+
+[lint.per-file-ignores]
+"src/tfs/cli/*" = ["T201"]
+"tests/**" = ["S101", "S105", "S106", "S108"]
+
+[format]
+quote-style = "double"

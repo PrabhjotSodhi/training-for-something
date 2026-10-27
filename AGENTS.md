@@ -13,18 +13,19 @@ Training For Something (TFS) is a free, open source, local-first coach. A small 
 ## Commands
 
 ```bash
-python -m pip install -e . hypothesis            # once, after pyproject.toml exists
+python -m pip install -e . hypothesis ruff==0.6.9   # once, after pyproject.toml exists
+ruff check . && ruff format --check .                # lint and format, as CI runs them
 PYTHONPATH=src python -m unittest discover -s tests -t .           # all tests
 PYTHONPATH=src python -m unittest tests.test_raw_store             # one file
 ```
 
-Python 3.12. Tests use `unittest`. Hypothesis is allowed in tests only.
+Python 3.12. Tests use `unittest`. Hypothesis is allowed in tests only. Ruff lints and formats. CI fails on any Ruff finding.
 
 ## Rules
 
 1. Standard library only. `keyring` is the one approved runtime package. Never add a dependency. If you need one, stop and ask on the issue.
 2. One issue per pull request. Touch only the files the issue lists under "Expected files", plus their tests. If you need another file or table, stop and ask on the issue.
-3. Never edit `docs/HLD.md`, `docs/code-map.md`, `docs/specs/`, `AGENTS.md` or `.github/` unless the issue says so.
+3. Never edit `docs/HLD.md`, `docs/code-map.md`, `docs/specs/`, `AGENTS.md`, `ruff.toml` or `.github/` unless the issue says so. Never add `# noqa` to silence Ruff. If a finding looks wrong, stop and ask on the issue.
 4. Follow the issue's test policy. "Test first" means you commit the failing tests from the acceptance examples before the code that makes them pass.
 5. Never delete, skip or weaken a test to make it pass. If a test looks wrong, stop and ask on the issue.
 6. Tests use invented people and invented data only. Never commit real health data, real exports or real API responses.

@@ -17,12 +17,14 @@
       "Edit(docs/code-map.md)",
       "Edit(docs/specs/**)",
       "Edit(AGENTS.md)",
+      "Edit(ruff.toml)",
       "Edit(.github/**)",
       "Edit(.claude/**)",
       "Write(docs/HLD.md)",
       "Write(docs/code-map.md)",
       "Write(docs/specs/**)",
       "Write(AGENTS.md)",
+      "Write(ruff.toml)",
       "Write(.github/**)",
       "Write(.claude/**)"
     ]
