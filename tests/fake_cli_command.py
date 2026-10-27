@@ -3,7 +3,7 @@
 import argparse
 
 
-def add_parser(subparsers) -> None:
+def add_parser(subparsers: argparse._SubParsersAction) -> None:
     """Register the `hello` command."""
     parser = subparsers.add_parser("hello", help="say hello")
     parser.set_defaults(run=run)

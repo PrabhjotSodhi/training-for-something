@@ -1,6 +1,5 @@
 import contextlib
 import io
-import os
 import subprocess
 import sys
 import unittest
@@ -12,9 +11,9 @@ from tfs.cli import main
 
 
 def run_tfs(*args: str) -> subprocess.CompletedProcess[str]:
-    env = {**os.environ, "PYTHONPATH": "src"}
+    """Run `python -m tfs` with the given arguments and return the finished process."""
     return subprocess.run(
-        [sys.executable, "-m", "tfs", *args], capture_output=True, text=True, env=env, check=False
+        [sys.executable, "-m", "tfs", *args], capture_output=True, text=True, check=False
     )
 
 
