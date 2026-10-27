@@ -21,7 +21,7 @@ training-for-something/
     persistence/
       sqlite.py               opens tfs.db with the right settings, one place only
       migrations.py           runs numbered migrations, reads and sets user_version
-      migrations/0001_init.sql
+      sql/0001_init.sql       one numbered SQL file per migration
     importer/
       raw_store.py            saves raw files safely, registers them, scans raw/ on start
       records.py              stores what a reader returns: new versions replace old ones, deletes apply
@@ -93,13 +93,14 @@ Module names are short and lowercase, as PEP 8 asks. The folder carries the cont
 
 ## 2. Database tables
 
-Each milestone adds one numbered migration for the tables it needs. `0001_init.sql` creates the 0.1 tables: `files`, `sources`, `source_records`, `session_parts`, `session_groups`, `session_group_members` and `day_facts`. A merged migration is never edited. Later changes are new numbered files.
+Each milestone adds one numbered migration for the tables it needs. `0001_init.sql` creates the 0.1 tables: `files`, `sources`, `source_records`, `source_deletes`, `session_parts`, `session_groups`, `session_group_members` and `day_facts`. A merged migration is never edited. Later changes are new numbered files.
 
 | Table | Kind | Holds |
 |---|---|---|
 | `files` | Imported | One row per raw file: hash, connector, format, received time, reader hash, status, message |
 | `sources` | Sync state | One row per connector: enabled, cursor, last attempt, last contact, last received, last error. "Data covered until" is computed from `source_records`. |
 | `source_records` | Imported | One row per record a reader returned: id, file hash, kind, stream, key, revision, start in UTC, UTC offset, local date, family, label, values JSON, units, origin app, origin device, plan reference, deleted time |
+| `source_deletes` | Imported | Deletes an app reported, kept even when the record has not arrived yet, so an older file read late cannot bring it back |
 | `session_parts` | Imported | Laps, sets, rounds and splits, for both recorded and planned sessions |
 | `session_groups` | Derived | Records linked as one workout, with the chosen value per field and its source |
 | `session_group_members` | Derived | Which source records belong to which group |
