@@ -1,0 +1,155 @@
+{
+  "template": "flow",
+  "title": "An upgrade with backup",
+  "nodes": [
+    {
+      "id": "start",
+      "label": "New version starts",
+      "icon": "monitor",
+      "row": 1,
+      "col": 0
+    },
+    {
+      "id": "too-new",
+      "label": "Data newer than me?",
+      "kind": "decision",
+      "row": 1,
+      "col": 1
+    },
+    {
+      "id": "refuse",
+      "label": "Refuse to open",
+      "subtitle": "update, or restore a matching backup",
+      "row": 0,
+      "col": 1
+    },
+    {
+      "id": "backup",
+      "label": "Verified backup",
+      "subtitle": "SQLite backup API, version label",
+      "icon": "database",
+      "row": 1,
+      "col": 2
+    },
+    {
+      "id": "migrate",
+      "label": "Run migrations",
+      "subtitle": "add, drop, rename, one transaction",
+      "row": 1,
+      "col": 3
+    },
+    {
+      "id": "changed",
+      "label": "Reader or formula changed?",
+      "kind": "decision",
+      "row": 1,
+      "col": 4
+    },
+    {
+      "id": "rebuild",
+      "label": "Rebuild derived tables",
+      "subtitle": "beside the old ones, then swap",
+      "row": 2,
+      "col": 4
+    },
+    {
+      "id": "done",
+      "label": "Running",
+      "subtitle": "your data, new version",
+      "row": 1,
+      "col": 5
+    },
+    {
+      "id": "failed",
+      "label": "Migration fails",
+      "subtitle": "transaction rolls back",
+      "row": 2,
+      "col": 3
+    },
+    {
+      "id": "restore",
+      "label": "Restore the backup",
+      "subtitle": "reinstall the old version",
+      "row": 2,
+      "col": 2
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "too-new",
+      "main": true
+    },
+    {
+      "from": "too-new",
+      "to": "refuse",
+      "label": "yes"
+    },
+    {
+      "from": "too-new",
+      "to": "backup",
+      "label": "no",
+      "main": true
+    },
+    {
+      "from": "backup",
+      "to": "migrate",
+      "main": true
+    },
+    {
+      "from": "migrate",
+      "to": "changed",
+      "main": true
+    },
+    {
+      "from": "changed",
+      "to": "done",
+      "label": "no",
+      "main": true
+    },
+    {
+      "from": "changed",
+      "to": "rebuild",
+      "label": "yes"
+    },
+    {
+      "from": "rebuild",
+      "to": "done"
+    },
+    {
+      "from": "migrate",
+      "to": "failed",
+      "label": "error",
+      "style": "dashed"
+    },
+    {
+      "from": "failed",
+      "to": "restore",
+      "label": "if you choose",
+      "style": "dashed"
+    }
+  ],
+  "groups": [
+    {
+      "id": "safe",
+      "label": "Before any change",
+      "contains": [
+        "too-new",
+        "refuse",
+        "backup"
+      ],
+      "tone": "green"
+    },
+    {
+      "id": "change",
+      "label": "The change",
+      "contains": [
+        "migrate",
+        "changed",
+        "rebuild",
+        "failed"
+      ],
+      "tone": "blue"
+    }
+  ]
+}

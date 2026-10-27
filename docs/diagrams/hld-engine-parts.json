@@ -1,0 +1,246 @@
+{
+  "template": "flow",
+  "title": "The engine's parts",
+  "nodes": [
+    {
+      "id": "scheduler",
+      "label": "Scheduler",
+      "subtitle": "every 60 s, runs what is due",
+      "row": 0,
+      "col": 1
+    },
+    {
+      "id": "status",
+      "label": "Status",
+      "subtitle": "what came in, what broke",
+      "row": 0,
+      "col": 2
+    },
+    {
+      "id": "screens",
+      "label": "Dashboard and phone",
+      "icon": "monitor",
+      "row": 0,
+      "col": 6
+    },
+    {
+      "id": "apps",
+      "label": "Your apps",
+      "subtitle": "accounts and phone push apps",
+      "icon": "cloud",
+      "row": 1,
+      "col": 0
+    },
+    {
+      "id": "helper",
+      "label": "Connector helper",
+      "subtitle": "one short program per run, time limit",
+      "row": 1,
+      "col": 1
+    },
+    {
+      "id": "inbox",
+      "label": "Inbox",
+      "subtitle": "raw files named by hash",
+      "icon": "documents",
+      "row": 1,
+      "col": 2
+    },
+    {
+      "id": "readers",
+      "label": "Readers",
+      "subtitle": "one per file format, versioned",
+      "row": 1,
+      "col": 3
+    },
+    {
+      "id": "resolver",
+      "label": "Resolver",
+      "subtitle": "session groups, daily totals, deletes",
+      "row": 1,
+      "col": 4
+    },
+    {
+      "id": "days",
+      "label": "Day builder",
+      "subtitle": "day facts and scores",
+      "row": 1,
+      "col": 5
+    },
+    {
+      "id": "views",
+      "label": "Coach views",
+      "subtitle": "the AI reads them via ask TFS",
+      "row": 1,
+      "col": 6
+    },
+    {
+      "id": "triggers",
+      "label": "Triggers",
+      "subtitle": "missed-session rule, ask only",
+      "row": 2,
+      "col": 5
+    },
+    {
+      "id": "jobs",
+      "label": "Job table",
+      "subtitle": "AI runs, trigger runs, sends",
+      "icon": "table",
+      "row": 3,
+      "col": 5
+    },
+    {
+      "id": "coach",
+      "label": "Coach runner",
+      "subtitle": "your AI tool, for TFS screens",
+      "icon": "monitor",
+      "row": 2,
+      "col": 6
+    },
+    {
+      "id": "hevy-out",
+      "label": "Apps that take plans",
+      "subtitle": "e.g. Hevy, Garmin",
+      "icon": "cloud",
+      "row": 4,
+      "col": 5
+    },
+    {
+      "id": "save",
+      "label": "Save",
+      "subtitle": "checks the proposal, writes the journal",
+      "row": 3,
+      "col": 6
+    }
+  ],
+  "edges": [
+    {
+      "from": "apps",
+      "to": "helper",
+      "label": "new data",
+      "main": true
+    },
+    {
+      "from": "scheduler",
+      "to": "helper",
+      "label": "due syncs"
+    },
+    {
+      "from": "helper",
+      "to": "inbox",
+      "label": "raw bytes",
+      "main": true
+    },
+    {
+      "from": "inbox",
+      "to": "status",
+      "label": "file states",
+      "style": "dashed"
+    },
+    {
+      "from": "inbox",
+      "to": "readers",
+      "main": true
+    },
+    {
+      "from": "readers",
+      "to": "resolver",
+      "label": "source records",
+      "main": true
+    },
+    {
+      "from": "resolver",
+      "to": "days",
+      "main": true
+    },
+    {
+      "from": "days",
+      "to": "views",
+      "main": true
+    },
+    {
+      "from": "views",
+      "to": "screens"
+    },
+    {
+      "from": "views",
+      "to": "coach",
+      "label": "lookups",
+      "main": true
+    },
+    {
+      "from": "days",
+      "to": "triggers",
+      "label": "events"
+    },
+    {
+      "from": "triggers",
+      "to": "jobs",
+      "label": "start a run"
+    },
+    {
+      "from": "jobs",
+      "to": "coach",
+      "label": "run the AI"
+    },
+    {
+      "from": "coach",
+      "to": "save",
+      "label": "proposal"
+    },
+    {
+      "from": "save",
+      "to": "jobs"
+    },
+    {
+      "from": "jobs",
+      "to": "hevy-out",
+      "label": "send once"
+    }
+  ],
+  "groups": [
+    {
+      "id": "in",
+      "label": "Data in",
+      "contains": [
+        "scheduler",
+        "status",
+        "apps",
+        "helper",
+        "inbox",
+        "readers"
+      ],
+      "tone": "orange"
+    },
+    {
+      "id": "truth",
+      "label": "Truth and scores",
+      "contains": [
+        "resolver",
+        "days"
+      ],
+      "tone": "green"
+    },
+    {
+      "id": "read",
+      "label": "Read",
+      "contains": [
+        "screens",
+        "views"
+      ],
+      "tone": "blue"
+    },
+    {
+      "id": "act",
+      "label": "Act",
+      "contains": [
+        "triggers",
+        "jobs",
+        "coach",
+        "hevy-out",
+        "save"
+      ],
+      "tone": "purple"
+    }
+  ]
+}

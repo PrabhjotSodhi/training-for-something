@@ -1,0 +1,142 @@
+{
+  "template": "state",
+  "title": "A plan going out to an app",
+  "nodes": [
+    {
+      "id": "start",
+      "kind": "start",
+      "row": 0,
+      "col": 0
+    },
+    {
+      "id": "queued",
+      "kind": "state",
+      "label": "Queued",
+      "row": 0,
+      "col": 1
+    },
+    {
+      "id": "sending",
+      "kind": "state",
+      "label": "Sending",
+      "row": 0,
+      "col": 2
+    },
+    {
+      "id": "sent",
+      "kind": "state",
+      "label": "Sent",
+      "row": 0,
+      "col": 3
+    },
+    {
+      "id": "end",
+      "kind": "end",
+      "row": 0,
+      "col": 4
+    },
+    {
+      "id": "unknown",
+      "kind": "state",
+      "label": "Outcome unknown",
+      "row": 1,
+      "col": 3
+    },
+    {
+      "id": "ask",
+      "kind": "state",
+      "label": "Waiting on you",
+      "row": 2,
+      "col": 3
+    },
+    {
+      "id": "cancelled",
+      "kind": "state",
+      "label": "Cancelled",
+      "row": 2,
+      "col": 4
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "queued",
+      "label": "you tap Save"
+    },
+    {
+      "from": "queued",
+      "to": "sending",
+      "label": "job runner picks it",
+      "main": true
+    },
+    {
+      "from": "sending",
+      "to": "sent",
+      "label": "app returns an id",
+      "main": true
+    },
+    {
+      "from": "sent",
+      "to": "end"
+    },
+    {
+      "from": "sending",
+      "to": "unknown",
+      "label": "crash or timeout"
+    },
+    {
+      "from": "unknown",
+      "to": "sent",
+      "label": "read back finds it"
+    },
+    {
+      "from": "unknown",
+      "to": "ask",
+      "label": "still unclear"
+    },
+    {
+      "from": "sending",
+      "to": "ask",
+      "label": "401 or 403"
+    },
+    {
+      "from": "ask",
+      "to": "queued",
+      "label": "reconnect or send again"
+    },
+    {
+      "from": "ask",
+      "to": "cancelled",
+      "label": "cancel"
+    }
+  ],
+  "groups": [
+    {
+      "id": "working",
+      "label": "Working",
+      "contains": [
+        "queued",
+        "sending"
+      ],
+      "tone": "blue"
+    },
+    {
+      "id": "done",
+      "label": "Done",
+      "contains": [
+        "sent"
+      ],
+      "tone": "green"
+    },
+    {
+      "id": "stopped",
+      "label": "Stopped",
+      "contains": [
+        "unknown",
+        "ask",
+        "cancelled"
+      ],
+      "tone": "orange"
+    }
+  ]
+}

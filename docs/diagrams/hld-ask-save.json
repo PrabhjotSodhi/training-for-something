@@ -1,0 +1,143 @@
+{
+  "template": "sequence",
+  "title": "You ask, preview, Save",
+  "actors": [
+    {
+      "id": "you",
+      "label": "You",
+      "kind": "actor"
+    },
+    {
+      "id": "screen",
+      "label": "TFS chat",
+      "subtitle": "phone or computer",
+      "icon": "monitor"
+    },
+    {
+      "id": "engine",
+      "label": "Engine"
+    },
+    {
+      "id": "ai",
+      "label": "Your AI tool",
+      "subtitle": "ask TFS tool and web search only",
+      "icon": "monitor"
+    },
+    {
+      "id": "db",
+      "label": "tfs.db",
+      "icon": "database"
+    },
+    {
+      "id": "hevy",
+      "label": "Apps that take plans",
+      "icon": "cloud",
+      "subtitle": "e.g. Hevy"
+    }
+  ],
+  "messages": [
+    {
+      "from": "you",
+      "to": "screen",
+      "label": "move Thursday's run to Friday"
+    },
+    {
+      "from": "screen",
+      "to": "engine",
+      "label": "ask"
+    },
+    {
+      "from": "engine",
+      "to": "db",
+      "label": "job: AI run, running"
+    },
+    {
+      "from": "engine",
+      "to": "ai",
+      "label": "briefing and question"
+    },
+    {
+      "from": "ai",
+      "to": "engine",
+      "label": "ask TFS: query coach_v1"
+    },
+    {
+      "from": "engine",
+      "to": "ai",
+      "label": "rows, read only",
+      "kind": "return"
+    },
+    {
+      "from": "ai",
+      "to": "engine",
+      "label": "answer and a proposal",
+      "kind": "return"
+    },
+    {
+      "from": "engine",
+      "to": "engine",
+      "label": "check proposal, note plan version"
+    },
+    {
+      "from": "engine",
+      "to": "screen",
+      "label": "answer and preview",
+      "kind": "return"
+    },
+    {
+      "from": "you",
+      "to": "screen",
+      "label": "Save"
+    },
+    {
+      "from": "screen",
+      "to": "engine",
+      "label": "save proposal"
+    },
+    {
+      "from": "engine",
+      "to": "db",
+      "label": "one transaction: journal, plan, send job"
+    },
+    {
+      "from": "engine",
+      "to": "hevy",
+      "label": "send the plan item",
+      "kind": "async"
+    },
+    {
+      "from": "screen",
+      "to": "you",
+      "label": "saved, sending to your apps",
+      "kind": "return"
+    },
+    {
+      "from": "engine",
+      "to": "screen",
+      "label": "refused, here is a fresh preview",
+      "kind": "return"
+    }
+  ],
+  "fragments": [
+    {
+      "kind": "alt",
+      "tone": "orange",
+      "regions": [
+        {
+          "guard": "plan version still matches",
+          "messages": [
+            11,
+            12,
+            13
+          ]
+        },
+        {
+          "guard": "plan changed since the preview",
+          "messages": [
+            14
+          ]
+        }
+      ]
+    }
+  ]
+}

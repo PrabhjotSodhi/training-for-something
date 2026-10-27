@@ -1,0 +1,158 @@
+{
+  "template": "flow",
+  "title": "Example: duplicate workouts as a group",
+  "nodes": [
+    {
+      "id": "hevy",
+      "label": "Hevy: Push A",
+      "subtitle": "07:02 to 08:05, sets and reps",
+      "icon": "cloud",
+      "row": 0,
+      "col": 0
+    },
+    {
+      "id": "apple-copy",
+      "label": "Hub copy (Apple Health)",
+      "subtitle": "same times, hub names Hevy as writer",
+      "icon": "file",
+      "row": 1,
+      "col": 0
+    },
+    {
+      "id": "watch",
+      "label": "Watch run",
+      "subtitle": "06:00 to 06:42, heart rate",
+      "icon": "file",
+      "row": 2,
+      "col": 0
+    },
+    {
+      "id": "strava",
+      "label": "Strava run",
+      "subtitle": "06:01 to 06:42, phone GPS",
+      "icon": "cloud",
+      "row": 3,
+      "col": 0
+    },
+    {
+      "id": "matcher",
+      "label": "Matcher",
+      "subtitle": "writer app, shared id, same sport and time",
+      "row": 1,
+      "col": 1
+    },
+    {
+      "id": "group-a",
+      "label": "Group: strength session",
+      "subtitle": "Hevy plus its Apple copy",
+      "row": 0,
+      "col": 2
+    },
+    {
+      "id": "group-b",
+      "label": "Group: morning run",
+      "subtitle": "watch plus Strava",
+      "row": 1,
+      "col": 2
+    },
+    {
+      "id": "review",
+      "label": "Possible duplicates",
+      "subtitle": "unsure pairs, you link or unlink",
+      "icon": "person",
+      "row": 2,
+      "col": 2
+    },
+    {
+      "id": "fields",
+      "label": "Pick each number",
+      "subtitle": "your source order, else the default",
+      "row": 1,
+      "col": 3
+    },
+    {
+      "id": "view",
+      "label": "Coach view",
+      "subtitle": "one row per real workout",
+      "row": 1,
+      "col": 4
+    }
+  ],
+  "edges": [
+    {
+      "from": "hevy",
+      "to": "matcher"
+    },
+    {
+      "from": "apple-copy",
+      "to": "matcher"
+    },
+    {
+      "from": "watch",
+      "to": "matcher",
+      "main": true
+    },
+    {
+      "from": "strava",
+      "to": "matcher",
+      "main": true
+    },
+    {
+      "from": "matcher",
+      "to": "group-a"
+    },
+    {
+      "from": "matcher",
+      "to": "group-b",
+      "main": true
+    },
+    {
+      "from": "matcher",
+      "to": "review",
+      "style": "dashed"
+    },
+    {
+      "from": "group-a",
+      "to": "fields"
+    },
+    {
+      "from": "group-b",
+      "to": "fields",
+      "main": true
+    },
+    {
+      "from": "fields",
+      "to": "view",
+      "main": true
+    },
+    {
+      "from": "review",
+      "to": "fields",
+      "label": "your choice, kept",
+      "style": "dashed"
+    }
+  ],
+  "groups": [
+    {
+      "id": "originals",
+      "label": "Every original kept",
+      "contains": [
+        "hevy",
+        "apple-copy",
+        "watch",
+        "strava"
+      ],
+      "tone": "orange"
+    },
+    {
+      "id": "groups",
+      "label": "Linked, never merged",
+      "contains": [
+        "group-a",
+        "group-b",
+        "review"
+      ],
+      "tone": "blue"
+    }
+  ]
+}

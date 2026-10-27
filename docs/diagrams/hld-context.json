@@ -1,0 +1,161 @@
+{
+  "template": "hub",
+  "title": "Who TFS works with",
+  "slots": {
+    "center": "engine",
+    "left": [
+      "you",
+      "phone"
+    ],
+    "top": [
+      "push-apps",
+      "cloud-apps",
+      "files"
+    ],
+    "right": [
+      "ai"
+    ],
+    "bottom": [
+      "github",
+      "stats"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "engine",
+      "label": "TFS engine",
+      "subtitle": "on your computer, holds all your data"
+    },
+    {
+      "id": "you",
+      "label": "You, in your AI chat or dashboard",
+      "kind": "actor"
+    },
+    {
+      "id": "phone",
+      "label": "Your phone",
+      "subtitle": "TFS chat and today, over Tailscale",
+      "icon": "monitor"
+    },
+    {
+      "id": "push-apps",
+      "label": "Phone push apps",
+      "subtitle": "carry phone health hubs, e.g. HC Webhook",
+      "icon": "monitor"
+    },
+    {
+      "id": "cloud-apps",
+      "label": "App accounts",
+      "subtitle": "any app with an API, e.g. Strava, Hevy",
+      "icon": "cloud"
+    },
+    {
+      "id": "files",
+      "label": "Files you hand in",
+      "subtitle": "health exports, lab PDFs, food photos",
+      "icon": "documents"
+    },
+    {
+      "id": "ai",
+      "label": "Your AI tool",
+      "subtitle": "Claude Code, Codex and others, run headless",
+      "icon": "monitor"
+    },
+    {
+      "id": "github",
+      "label": "Our GitHub",
+      "subtitle": "code, updates, bug reports you send",
+      "icon": "cloud"
+    },
+    {
+      "id": "stats",
+      "label": "Stats inbox",
+      "subtitle": "opt in counts only, no health data",
+      "icon": "cloud"
+    }
+  ],
+  "edges": [
+    {
+      "from": "you",
+      "to": "engine",
+      "label": "chat, dashboard, Save",
+      "both": true,
+      "main": true
+    },
+    {
+      "from": "phone",
+      "to": "engine",
+      "label": "today, food, Ask, Save",
+      "both": true,
+      "main": true
+    },
+    {
+      "from": "push-apps",
+      "to": "engine",
+      "label": "new data every few hours",
+      "main": true
+    },
+    {
+      "from": "engine",
+      "to": "cloud-apps",
+      "label": "fetch data, send plans if it can",
+      "both": true,
+      "main": true
+    },
+    {
+      "from": "files",
+      "to": "engine",
+      "label": "history and records"
+    },
+    {
+      "from": "engine",
+      "to": "ai",
+      "label": "ask TFS tool, proposals",
+      "both": true,
+      "main": true
+    },
+    {
+      "from": "github",
+      "to": "engine",
+      "label": "updates you choose",
+      "style": "dashed"
+    },
+    {
+      "from": "engine",
+      "to": "stats",
+      "label": "opt-in counts",
+      "style": "dashed"
+    }
+  ],
+  "groups": [
+    {
+      "id": "people",
+      "label": "You",
+      "contains": [
+        "you",
+        "phone"
+      ],
+      "tone": "purple"
+    },
+    {
+      "id": "sources",
+      "label": "Where your data comes from",
+      "contains": [
+        "push-apps",
+        "cloud-apps",
+        "files"
+      ],
+      "tone": "orange"
+    },
+    {
+      "id": "makers",
+      "label": "Us, the makers",
+      "contains": [
+        "github",
+        "stats"
+      ],
+      "tone": "grey",
+      "boundary": "dashed"
+    }
+  ]
+}

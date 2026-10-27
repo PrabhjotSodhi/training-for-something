@@ -1,0 +1,98 @@
+{
+  "template": "sequence",
+  "title": "Data coming in, step by step",
+  "actors": [
+    {
+      "id": "engine",
+      "label": "Engine"
+    },
+    {
+      "id": "helper",
+      "label": "Connector helper",
+      "subtitle": "a short-lived program"
+    },
+    {
+      "id": "hevy",
+      "label": "An app's API",
+      "icon": "cloud",
+      "subtitle": "e.g. Hevy"
+    },
+    {
+      "id": "raw",
+      "label": "raw/ folder",
+      "icon": "documents"
+    },
+    {
+      "id": "db",
+      "label": "tfs.db",
+      "icon": "database"
+    }
+  ],
+  "messages": [
+    {
+      "from": "engine",
+      "to": "helper",
+      "label": "fetch since cursor, 120 s limit"
+    },
+    {
+      "from": "helper",
+      "to": "hevy",
+      "label": "GET changes since cursor, 30 s timeout"
+    },
+    {
+      "from": "hevy",
+      "to": "helper",
+      "label": "new, changed and deleted records",
+      "kind": "return"
+    },
+    {
+      "from": "helper",
+      "to": "raw",
+      "label": "temp file, fsync, rename to its hash"
+    },
+    {
+      "from": "helper",
+      "to": "engine",
+      "label": "file path and next cursor",
+      "kind": "return"
+    },
+    {
+      "from": "engine",
+      "to": "db",
+      "label": "one transaction: files row and new cursor"
+    },
+    {
+      "from": "engine",
+      "to": "raw",
+      "label": "reader opens the file"
+    },
+    {
+      "from": "engine",
+      "to": "db",
+      "label": "one transaction: records by key, rebuild those days"
+    },
+    {
+      "from": "engine",
+      "to": "engine",
+      "label": "file status: ok, partial or unreadable"
+    }
+  ],
+  "fragments": [
+    {
+      "kind": "opt",
+      "tone": "orange",
+      "regions": [
+        {
+          "guard": "apps TFS fetches. Push apps post the file to the engine instead",
+          "messages": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ]
+        }
+      ]
+    }
+  ]
+}

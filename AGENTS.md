@@ -1,0 +1,54 @@
+# AGENTS.md
+
+Rules for every coding agent and contributor in this repo. Read this file, then the issue you are working on.
+
+Training For Something (TFS) is a free, open source, local-first coach. A small Python engine on the user's computer reads health and training data into one SQLite file. The user's own AI tool reads it through a guarded, read-only tool and proposes changes the user approves.
+
+## Read before you write code
+
+1. The issue: its outcome, acceptance examples, expected files and "done when" command.
+2. `docs/code-map.md`: where every file goes, the database tables and the 8 module rules.
+3. The HLD and spec sections the issue links to, in `docs/HLD.md` and `docs/specs/`.
+
+## Commands
+
+```bash
+python -m pip install -e . hypothesis            # once, after pyproject.toml exists
+PYTHONPATH=src python -m unittest discover -s tests -t .           # all tests
+PYTHONPATH=src python -m unittest tests.test_raw_store             # one file
+```
+
+Python 3.12. Tests use `unittest`. Hypothesis is allowed in tests only.
+
+## Rules
+
+1. Standard library only. `keyring` is the one approved runtime package. Never add a dependency. If you need one, stop and ask on the issue.
+2. One issue per pull request. Touch only the files the issue lists under "Expected files", plus their tests. If you need another file or table, stop and ask on the issue.
+3. Never edit `docs/HLD.md`, `docs/code-map.md`, `docs/specs/`, `AGENTS.md` or `.github/` unless the issue says so.
+4. Follow the issue's test policy. "Test first" means you commit the failing tests from the acceptance examples before the code that makes them pass.
+5. Never delete, skip or weaken a test to make it pass. If a test looks wrong, stop and ask on the issue.
+6. Tests use invented people and invented data only. Never commit real health data, real exports or real API responses.
+7. No module outside `connectors/<name>/` branches on an app's name.
+8. Secrets never appear in logs, errors, raw files, test output or commits.
+9. Times are stored as UTC ISO 8601 strings ending in `Z`, plus a UTC offset in minutes and a local date where the HLD says so. Use timezone-aware `datetime` only.
+10. Every new public function has type hints and one short docstring.
+
+## Git
+
+1. Branch from current `main`, named `agent/<issue number>-<short-name>`.
+2. Commit messages say what changed and why, in plain English. No "Generated with" or co-author lines.
+3. Open one pull request using the template. Link the issue with `Closes #<number>`.
+4. Never push to `main`, force push, rebase a shared branch, merge, tag or release. The maintainer merges every pull request.
+
+## When to stop
+
+Stop, label the issue `agent:blocked`, and comment with the command you ran, the failure, and what you think causes it, when:
+
+1. You have made 3 different attempts and the "done when" command still fails.
+2. The same failure appears twice in a row.
+3. The issue conflicts with the HLD, the code map or a spec.
+4. The work needs a new dependency, file, table or design decision.
+
+## Writing
+
+Docs, comments, issue comments and pull request text use plain English: short sentences, active voice, no jargon where a plain word works. Comments explain why, not what. Comment only traps and invisible constraints.

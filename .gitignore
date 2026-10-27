@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.hypothesis/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Never commit secrets or real health data
+.env
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+export.zip
+export.xml
+export_cda.xml
+raw/
+backups/
