@@ -184,7 +184,7 @@ A UNIQUE constraint makes importing the same data twice safe. The key uses the a
 
 Each key has a test fixture. A key change requires a data migration that preserves corrections and remote links to the same records.
 
-Apps can resend and edit records under the same key. Each record from `read` carries a revision. It uses the app's last-changed time when available, otherwise the file's arrival order. When a key already exists, the higher revision replaces it.
+Apps can resend and edit records under the same key. Each record from `read` carries a revision: the app's last-changed time when available, otherwise the time its file arrived. Ties go to the later arrival. When a key already exists, the higher revision replaces it.
 
 Every version stays in `raw/`. Rebuilds read files in arrival order so that live and rebuilt results match. For example, the phone sends today's steps as 2,000 in the morning and 9,000 at night. The later value wins.
 
@@ -204,7 +204,7 @@ Each record stores its UTC instant, UTC offset and local date.
 
 1. If the record has an offset, the reader returns it. That offset sets the local date. Apple Health and Health Connect provide examples.
 2. If the record has UTC only, the reader returns a null offset. The engine converts each instant with the computer's time zone rules through Python's `astimezone()`. This applies daylight saving for each date and keeps history imports on the right local day. Hevy provides an example.
-3. Sleep belongs to the day you wake up.
+3. Sleep belongs to the day you wake up. A sleep record counts toward the local date of its end time plus 6 hours, so sleep that starts before midnight joins the night it belongs to. A nap that ends after 18:00 counts toward the next day.
 
 UTC-only sources have known gaps. These include workouts logged while traveling, computers set to another time zone, and rebuilds on a computer in another zone.
 
@@ -382,15 +382,13 @@ Distance, duration and pace always come from one source. This keeps pace from mi
 
 ### 7.3 Daily totals
 
-Each day and summed metric uses one source. Adding steps or energy across devices risks counting them twice.
+Each day and summed metric counts every moment once. Adding steps or energy across devices or apps risks counting them twice. Taking one device's total risks missing time when that device was off: on a real 3 year export, the phone's steps while the watch charged added about 10% on a typical day.
 
-Here, a source means one connector stream from one device. The same watch arriving through two connectors counts as two sources, and TFS uses only one.
+Here, a source means one connector stream from one device.
 
-1. Never add a summed metric across sources.
-2. Use the first source in your priority list with data that day. Before you set a list, use a total that the reader marks as merged when available. Examples include Health Auto Export's phone-and-watch total and a Health Connect aggregate. Otherwise, use the largest total.
-3. Store the chosen source and its coverage beside each total. Label a partial day as partial.
-
-The "largest total" default remains untested on a full Apple export. It needs testing before adoption.
+1. Within one connector, merge devices by time. The device with the largest total counts in full. Each other device adds only the time the devices before it did not cover. This is how the phone's own health hub builds its totals. When records carry no time interval, use the largest device total instead.
+2. Across connectors, use one connector per day: the first in your priority list with data that day. Before you set a list, a total the reader marks as merged wins, such as Health Auto Export's phone-and-watch total or a Health Connect aggregate. Otherwise, the largest total wins.
+3. Store the chosen sources and the coverage beside each total. A day is partial when the chosen connector's last file arrived before that day ended.
 
 ### 7.4 Deletions and corrections
 
@@ -411,7 +409,7 @@ Options considered. General probabilistic matching with selection rules for ever
 
 ## 8. Scores
 
-`rebuild_days(dates)` builds day facts and scores. Live imports and full rebuilds call the same function, inside the transaction for the changed records. Separate code paths produced different live and replay numbers in testing.
+`rebuild_days(dates)` builds day facts and scores. Live imports and full rebuilds call the same function, after the records commit, one month of dates per transaction. The dates waiting for a rebuild are saved in the same transaction as their records, so a crash cannot skip them. Separate code paths produced different live and replay numbers in testing.
 
 1. Day facts hold one row per day per metric, with source, coverage and formula version.
 2. TFS recomputes scores from day facts each time. A test dataset covers about 1,200 days. Scores include readiness from HRV, resting heart rate and sleep against your normal, plus training load, recovery and forecast ranges.

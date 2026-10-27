@@ -93,17 +93,18 @@ Module names are short and lowercase, as PEP 8 asks. The folder carries the cont
 
 ## 2. Database tables
 
-Each milestone adds one numbered migration for the tables it needs. `0001_init.sql` creates the 0.1 tables: `files`, `sources`, `source_records`, `source_deletes`, `session_parts`, `session_groups`, `session_group_members` and `day_facts`. A merged migration is never edited. Later changes are new numbered files.
+Each milestone adds one numbered migration for the tables it needs. `0001_init.sql` creates the 0.1 tables: `files`, `sources`, `source_records`, `source_deletes`, `session_parts`, `session_groups`, `session_group_members`, `day_facts` and `rebuild_dates`. A merged migration is never edited. Later changes are new numbered files.
 
 | Table | Kind | Holds |
 |---|---|---|
-| `files` | Imported | One row per raw file: hash, arrival order, connector, format, received time, reader hash, status (new, ok, partial, unreadable, needs AI, failed, missing), message |
+| `files` | Imported | One row per raw file: hash, arrival order, connector, format, received time, reader hash, status (new, reading, ok, partial, unreadable, needs AI, failed, missing), message |
 | `sources` | Sync state | One row per connector: enabled, cursor, last attempt, last contact, last received, last error. "Data covered until" is computed from `source_records`. |
 | `source_records` | Imported | One row per record a reader returned: id, file hash, kind, stream, key, revision, start in UTC, UTC offset, local date, family, label, values JSON, units, origin app, origin device, plan reference, deleted time |
 | `source_deletes` | Imported | Deletes an app reported, kept even when the record has not arrived yet, so an older file read late cannot bring it back |
 | `session_parts` | Imported | Laps, sets, rounds and splits, for both recorded and planned sessions |
 | `session_groups` | Derived | Records linked as one workout, with the chosen value per field and its source |
 | `session_group_members` | Derived | Which source records belong to which group |
+| `rebuild_dates` | Work | Dates whose groups and day facts must be rebuilt, saved with the records that changed them and cleared by the rebuild |
 | `day_facts` | Derived | One row per day, metric and chosen source: value, coverage, formula version |
 | `scores` | Derived | Readiness, load, recovery and forecasts per day, with inputs, range and formula version |
 | `journal` | Yours | Append-only. One row per saved proposal or user action: actions JSON, who approved, time, format version |
@@ -143,7 +144,7 @@ scheduling/jobs.py  →  connectors/core/send.py  →  connector send() in runne
 
 | Version | Builds |
 |---|---|
-| 0.1 Your data in | `config`, `persistence/`, `importer/`, `connectors/core/` (contract, runner), `connectors/testing/`, `apple_health`, `health_auto_export`, `hevy` (read), `duplicates/workouts`, `source_priority/` (day facts for steps, active energy, sleep, resting heart rate and weight. HRV, total energy, body fat and VO2 max follow in 0.4 with scores), a minimal `engine` with `web/server.py` serving only `web/push.py` (one instance, push endpoint over Tailscale or home Wi-Fi), `cli/` (`start`, `connect`, `import`, `sync`, `status`), `diagnostics`, `password_store` |
+| 0.1 Your data in | `config`, `persistence/`, `importer/`, `connectors/core/` (contract, runner), `connectors/testing/`, `apple_health`, `health_auto_export`, `hevy` (read), `duplicates/workouts`, `source_priority/` (day facts for steps, active energy, sleep, resting heart rate and weight. HRV records are stored from 0.1, and day facts for HRV, total energy, body fat and VO2 max follow in 0.4 with scores), a minimal `engine` with `web/server.py` serving only `web/push.py` (one instance, push endpoint over Tailscale or home Wi-Fi), `cli/` (`start`, `connect`, `import`, `sync`, `status`), `diagnostics`, `password_store` |
 | 0.2 Ask your coach | `mcp/`, `providers/briefing.py`, `plugins/`, `cli/mcp` |
 | 0.3 Plans | `proposals/`, `scheduling/jobs.py`, `connectors/core/send.py`, Hevy `send`, `goals`, `plan_items`, `remote_links` |
 | 0.4 Every morning | `scores/`, `scheduling/scheduler.py`, `scheduling/triggers.py`, food and document actions, `providers/` for runs TFS starts |
