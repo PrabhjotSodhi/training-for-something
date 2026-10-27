@@ -39,6 +39,10 @@ known-first-party = ["tfs"]
 
 [lint.per-file-ignores]
 "src/tfs/cli/*" = ["T201"]
+# The Apple Health export is the user's own file. Python 3.12's expat blocks entity expansion attacks.
+"src/tfs/connectors/apple_health/*" = ["S314"]
+# The home Wi-Fi door must listen on every interface. It accepts token pushes only.
+"src/tfs/engine.py" = ["S104"]
 "tests/**" = ["S101", "S105", "S106", "S108"]
 
 [format]

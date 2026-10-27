@@ -97,7 +97,7 @@ Each milestone adds one numbered migration for the tables it needs. `0001_init.s
 
 | Table | Kind | Holds |
 |---|---|---|
-| `files` | Imported | One row per raw file: hash, connector, format, received time, reader hash, status, message |
+| `files` | Imported | One row per raw file: hash, arrival order, connector, format, received time, reader hash, status (new, ok, partial, unreadable, needs AI, failed, missing), message |
 | `sources` | Sync state | One row per connector: enabled, cursor, last attempt, last contact, last received, last error. "Data covered until" is computed from `source_records`. |
 | `source_records` | Imported | One row per record a reader returned: id, file hash, kind, stream, key, revision, start in UTC, UTC offset, local date, family, label, values JSON, units, origin app, origin device, plan reference, deleted time |
 | `source_deletes` | Imported | Deletes an app reported, kept even when the record has not arrived yet, so an older file read late cannot bring it back |
@@ -143,7 +143,7 @@ scheduling/jobs.py  →  connectors/core/send.py  →  connector send() in runne
 
 | Version | Builds |
 |---|---|
-| 0.1 Your data in | `config`, `persistence/`, `importer/`, `connectors/core/` (contract, runner), `connectors/testing/`, `apple_health`, `health_auto_export`, `hevy` (read), `duplicates/workouts`, `source_priority/` (day facts only), a minimal `engine` with `web/server.py` serving only `web/push.py` (one instance, push endpoint over Tailscale or home Wi-Fi), `cli/` (`start`, `connect`, `import`, `sync`, `status`), `diagnostics`, `password_store` |
+| 0.1 Your data in | `config`, `persistence/`, `importer/`, `connectors/core/` (contract, runner), `connectors/testing/`, `apple_health`, `health_auto_export`, `hevy` (read), `duplicates/workouts`, `source_priority/` (day facts for steps, active energy, sleep, resting heart rate and weight. HRV, total energy, body fat and VO2 max follow in 0.4 with scores), a minimal `engine` with `web/server.py` serving only `web/push.py` (one instance, push endpoint over Tailscale or home Wi-Fi), `cli/` (`start`, `connect`, `import`, `sync`, `status`), `diagnostics`, `password_store` |
 | 0.2 Ask your coach | `mcp/`, `providers/briefing.py`, `plugins/`, `cli/mcp` |
 | 0.3 Plans | `proposals/`, `scheduling/jobs.py`, `connectors/core/send.py`, Hevy `send`, `goals`, `plan_items`, `remote_links` |
 | 0.4 Every morning | `scores/`, `scheduling/scheduler.py`, `scheduling/triggers.py`, food and document actions, `providers/` for runs TFS starts |
