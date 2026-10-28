@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "training-for-something"
+dynamic = ["version"]
+description = "A free, open source, local-first coach for one person's goal."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["keyring>=25"]
+
+[project.scripts]
+tfs = "tfs.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "tfs.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+tfs = ["**/*.sql", "**/*.json"]
