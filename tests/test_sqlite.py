@@ -69,6 +69,36 @@ class SqliteTest(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM t").fetchone()[0], 0)
             self.assertFalse(conn.in_transaction)
 
+    def test_transaction_reraises_the_error_when_sqlite_already_rolled_back(self):
+        with closing(connect(self.path)) as conn:
+            conn.execute("CREATE TABLE t (a)")
+            conn.execute(
+                "CREATE TRIGGER no_negative BEFORE INSERT ON t WHEN NEW.a < 0 "
+                "BEGIN SELECT RAISE(ROLLBACK, 'negative'); END"
+            )
+            with self.assertRaises(sqlite3.IntegrityError) as caught, transaction(conn):
+                conn.execute("INSERT INTO t VALUES (1)")
+                conn.execute("INSERT INTO t VALUES (-1)")
+            self.assertEqual(str(caught.exception), "negative")
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM t").fetchone()[0], 0)
+            self.assertFalse(conn.in_transaction)
+
+    def test_transaction_rolls_back_when_commit_fails(self):
+        with closing(connect(self.path)) as conn:
+            conn.execute("CREATE TABLE parent (id INTEGER PRIMARY KEY)")
+            conn.execute(
+                "CREATE TABLE child (parent_id INTEGER "
+                "REFERENCES parent (id) DEFERRABLE INITIALLY DEFERRED)"
+            )
+            with self.assertRaises(sqlite3.IntegrityError) as caught, transaction(conn):
+                conn.execute("INSERT INTO child VALUES (99)")
+            self.assertEqual(str(caught.exception), "FOREIGN KEY constraint failed")
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM child").fetchone()[0], 0)
+            self.assertFalse(conn.in_transaction)
+            with transaction(conn):
+                conn.execute("INSERT INTO parent VALUES (1)")
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM parent").fetchone()[0], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

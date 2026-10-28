@@ -22,7 +22,7 @@ def connect(path: Path, role: str = "default") -> sqlite3.Connection:
     conn.execute("PRAGMA busy_timeout=5000")
     conn.row_factory = sqlite3.Row
     if role == "save":
-        # The Save path must stay fast, so only imports run checkpoints.
+        # A Save never runs a checkpoint, so its speed does not depend on the disk.
         conn.execute("PRAGMA wal_autocheckpoint=0")
     return conn
 
@@ -33,7 +33,9 @@ def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
     conn.execute("BEGIN IMMEDIATE")
     try:
         yield conn
+        conn.execute("COMMIT")
     except BaseException:
-        conn.execute("ROLLBACK")
+        # SQLite may already have ended the transaction, for example on a full disk.
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
         raise
-    conn.execute("COMMIT")
