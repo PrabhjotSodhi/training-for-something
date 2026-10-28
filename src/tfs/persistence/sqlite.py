@@ -23,7 +23,9 @@ def connect(path: Path, role: str = "default") -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     if role == "save":
         # A Save never runs a checkpoint, so its speed does not depend on the disk.
+        # SQLite also checkpoints when the last connection closes, so turn that off too.
         conn.execute("PRAGMA wal_autocheckpoint=0")
+        conn.setconfig(sqlite3.SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, True)
     return conn
 
 
