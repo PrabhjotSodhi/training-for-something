@@ -17,10 +17,10 @@ def data_dir(
 ) -> Path:
     """Return the TFS data folder. TFS_HOME overrides the OS default. Callers create it."""
     env = os.environ if env is None else env
-    platform = sys.platform if platform is None else platform
-    home = Path.home() if home is None else home
     if "TFS_HOME" in env:
         return Path(env["TFS_HOME"])
+    platform = sys.platform if platform is None else platform
+    home = Path.home() if home is None else home
     if platform == "win32":
         base = Path(env["LOCALAPPDATA"]) if "LOCALAPPDATA" in env else home / "AppData" / "Local"
         return base / "TFS"

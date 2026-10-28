@@ -44,7 +44,10 @@ class DataDirTest(unittest.TestCase):
 
     def test_missing_env_reads_the_process_environment(self):
         with mock.patch.dict(os.environ, {"TFS_HOME": "/tmp/tfs-from-os"}):
-            self.assertEqual(config.data_dir(), Path("/tmp/tfs-from-os"))
+            self.assertEqual(
+                config.data_dir(env=None, platform="linux", home=Path("/home/ana")),
+                Path("/tmp/tfs-from-os"),
+            )
 
 
 class PathsTest(unittest.TestCase):
@@ -55,7 +58,10 @@ class PathsTest(unittest.TestCase):
 
     def test_db_path_follows_tfs_home(self):
         self.assertEqual(
-            config.db_path(env={"TFS_HOME": "/tmp/tfs-test"}), Path("/tmp/tfs-test/tfs.db")
+            config.db_path(
+                env={"TFS_HOME": "/tmp/tfs-test"}, platform="linux", home=Path("/home/ana")
+            ),
+            Path("/tmp/tfs-test/tfs.db"),
         )
 
 
