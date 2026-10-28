@@ -35,6 +35,15 @@ class SqliteTest(unittest.TestCase):
             self.assertEqual(pragma(conn, "wal_autocheckpoint"), 0)
             self.assertEqual(pragma(conn, "synchronous"), 2)
 
+    def test_save_role_keeps_the_write_log_when_the_last_connection_closes(self):
+        with closing(connect(self.path, role="save")) as conn:
+            conn.execute("CREATE TABLE t (a)")
+            with transaction(conn):
+                conn.executemany("INSERT INTO t VALUES (?)", [(number,) for number in range(50)])
+        self.assertTrue(Path(f"{self.path}-wal").exists())
+        with closing(connect(self.path)) as conn:
+            self.assertEqual(conn.execute("SELECT SUM(a) FROM t").fetchone()[0], 1225)
+
     def test_rows_are_read_by_column_name(self):
         with closing(connect(self.path)) as conn:
             self.assertEqual(conn.execute("SELECT 5 AS five").fetchone()["five"], 5)
