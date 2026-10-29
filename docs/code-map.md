@@ -99,7 +99,7 @@ Each milestone adds one numbered migration for the tables it needs. `0001_init.s
 |---|---|---|
 | `files` | Imported | One row per raw file: hash, arrival order, connector, format, received time, reader hash, status (new, reading, ok, partial, unreadable, needs AI, failed, missing), message |
 | `sources` | Sync state | One row per connector: enabled, cursor, last attempt, last contact, last received, last error. "Data covered until" is computed from `source_records`. |
-| `source_records` | Imported | One row per record a reader returned: id, file hash, kind, stream, key, revision, start in UTC, UTC offset, local date, family, label, values JSON, units, origin app, origin device, plan reference, deleted time |
+| `source_records` | Imported | One row per record a reader returned: id, file hash, kind, stream, key, revision, start in UTC, UTC offset, local date, family, label, values JSON with units, origin app, origin device, plan reference, deleted time |
 | `source_deletes` | Imported | Deletes an app reported, kept even when the record has not arrived yet, so an older file read late cannot bring it back |
 | `session_parts` | Imported | Laps, sets, rounds and splits, for both recorded and planned sessions |
 | `session_groups` | Derived | Records linked as one workout, with the chosen value per field and its source |
