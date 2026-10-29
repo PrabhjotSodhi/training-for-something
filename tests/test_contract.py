@@ -24,7 +24,7 @@ MEASUREMENT = {
     "family": None,
     "metric": "steps",
     "values": {"value": 532.0, "unit": "count"},
-    "origin_app": "Test Watch",
+    "origin_app": "Ana's Apple Watch",
     "origin_device": "Apple Watch",
     "plan_ref": None,
 }
@@ -133,7 +133,7 @@ class ValidateRejectTest(unittest.TestCase):
                 self.assert_rejected(rec, "value")
 
     def test_rejects_an_unknown_family(self):
-        self.assert_rejected(changed(SESSION, family="running"), "family")
+        self.assert_rejected(changed(MEASUREMENT, family="running"), "family")
 
     def test_rejects_an_unknown_metric(self):
         self.assert_rejected(changed(MEASUREMENT, metric="glucose"), "metric")
@@ -189,6 +189,18 @@ class ValidateRejectTest(unittest.TestCase):
             with self.subTest(part=part):
                 self.assert_rejected(changed(SESSION, parts=[part]), "parts")
 
+    def test_rejects_parts_that_is_not_a_list(self):
+        for bad in (None, 3):
+            with self.subTest(bad=bad):
+                with self.assertRaises(RecordError) as caught:
+                    validate_record(changed(SESSION, parts=bad))
+                self.assertEqual(str(caught.exception), "parts must be a list")
+
+    def test_rejects_a_metric_that_is_not_a_string(self):
+        with self.assertRaises(RecordError) as caught:
+            validate_record(changed(MEASUREMENT, metric=["steps"]))
+        self.assertEqual(str(caught.exception), f"metric must be one of {', '.join(METRICS)}")
+
     def test_rejects_a_measurement_extra_that_is_not_valid(self):
         for values in (
             {"value": 1.0, "unit": "count", "merged": "yes"},
@@ -203,12 +215,27 @@ class ConstantsTest(unittest.TestCase):
     def test_families(self):
         self.assertEqual(
             FAMILIES,
-            ("run", "ride", "swim", "strength", "row", "walk_hike", "ski", "racket", "combat",
-             "climb", "mixed", "mobility"),
-        )  # fmt: skip
+            (
+                "run",
+                "ride",
+                "swim",
+                "strength",
+                "row",
+                "walk_hike",
+                "ski",
+                "racket",
+                "combat",
+                "climb",
+                "mixed",
+                "mobility",
+            ),
+        )
 
     def test_metrics(self):
-        table = {name: (m.unit, m.daily, m.zero_is_missing) for name, m in METRICS.items()}
+        table = {
+            name: (metric.unit, metric.daily, metric.zero_is_missing)
+            for name, metric in METRICS.items()
+        }
         self.assertEqual(
             table,
             {

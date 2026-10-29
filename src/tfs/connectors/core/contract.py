@@ -65,7 +65,7 @@ def validate_record(rec: dict) -> dict:
         if not isinstance(rec.get(field), str) or not rec[field]:
             raise RecordError(f"{field} must be a non-empty string")
     if rec.get("revision_at") is not None:
-        _check_revision(rec["revision_at"])
+        _instant("revision_at", rec["revision_at"], _REVISION, "2026-10-20T19:06:12.000Z")
     if kind == "deleted":
         return rec
     _check_times(rec)
@@ -90,10 +90,6 @@ def _instant(field: str, value: object, pattern: re.Pattern, example: str) -> da
         return datetime.fromisoformat(value)
     except ValueError as error:
         raise RecordError(f"{field} is not a real date and time: {value}") from error
-
-
-def _check_revision(value: object) -> None:
-    _instant("revision_at", value, _REVISION, "2026-10-20T19:06:12.000Z")
 
 
 def _check_times(rec: dict) -> None:
@@ -128,7 +124,8 @@ def _is_finite_number(value: object) -> bool:
 
 
 def _check_measurement(rec: dict) -> None:
-    metric = METRICS.get(rec.get("metric"))
+    name = rec.get("metric")
+    metric = METRICS.get(name) if isinstance(name, str) else None
     if metric is None:
         raise RecordError(f"metric must be one of {', '.join(METRICS)}")
     values = rec.get("values")
@@ -154,7 +151,10 @@ def _check_session(rec: dict) -> None:
             raise RecordError(f"values.{name} is not a session value")
         if not _is_finite_number(number):
             raise RecordError(f"values.{name} must be a finite number")
-    for part in rec.get("parts", []):
+    parts = rec.get("parts", [])
+    if not isinstance(parts, list):
+        raise RecordError("parts must be a list")
+    for part in parts:
         seq = part.get("seq") if isinstance(part, dict) else None
         if not isinstance(seq, int) or isinstance(seq, bool):
             raise RecordError("each item in parts needs a whole-number seq")
