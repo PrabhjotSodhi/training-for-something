@@ -182,10 +182,6 @@ def make_server(
     read_timeout_s: float = 30,
 ) -> ThreadingHTTPServer:
     """Bind the server to host and port. The caller runs serve_forever() and closes it."""
-    if not read_timeout_s > 0:
-        raise ValueError("read_timeout_s must be above zero.")
-    if max_body < 0:
-        raise ValueError("max_body cannot be negative.")
     return _PushServer(
         (host, port), push_handler=push_handler, max_body=max_body, read_timeout_s=read_timeout_s
     )

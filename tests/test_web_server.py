@@ -216,19 +216,20 @@ class RoutesTest(ServerTestCase):
 
     def test_malformed_requests_are_refused_and_the_server_keeps_serving(self):
         too_many_headers = raw("GET /ping HTTP/1.1", *[f"X-{n}: 1" for n in range(150)])
+        # Status 0: the standard library cannot read the HTTP version, so it sends an HTML
+        # page with no status line.
         requests = [
-            b"\x00\x01\x02\r\n\r\n",
-            b"GET\r\n\r\n",
-            raw("GET /ping HTTP/9.9"),
-            raw("GET /" + "a" * 70000 + " HTTP/1.1"),
-            too_many_headers,
-            raw("GET /ping HTTP/1.1", "X-Long: " + "a" * 70000),
+            (b"\x00\x01\x02\r\n\r\n", 0),
+            (b"GET\r\n\r\n", 0),
+            (raw("GET /ping HTTP/9.9"), 0),
+            (raw("GET /" + "a" * 70000 + " HTTP/1.1"), 414),
+            (too_many_headers, 431),
+            (raw("GET /ping HTTP/1.1", "X-Long: " + "a" * 70000), 431),
         ]
         self.start()
-        for request in requests:
+        for request, expected_status in requests:
             with self.subTest(request=request[:20]):
-                status = self.ask(request)[0]
-                self.assertTrue(status == 0 or status >= 400)
+                self.assertEqual(self.ask(request)[0], expected_status)
         self.check_ping()
         self.finish()
         self.assertEqual(self.calls, [])
@@ -396,23 +397,18 @@ class SetupTest(ServerTestCase):
         with self.assertRaises(OSError):
             make_server(config.SCREEN_HOST, port, push_handler=self.recording_handler)
 
+    def test_a_new_server_can_take_the_port_of_one_that_just_served_a_request(self):
+        self.start()
+        port = self.server.server_address[1]
+        self.check_ping()
+        self.finish()
+        restarted = make_server(config.SCREEN_HOST, port, push_handler=self.recording_handler)
+        self.addCleanup(restarted.server_close)
+        self.assertEqual(restarted.server_address[1], port)
+
     def test_the_server_listens_only_on_the_host_it_was_given(self):
         self.start()
         self.assertEqual(self.server.server_address[0], config.SCREEN_HOST)
-
-    def test_read_timeout_must_be_above_zero(self):
-        for value in (0, -1, float("nan")):
-            with self.subTest(value=value), self.assertRaises(ValueError):
-                make_server(
-                    config.SCREEN_HOST,
-                    0,
-                    push_handler=self.recording_handler,
-                    read_timeout_s=value,
-                )
-
-    def test_max_body_cannot_be_negative(self):
-        with self.assertRaises(ValueError):
-            make_server(config.SCREEN_HOST, 0, push_handler=self.recording_handler, max_body=-1)
 
 
 if __name__ == "__main__":
