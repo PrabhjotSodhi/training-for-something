@@ -1,3 +1,4 @@
+import importlib
 import os
 import sqlite3
 import subprocess
@@ -7,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import tfs.persistence
 from tfs.persistence.migrations import DatabaseTooNewError, migrate
 from tfs.persistence.sqlite import connect
 
@@ -99,6 +101,19 @@ class MigrateTest(unittest.TestCase):
         with self.assertRaises(DatabaseTooNewError) as caught:
             migrate(conn, migrations_dir=self.migrations)
         self.assertIn("(schema 2)", str(caught.exception))
+
+    def test_refuses_a_negative_schema_number(self):
+        self.write("0001_a.sql", "CREATE TABLE a (x INTEGER);")
+        conn = self.open()
+        conn.execute("PRAGMA user_version = -1")
+        with self.assertRaises(sqlite3.DatabaseError) as caught:
+            migrate(conn, migrations_dir=self.migrations)
+        self.assertEqual(
+            str(caught.exception),
+            "This database has an invalid schema number (-1). Restore a backup.",
+        )
+        self.assertEqual(table_names(conn), set())
+        self.assertEqual(user_version(conn), -1)
 
     def test_a_missing_number_raises_value_error_and_applies_nothing(self):
         self.write("0001_a.sql", "CREATE TABLE a (x INTEGER);")
@@ -313,11 +328,24 @@ class MigrateTest(unittest.TestCase):
             migrate(conn, migrations_dir=self.migrations)
 
     def test_without_a_folder_it_reads_the_tfs_sql_package(self):
-        self.write("0001_a.sql", "CREATE TABLE a (x INTEGER);")
+        package_root = self.root / "package"
+        (package_root / "sql").mkdir(parents=True)
+        (package_root / "sql" / "__init__.py").write_text("", encoding="utf-8")
+        (package_root / "sql" / "0001_a.sql").write_text(
+            "CREATE TABLE a (x INTEGER);", encoding="utf-8"
+        )
         conn = self.open()
-        with mock.patch("importlib.resources.files", return_value=self.migrations) as files:
+        # The import system caches what it finds, so put everything back afterwards.
+        self.addCleanup(importlib.invalidate_caches)
+        self.addCleanup(vars(tfs.persistence).pop, "sql", None)
+        with (
+            mock.patch.dict(sys.modules),
+            mock.patch.object(
+                tfs.persistence, "__path__", [str(package_root), *tfs.persistence.__path__]
+            ),
+        ):
+            importlib.invalidate_caches()
             self.assertEqual(migrate(conn), 1)
-        files.assert_called_once_with("tfs.persistence.sql")
         self.assertEqual(table_names(conn), {"a"})
 
     def test_a_missing_sql_package_raises_value_error(self):
@@ -338,7 +366,7 @@ class MigrateTest(unittest.TestCase):
         started = []
 
         def let_the_other_process_finish_first(statement: str) -> None:
-            if statement.startswith("BEGIN IMMEDIATE") and not started:
+            if statement != "PRAGMA user_version" and not started:
                 started.append(statement)
                 self.assertEqual(migrate(other, migrations_dir=self.migrations), 2)
 
@@ -349,6 +377,28 @@ class MigrateTest(unittest.TestCase):
         self.assertEqual(user_version(slow), 2)
         self.assertEqual(slow.execute("SELECT COUNT(*) FROM a").fetchone()[0], 1)
         self.assertFalse(slow.in_transaction)
+
+    def test_a_file_that_reads_first_holds_the_write_lock_from_the_start(self):
+        self.write("0001_a.sql", "SELECT COUNT(*) FROM sqlite_master; CREATE TABLE a (x INTEGER);")
+        conn = self.open()
+        other = self.open()
+        other.execute("PRAGMA busy_timeout=0")
+        outcome = []
+
+        def write_from_another_connection(statement: str) -> None:
+            if statement.strip().startswith("CREATE TABLE a") and not outcome:
+                try:
+                    other.execute("CREATE TABLE elsewhere (x INTEGER)")
+                except sqlite3.OperationalError as error:
+                    outcome.append(str(error))
+                else:
+                    outcome.append("written")
+
+        conn.set_trace_callback(write_from_another_connection)
+        self.assertEqual(migrate(conn, migrations_dir=self.migrations), 1)
+        conn.set_trace_callback(None)
+        self.assertEqual(outcome, ["database is locked"])
+        self.assertEqual(table_names(conn), {"a"})
 
     def test_a_process_killed_part_way_leaves_the_old_version(self):
         self.write("0001_a.sql", "CREATE TABLE a (x INTEGER);")
