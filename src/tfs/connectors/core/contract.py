@@ -1,8 +1,8 @@
 """The record shapes every connector returns and the checks the engine runs on them."""
 
 import hashlib
-import math
 import re
+import sys
 from datetime import date, datetime
 from typing import NamedTuple
 
@@ -120,7 +120,12 @@ def _check_local_time(offset: object, local_date: object) -> None:
 
 
 def _is_finite_number(value: object) -> bool:
-    return isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value)
+    # Comparing to the largest float never overflows, and it is False for nan and inf.
+    return (
+        isinstance(value, int | float)
+        and not isinstance(value, bool)
+        and abs(value) <= sys.float_info.max
+    )
 
 
 def _check_measurement(rec: dict) -> None:

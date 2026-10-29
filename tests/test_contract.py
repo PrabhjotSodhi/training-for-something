@@ -196,6 +196,17 @@ class ValidateRejectTest(unittest.TestCase):
                     validate_record(changed(SESSION, parts=bad))
                 self.assertEqual(str(caught.exception), "parts must be a list")
 
+    def test_rejects_a_measurement_value_too_large_for_a_float(self):
+        rec = changed(MEASUREMENT, values={"value": 10**400, "unit": "count"})
+        with self.assertRaises(RecordError) as caught:
+            validate_record(rec)
+        self.assertEqual(str(caught.exception), "values.value must be a finite number")
+
+    def test_rejects_a_session_duration_too_large_for_a_float(self):
+        with self.assertRaises(RecordError) as caught:
+            validate_record(changed(SESSION, values={"duration_s": 10**400}))
+        self.assertEqual(str(caught.exception), "values.duration_s must be a finite number")
+
     def test_rejects_a_metric_that_is_not_a_string(self):
         with self.assertRaises(RecordError) as caught:
             validate_record(changed(MEASUREMENT, metric=["steps"]))
