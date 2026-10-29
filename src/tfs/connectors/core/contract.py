@@ -138,7 +138,11 @@ def to_revision_text(dt: datetime) -> str:
 
 
 def convert(value: float, unit: str) -> tuple[float, str]:
-    """Return value in the unit TFS stores, or raise RecordError for an unknown unit."""
+    """Return value in the unit TFS stores, or raise RecordError for a non-number or unknown unit."""
+    if not _is_finite_number(value):
+        raise RecordError(
+            f"value must be a finite number, got {value!r}. Turn text into a number before converting."
+        )
     if unit not in _UNITS:
         raise RecordError(f"unit {unit!r} is not supported, use one of {', '.join(_UNITS)}")
     target, change = _UNITS[unit]

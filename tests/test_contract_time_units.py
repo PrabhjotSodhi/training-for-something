@@ -107,6 +107,17 @@ class ConvertTests(unittest.TestCase):
             convert(1, "furlong")
         self.assertIn("furlong", str(caught.exception))
 
+    def test_text_and_booleans_are_not_numbers(self):
+        for value, unit in (("90", "min"), (True, "kg")):
+            with self.subTest(value=value):
+                with self.assertRaises(RecordError) as caught:
+                    convert(value, unit)
+                self.assertEqual(
+                    str(caught.exception),
+                    f"value must be a finite number, got {value!r}. "
+                    "Turn text into a number before converting.",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
