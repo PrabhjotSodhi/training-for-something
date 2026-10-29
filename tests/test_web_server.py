@@ -219,8 +219,8 @@ class RoutesTest(ServerTestCase):
 
         self.start(push_handler=handler)
         sock = self.connect()
-        sock.sendall(push("Content-Length: 0"))
         with self.assertLogs(level="DEBUG") as logs:
+            sock.sendall(push("Content-Length: 0"))
             reply = read_all(sock)
             self.check_ping()
             self.finish()
