@@ -20,6 +20,10 @@ def migrate(conn: sqlite3.Connection, migrations_dir: Path | None = None) -> int
     newest = len(files)
     while True:
         current = _user_version(conn)
+        if current < 0:
+            raise sqlite3.DatabaseError(
+                f"This database has an invalid schema number ({current}). Restore a backup."
+            )
         if current > newest:
             raise DatabaseTooNewError(
                 f"This database was made by a newer version of TFS (schema {current}). "
