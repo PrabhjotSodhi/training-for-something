@@ -337,13 +337,12 @@ class MigrateTest(unittest.TestCase):
         conn = self.open()
         # The import system caches what it finds, so put everything back afterwards.
         self.addCleanup(importlib.invalidate_caches)
-        self.addCleanup(vars(tfs.persistence).pop, "sql", None)
+        search_path = [str(package_root), *tfs.persistence.__path__]
         with (
             mock.patch.dict(sys.modules),
-            mock.patch.object(
-                tfs.persistence, "__path__", [str(package_root), *tfs.persistence.__path__]
-            ),
+            mock.patch.dict(vars(tfs.persistence), {"__path__": search_path}),
         ):
+            sys.modules.pop("tfs.persistence.sql", None)
             importlib.invalidate_caches()
             self.assertEqual(migrate(conn), 1)
         self.assertEqual(table_names(conn), {"a"})
@@ -363,17 +362,16 @@ class MigrateTest(unittest.TestCase):
         self.write("0002_b.sql", "CREATE TABLE b (y INTEGER);")
         slow = self.open()
         other = self.open()
-        started = []
+        other_results = []
 
         def let_the_other_process_finish_first(statement: str) -> None:
-            if statement != "PRAGMA user_version" and not started:
-                started.append(statement)
-                self.assertEqual(migrate(other, migrations_dir=self.migrations), 2)
+            if "user_version" not in statement and not other_results:
+                other_results.append(migrate(other, migrations_dir=self.migrations))
 
         slow.set_trace_callback(let_the_other_process_finish_first)
         self.assertEqual(migrate(slow, migrations_dir=self.migrations), 2)
         slow.set_trace_callback(None)
-        self.assertTrue(started)
+        self.assertEqual(other_results, [2])
         self.assertEqual(user_version(slow), 2)
         self.assertEqual(slow.execute("SELECT COUNT(*) FROM a").fetchone()[0], 1)
         self.assertFalse(slow.in_transaction)
