@@ -24,13 +24,15 @@ def push(*header_lines: str, body: bytes = b"") -> bytes:
 
 
 def read_response(sock: socket.socket) -> tuple[int, bytes]:
-    """Read until the server closes the connection. Return the status and body."""
+    """Read until the server closes the connection. Return the status (0 if none) and body."""
     data = b""
     while chunk := sock.recv(65536):
         data += chunk
     if not data:
         return 0, b""
     head, _, body = data.partition(b"\r\n\r\n")
+    if not head.startswith(b"HTTP/"):
+        return 0, data
     return int(head.split(b" ", 2)[1]), body
 
 
@@ -203,13 +205,34 @@ class RoutesTest(ServerTestCase):
         self.check_ping()
 
     def test_a_handler_that_returns_the_wrong_shape_gives_500(self):
-        def handler(name, body, headers):
-            return 200, {"ok": object()}
-
-        self.start(push_handler=handler)
-        with self.assertLogs("tfs.web.server", level="ERROR"):
-            self.assertEqual(self.ask(push("Content-Length: 0"))[0], 500)
+        results = [None, (200, {"ok": object()}), (999, {}), ("200", {})]
+        self.start(push_handler=lambda name, body, headers: results.pop(0))
+        for _ in range(4):
+            with self.assertLogs("tfs.web.server", level="ERROR"):
+                self.assertEqual(self.ask(push("Content-Length: 0"))[0], 500)
         self.check_ping()
+        self.finish()
+        self.assertEqual(self.unhandled, [])
+
+    def test_malformed_requests_are_refused_and_the_server_keeps_serving(self):
+        too_many_headers = raw("GET /ping HTTP/1.1", *[f"X-{n}: 1" for n in range(150)])
+        requests = [
+            b"\x00\x01\x02\r\n\r\n",
+            b"GET\r\n\r\n",
+            raw("GET /ping HTTP/9.9"),
+            raw("GET /" + "a" * 70000 + " HTTP/1.1"),
+            too_many_headers,
+            raw("GET /ping HTTP/1.1", "X-Long: " + "a" * 70000),
+        ]
+        self.start()
+        for request in requests:
+            with self.subTest(request=request[:20]):
+                status = self.ask(request)[0]
+                self.assertTrue(status == 0 or status >= 400)
+        self.check_ping()
+        self.finish()
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.unhandled, [])
 
 
 class FramingTest(ServerTestCase):
@@ -299,7 +322,10 @@ class StalledClientTest(ServerTestCase):
         sock = self.connect()
         sock.sendall(push("Content-Length: 5", body=b"he"))
         self.assertTrue(self.started.wait(SAFETY_TIMEOUT_S))
-        self.finish()
+        closing = threading.Thread(target=self.finish)
+        closing.start()
+        closing.join(SAFETY_TIMEOUT_S)
+        self.assertFalse(closing.is_alive())
         self.assertEqual(self.incomplete, ["x"])
         self.assertEqual(self.calls, [])
 
