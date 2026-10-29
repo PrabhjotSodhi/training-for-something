@@ -3,7 +3,7 @@
 import hashlib
 import re
 import sys
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import NamedTuple
 
 FAMILIES = (
@@ -48,6 +48,28 @@ KINDS = (*TIMED_KINDS, "deleted")
 _INSTANT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 _REVISION = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z")
 _LOCAL_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+_LOCAL_TIME = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [+-]\d{4}")
+
+_UNITS = {
+    "kJ": ("kcal", lambda value: value / 4.184),
+    "kcal": ("kcal", lambda value: value),
+    "Cal": ("kcal", lambda value: value),
+    "lb": ("kg", lambda value: value * 0.45359237),
+    "st": ("kg", lambda value: value * 6.35029318),
+    "g": ("kg", lambda value: value / 1000),
+    "kg": ("kg", lambda value: value),
+    "km": ("m", lambda value: value * 1000),
+    "mi": ("m", lambda value: value * 1609.344),
+    "m": ("m", lambda value: value),
+    "min": ("s", lambda value: value * 60),
+    "s": ("s", lambda value: value),
+    "hr": ("h", lambda value: value),
+    "h": ("h", lambda value: value),
+    "count/min": ("bpm", lambda value: value),
+    "bpm": ("bpm", lambda value: value),
+    "count": ("count", lambda value: value),
+    "ms": ("ms", lambda value: value),
+}
 
 
 class RecordError(ValueError):
@@ -81,6 +103,52 @@ def validate_record(rec: dict) -> dict:
 def record_id(connector: str, stream: str, key: str) -> str:
     """Return the stable id of a record: sha256 hex of connector, stream and key."""
     return hashlib.sha256("\x1f".join((connector, stream, key)).encode("utf-8")).hexdigest()
+
+
+def parse_local_time(text: str) -> datetime:
+    """Parse 'YYYY-MM-DD HH:MM:SS +HHMM' into an aware datetime, or raise ValueError."""
+    if not _LOCAL_TIME.fullmatch(text):
+        raise ValueError(f"time must look like 2026-03-01 07:12:33 +1300, got {text!r}")
+    return datetime.strptime(text, "%Y-%m-%d %H:%M:%S %z")
+
+
+def parse_iso_time(text: str) -> datetime:
+    """Parse ISO 8601 with Z or an offset into an aware datetime, or raise ValueError."""
+    parsed = datetime.fromisoformat(text)
+    if parsed.utcoffset() is None:
+        raise ValueError(f"time needs Z or an offset like +13:00, got {text!r}")
+    return parsed
+
+
+def utc_fields(dt: datetime) -> tuple[str, int, str]:
+    """Return the UTC text, the UTC offset in minutes and the local date of an aware datetime."""
+    offset = _require_aware(dt).utcoffset()
+    return to_utc_text(dt), int(offset.total_seconds() // 60), dt.date().isoformat()
+
+
+def to_utc_text(dt: datetime) -> str:
+    """Return the instant as UTC text without fractional seconds, like 2026-02-28T18:12:33Z."""
+    return _require_aware(dt).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def to_revision_text(dt: datetime) -> str:
+    """Return the instant as UTC text with 3 decimal places, like 2026-02-28T18:12:33.250Z."""
+    utc = _require_aware(dt).astimezone(UTC)
+    return f"{utc:%Y-%m-%dT%H:%M:%S}.{utc.microsecond // 1000:03d}Z"
+
+
+def convert(value: float, unit: str) -> tuple[float, str]:
+    """Return value in the unit TFS stores, or raise RecordError for an unknown unit."""
+    if unit not in _UNITS:
+        raise RecordError(f"unit {unit!r} is not supported, use one of {', '.join(_UNITS)}")
+    target, change = _UNITS[unit]
+    return float(change(value)), target
+
+
+def _require_aware(dt: datetime) -> datetime:
+    if dt.utcoffset() is None:
+        raise ValueError("datetime needs a time zone")
+    return dt
 
 
 def _instant(field: str, value: object, pattern: re.Pattern, example: str) -> datetime:
