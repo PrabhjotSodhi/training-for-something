@@ -23,11 +23,17 @@ def push(*header_lines: str, body: bytes = b"") -> bytes:
     return raw("POST /push/x HTTP/1.1", *header_lines, body=body)
 
 
-def read_response(sock: socket.socket) -> tuple[int, bytes]:
-    """Read until the server closes the connection. Return the status (0 if none) and body."""
+def read_all(sock: socket.socket) -> bytes:
+    """Read until the server closes the connection. Return every byte it sent."""
     data = b""
     while chunk := sock.recv(65536):
         data += chunk
+    return data
+
+
+def read_response(sock: socket.socket) -> tuple[int, bytes]:
+    """Read until the server closes the connection. Return the status (0 if none) and body."""
+    data = read_all(sock)
     if not data:
         return 0, b""
     head, _, body = data.partition(b"\r\n\r\n")
@@ -203,6 +209,30 @@ class RoutesTest(ServerTestCase):
         self.assertEqual(status, 500)
         self.assertNotIn(b"secret-detail", body)
         self.check_ping()
+
+    def test_handler_errors_and_their_causes_never_reach_the_response_or_the_logs(self):
+        token = "tok-invented-7f3a"
+        cause_token = "tok-invented-c91d"
+
+        def handler(name, body, headers):
+            raise RuntimeError(f"failed with {token}") from ValueError(f"caused by {cause_token}")
+
+        self.start(push_handler=handler)
+        sock = self.connect()
+        sock.sendall(push("Content-Length: 0"))
+        with self.assertLogs(level="DEBUG") as logs:
+            reply = read_all(sock)
+            self.check_ping()
+            self.finish()
+        self.assertEqual(reply.split(b" ", 2)[1], b"500")
+        log_text = "\n".join(logs.output)
+        self.assertGreaterEqual(len(logs.records), 1)
+        for secret in (token, cause_token):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret.encode(), reply)
+                self.assertNotIn(secret, log_text)
+        self.assertEqual([record.exc_info for record in logs.records], [None] * len(logs.records))
+        self.assertEqual([record.exc_text for record in logs.records], [None] * len(logs.records))
 
     def test_a_handler_that_returns_the_wrong_shape_gives_500(self):
         results = [None, (200, {"ok": object()}), (999, {}), ("200", {})]
