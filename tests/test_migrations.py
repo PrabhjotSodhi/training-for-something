@@ -131,8 +131,9 @@ class MigrateTest(unittest.TestCase):
         self.write("0000_zero.sql", "CREATE TABLE z (x INTEGER);")
         self.write("0001_a.sql", "CREATE TABLE a (x INTEGER);")
         conn = self.open()
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ValueError) as caught:
             migrate(conn, migrations_dir=self.migrations)
+        self.assertIn("0000_zero.sql", str(caught.exception))
         self.assert_untouched(conn)
 
     def test_a_sql_file_without_a_four_digit_number_raises_value_error(self):
@@ -152,6 +153,13 @@ class MigrateTest(unittest.TestCase):
         conn = self.open()
         self.assertEqual(migrate(conn, migrations_dir=self.migrations), 1)
 
+    def test_an_up_to_date_database_needs_no_write_access(self):
+        self.write("0001_a.sql", "CREATE TABLE a (x INTEGER);")
+        migrate(self.open(), migrations_dir=self.migrations)
+        reader = connect(self.path, role="read_only")
+        self.addCleanup(reader.close)
+        self.assertEqual(migrate(reader, migrations_dir=self.migrations), 1)
+
     def test_a_folder_with_no_files_returns_zero(self):
         conn = self.open()
         self.assertEqual(migrate(conn, migrations_dir=self.migrations), 0)
@@ -164,9 +172,9 @@ class MigrateTest(unittest.TestCase):
         conn.execute("INSERT INTO a VALUES (1)")
         self.write("0002_b.sql", "CREATE TABLE b (y INTEGER); INSERT INTO b VALUES (2);")
         self.write("0003_c.sql", "INSERT INTO b SELECT y + 1 FROM b;")
-        self.write("0010_d.sql", "INSERT INTO b SELECT y * 10 FROM b;")
-        self.assertEqual(migrate(conn, migrations_dir=self.migrations), 10)
-        self.assertEqual(user_version(conn), 10)
+        self.write("0004_d.sql", "INSERT INTO b SELECT y * 10 FROM b;")
+        self.assertEqual(migrate(conn, migrations_dir=self.migrations), 4)
+        self.assertEqual(user_version(conn), 4)
         values = [row[0] for row in conn.execute("SELECT y FROM b ORDER BY y")]
         self.assertEqual(values, [2, 3, 20, 30])
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM a").fetchone()[0], 1)
