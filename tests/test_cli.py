@@ -2,10 +2,14 @@ import contextlib
 import io
 import subprocess
 import sys
+import tempfile
 import unittest
 from importlib.metadata import requires
+from pathlib import Path
+from unittest import mock
 
 import tfs
+import tfs.cli
 from tests import fake_cli_command
 from tfs.cli import main
 
@@ -15,6 +19,12 @@ def run_tfs(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "tfs", *args], capture_output=True, text=True, check=False
     )
+
+
+COMMAND_MODULE = """
+def add_parser(subparsers):
+    subparsers.add_parser("NAME").set_defaults(run=lambda args: 5)
+"""
 
 
 class CliTest(unittest.TestCase):
@@ -36,6 +46,21 @@ class CliTest(unittest.TestCase):
 
     def test_main_runs_a_command_from_the_given_modules(self):
         self.assertEqual(main(["hello"], modules=[fake_cli_command]), 7)
+
+    def test_main_finds_command_modules_in_the_cli_package(self):
+        commands = tempfile.TemporaryDirectory()
+        self.addCleanup(commands.cleanup)
+        for name, command in (("greet", "greet"), ("_private", "secret")):
+            Path(commands.name, f"{name}.py").write_text(
+                COMMAND_MODULE.replace("NAME", command), encoding="utf-8"
+            )
+        self.addCleanup(sys.modules.pop, "tfs.cli.greet", None)
+        self.addCleanup(sys.modules.pop, "tfs.cli._private", None)
+        with mock.patch.object(tfs.cli, "__path__", [commands.name]):
+            self.assertEqual(main(["greet"]), 5)
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
+                main(["secret"])
+        self.assertEqual(raised.exception.code, 2)
 
     def test_main_without_modules_rejects_an_unknown_command(self):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:

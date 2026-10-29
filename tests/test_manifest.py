@@ -114,8 +114,8 @@ class LoadManifestTest(ManifestTestCase):
 class LoadManifestsTest(ManifestTestCase):
     def test_reads_connector_folders_and_skips_core_and_testing(self) -> None:
         self.write_manifest(HEVY, "alpha")
-        (self.folder / "core").mkdir()
-        (self.folder / "testing").mkdir()
+        self.write_manifest(HEVY, "core")
+        self.write_manifest(HEVY, "testing")
         self.assertEqual(load_manifests(root=self.folder), {"alpha": HEVY})
 
     def test_skips_folders_without_a_manifest(self) -> None:
