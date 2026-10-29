@@ -1,8 +1,10 @@
 """App tokens and API keys, kept in the OS password store or a user-only file."""
 
+import contextlib
 import json
 import os
 import sys
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -15,6 +17,10 @@ from tfs import config
 
 SERVICE_NAME = "training-for-something"
 STORE_UNAVAILABLE = "The OS password store is locked or unavailable."
+STORE_NOT_SET_UP = (
+    "The OS password store could not be set up. "
+    "Set TFS_PASSWORD_STORE=file to use a private file instead."
+)
 
 
 class PasswordStoreError(Exception):
@@ -51,11 +57,23 @@ def delete(name: str) -> None:
 def _use_file() -> bool:
     if os.environ.get("TFS_PASSWORD_STORE") == "file":
         return True
-    if not isinstance(keyring.get_keyring(), keyring.backends.fail.Keyring):
+    if not isinstance(_find_backend(), keyring.backends.fail.Keyring):
         return False
     if sys.platform == "win32":
         raise PasswordStoreError("Windows has no OS password store that TFS can use.")
     return True
+
+
+def _find_backend() -> Any:
+    # Finding a backend fails with any kind of error on a bad PYTHON_KEYRING_BACKEND
+    # or a broken plugin. The raise stays outside the suppress block so that no
+    # context holds what the backend said.
+    backend = None
+    with contextlib.suppress(Exception):
+        backend = keyring.get_keyring()
+    if backend is None:
+        raise PasswordStoreError(STORE_NOT_SET_UP)
+    return backend
 
 
 def _ask_os_store(operation: Callable[..., Any], *arguments: str) -> Any:
@@ -93,16 +111,16 @@ def _read_file() -> dict[str, str]:
 def _write_file(secrets: dict[str, str]) -> None:
     path = _secrets_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.unlink(missing_ok=True)
+    # Every write gets its own file, so two writers never touch each other's data.
+    # mkstemp creates the file private, so there is no gap before a mode change.
+    descriptor, name = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+    temporary = Path(name)
     try:
-        # The file is created private. Writing then changing the mode would leave a gap.
-        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             json.dump(secrets, handle)
             handle.flush()
             os.fsync(handle.fileno())
         temporary.replace(path)
-    except OSError:
+    except BaseException:
         temporary.unlink(missing_ok=True)
         raise

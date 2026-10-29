@@ -176,6 +176,59 @@ class FileStoreTest(PasswordStoreTestCase):
         self.assertEqual(password_store.get("hevy:api_key"), "abc")
         self.assertEqual([path.name for path in self.home.iterdir()], ["secrets.json"])
 
+    def test_a_write_that_finishes_inside_another_write_does_not_break_it(self):
+        real_fsync = os.fsync
+        calls = []
+
+        def second_writer_runs_first(descriptor):
+            calls.append(descriptor)
+            if len(calls) == 1:
+                password_store.set("other:token", "xyz")
+            real_fsync(descriptor)
+
+        with mock.patch.object(password_store.os, "fsync", second_writer_runs_first):
+            password_store.set("hevy:api_key", "abc")
+        self.assertEqual(password_store.get("hevy:api_key"), "abc")
+        self.assertEqual([path.name for path in self.home.iterdir()], ["secrets.json"])
+
+    def test_a_write_that_fails_inside_another_write_does_not_break_it(self):
+        real_fsync = os.fsync
+        calls = []
+
+        def second_writer_fails_first(descriptor):
+            calls.append(descriptor)
+            if len(calls) == 1:
+                with (
+                    mock.patch.object(password_store.os, "fsync", side_effect=OSError("disk full")),
+                    self.assertRaises(OSError),
+                ):
+                    password_store.set("other:token", "xyz")
+            real_fsync(descriptor)
+
+        with mock.patch.object(password_store.os, "fsync", second_writer_fails_first):
+            password_store.set("hevy:api_key", "abc")
+        self.assertEqual(
+            json.loads(self.secrets_file.read_text(encoding="utf-8")), {"hevy:api_key": "abc"}
+        )
+        self.assertEqual([path.name for path in self.home.iterdir()], ["secrets.json"])
+
+    def test_a_write_that_stops_half_way_leaves_the_old_file(self):
+        password_store.set("hevy:api_key", "abc")
+        with (
+            mock.patch.object(password_store.json, "dump", side_effect=KeyboardInterrupt),
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            password_store.set("hevy:api_key", "def")
+        self.assertEqual(password_store.get("hevy:api_key"), "abc")
+        self.assertEqual([path.name for path in self.home.iterdir()], ["secrets.json"])
+
+    @unittest.skipIf(sys.platform == "win32", "Windows has no POSIX file modes")
+    def test_the_file_is_private_under_a_permissive_umask(self):
+        old_mask = os.umask(0)
+        self.addCleanup(os.umask, old_mask)
+        password_store.set("hevy:api_key", "abc")
+        self.assertEqual(stat.S_IMODE(self.secrets_file.stat().st_mode), 0o600)
+
 
 class OsPasswordStoreTest(PasswordStoreTestCase):
     def test_values_go_to_the_backend_and_no_file_is_created(self):
@@ -281,6 +334,43 @@ class LockedBackendTest(PasswordStoreTestCase):
         self.assertIsNone(caught.exception.__cause__)
         self.assertIsNone(caught.exception.__context__)
         self.assertFalse(self.secrets_file.exists())
+
+
+class BackendDiscoveryTest(PasswordStoreTestCase):
+    def test_a_discovery_failure_raises_the_same_error_and_writes_no_file(self):
+        failures = (
+            keyring.errors.KeyringError("backend detail abc"),
+            ImportError("backend detail abc"),
+            ValueError("backend detail abc"),
+        )
+        for failure in failures:
+            for call in (
+                lambda: password_store.get("hevy:api_key"),
+                lambda: password_store.set("hevy:api_key", "abc"),
+                lambda: password_store.delete("hevy:api_key"),
+            ):
+                with (
+                    self.subTest(failure=failure),
+                    mock.patch.object(password_store.keyring, "get_keyring", side_effect=failure),
+                    self.assertRaises(PasswordStoreError) as caught,
+                ):
+                    call()
+                self.assertEqual(
+                    str(caught.exception),
+                    "The OS password store could not be set up. "
+                    "Set TFS_PASSWORD_STORE=file to use a private file instead.",
+                )
+                self.assertIsNone(caught.exception.__cause__)
+                self.assertIsNone(caught.exception.__context__)
+        self.assertFalse(self.secrets_file.exists())
+
+    def test_the_file_setting_skips_discovery(self):
+        self.use_file()
+        with mock.patch.object(
+            password_store.keyring, "get_keyring", side_effect=keyring.errors.KeyringError("x")
+        ):
+            password_store.set("hevy:api_key", "abc")
+            self.assertEqual(password_store.get("hevy:api_key"), "abc")
 
 
 if __name__ == "__main__":
