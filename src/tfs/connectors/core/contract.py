@@ -20,6 +20,7 @@ functions.
 
 import hashlib
 import json
+import math
 import re
 import sys
 from datetime import UTC, date, datetime
@@ -155,17 +156,16 @@ def utc_fields(dt: datetime) -> tuple[str, int, str]:
 
 def to_utc_text(dt: datetime) -> str:
     """Return the instant as UTC text without fractional seconds, like 2026-02-28T18:12:33Z."""
-    return _require_aware(dt).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return _utc_isoformat(dt, "seconds")
 
 
 def to_revision_text(dt: datetime) -> str:
     """Return the instant as UTC text with 3 decimal places, like 2026-02-28T18:12:33.250Z."""
-    utc = _require_aware(dt).astimezone(UTC)
-    return f"{utc:%Y-%m-%dT%H:%M:%S}.{utc.microsecond // 1000:03d}Z"
+    return _utc_isoformat(dt, "milliseconds")
 
 
 def convert(value: float, unit: str) -> tuple[float, str]:
-    """Return value in the unit TFS stores, or raise RecordError for a non-number or unknown unit."""
+    """Return value in the unit TFS stores, or raise RecordError for a bad number, an unknown unit or a result too large."""
     if not _is_finite_number(value):
         raise RecordError(
             f"value must be a finite number, got {value!r}. Turn text into a number before converting."
@@ -173,7 +173,18 @@ def convert(value: float, unit: str) -> tuple[float, str]:
     if unit not in _UNITS:
         raise RecordError(f"unit {unit!r} is not supported, use one of {', '.join(_UNITS)}")
     target, change = _UNITS[unit]
-    return float(change(value)), target
+    try:
+        converted = float(change(value))
+    except OverflowError:
+        converted = math.inf
+    if not math.isfinite(converted):
+        raise RecordError(f"{unit} value is too large to convert to {target}")
+    return converted, target
+
+
+def _utc_isoformat(dt: datetime, timespec: str) -> str:
+    # The contract needs four digit years. strftime("%Y") drops the padding on glibc.
+    return _require_aware(dt).astimezone(UTC).isoformat(timespec=timespec).replace("+00:00", "Z")
 
 
 def _require_aware(dt: datetime) -> datetime:

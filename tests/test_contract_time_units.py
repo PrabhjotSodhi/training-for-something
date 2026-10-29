@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 from tfs.connectors.core.contract import (
     RecordError,
@@ -9,6 +9,7 @@ from tfs.connectors.core.contract import (
     to_revision_text,
     to_utc_text,
     utc_fields,
+    validate_record,
 )
 
 
@@ -61,6 +62,25 @@ class TimeTests(unittest.TestCase):
         self.assertEqual(to_utc_text(parsed), "2026-02-28T18:12:33Z")
         self.assertEqual(to_revision_text(parsed), "2026-02-28T18:12:33.999Z")
 
+    def test_years_before_1000_keep_four_digits(self):
+        first = datetime(1, 1, 1, tzinfo=UTC)
+        self.assertEqual(to_utc_text(first), "0001-01-01T00:00:00Z")
+        self.assertEqual(
+            to_revision_text(first.replace(microsecond=250000)), "0001-01-01T00:00:00.250Z"
+        )
+        self.assertEqual(
+            to_utc_text(datetime(999, 12, 31, 23, 59, 59, tzinfo=UTC)), "0999-12-31T23:59:59Z"
+        )
+
+    def test_text_for_early_years_passes_the_record_check(self):
+        moment = datetime(1, 1, 1, tzinfo=UTC)
+        validate_record(
+            {"kind": "event", "stream": "s", "key": "k", "start_utc": to_utc_text(moment)}
+        )
+        validate_record(
+            {"kind": "deleted", "stream": "s", "key": "k", "revision_at": to_revision_text(moment)}
+        )
+
     def test_naive_datetimes_are_rejected(self):
         naive = datetime.fromisoformat("2026-03-01T07:12:33")
         for function in (utc_fields, to_utc_text, to_revision_text):
@@ -106,6 +126,13 @@ class ConvertTests(unittest.TestCase):
         with self.assertRaises(RecordError) as caught:
             convert(1, "furlong")
         self.assertIn("furlong", str(caught.exception))
+
+    def test_results_that_overflow_are_rejected(self):
+        for value, unit in ((10**308, "min"), (1e308, "min"), (1e308, "km"), (-1e308, "km")):
+            with self.subTest(value=value, unit=unit):
+                with self.assertRaises(RecordError) as caught:
+                    convert(value, unit)
+                self.assertIn("too large", str(caught.exception))
 
     def test_text_and_booleans_are_not_numbers(self):
         for value, unit in (("90", "min"), (True, "kg")):
