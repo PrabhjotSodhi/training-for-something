@@ -56,6 +56,7 @@ class CliTest(unittest.TestCase):
             )
         self.addCleanup(sys.modules.pop, "tfs.cli.greet", None)
         self.addCleanup(sys.modules.pop, "tfs.cli._private", None)
+        self.addCleanup(vars(tfs.cli).pop, "greet", None)
         with mock.patch.object(tfs.cli, "__path__", [commands.name]):
             self.assertEqual(main(["greet"]), 5)
             with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:

@@ -129,9 +129,10 @@ class ConvertTests(unittest.TestCase):
 
     def test_results_that_overflow_are_rejected(self):
         for value, unit in ((10**308, "min"), (1e308, "min"), (1e308, "km"), (-1e308, "km")):
-            with self.subTest(value=value, unit=unit), self.assertRaises(RecordError) as caught:
-                convert(value, unit)
-            self.assertIn("too large", str(caught.exception))
+            with self.subTest(value=value, unit=unit):
+                with self.assertRaises(RecordError) as caught:
+                    convert(value, unit)
+                self.assertIn("too large", str(caught.exception))
 
     def test_text_and_booleans_are_not_numbers(self):
         for value, unit in (("90", "min"), (True, "kg")):
