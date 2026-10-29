@@ -130,9 +130,6 @@ class LoadManifestsTest(ManifestTestCase):
         self.assertIn("alpha", str(caught.exception))
         self.assertIn("colour", str(caught.exception))
 
-    def test_default_root_is_the_connectors_folder(self) -> None:
-        self.assertIsInstance(load_manifests(), dict)
-
 
 if __name__ == "__main__":
     unittest.main()

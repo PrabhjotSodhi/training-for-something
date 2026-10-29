@@ -1,7 +1,8 @@
-"""The record shapes every connector returns and the checks the engine runs on them.
+"""The record shapes every connector returns, the manifest every connector holds, and the
+checks the engine runs on both.
 
 A connector is a folder with a `manifest.json` and a module. The module may provide these
-functions. The engine calls only the ones the manifest says the connector supports.
+functions.
 
 `read(path: str, fmt: str, out_path: str) -> dict`
     Writes the records from one raw file to `out_path` as JSON Lines. Returns
