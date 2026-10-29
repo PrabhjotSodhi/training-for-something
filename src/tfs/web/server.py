@@ -41,6 +41,7 @@ class _Body(io.RawIOBase):
         super().__init__()
         self._source = source
         self._remaining = length
+        self.stopped_early = False
 
     def readable(self) -> bool:
         """Say that the body can be read."""
@@ -54,10 +55,12 @@ class _Body(io.RawIOBase):
         try:
             count = self._source.readinto1(view)
         except OSError as error:
+            self.stopped_early = True
             raise IncompleteBodyError(
                 "The client stopped sending before the whole body arrived."
             ) from error
         if count == 0:
+            self.stopped_early = True
             raise IncompleteBodyError(
                 "The client closed the connection before the whole body arrived."
             )
@@ -126,16 +129,22 @@ class _Handler(BaseHTTPRequestHandler):
             self._refuse(refusal.status, str(refusal))
             return
         body = _Body(self.rfile, length)
-        try:
-            status, payload = self.server.push_handler(match["name"], body, self.headers)
-            reply = (HTTPStatus(status), json.dumps(payload).encode())
-        except IncompleteBodyError:
-            self._refuse(400, "The body stopped before all Content-Length bytes arrived.")
-        except Exception:
-            logger.exception("The push handler failed.")
-            self._refuse(500, "The push could not be handled. See the TFS log.")
-        else:
+        reply = self._ask_push_handler(match["name"], body)
+        if reply is not None:
             self._send(*reply, JSON_TYPE)
+        elif body.stopped_early:
+            self._refuse(400, "The body stopped before all Content-Length bytes arrived.")
+        else:
+            logger.error("The push handler failed.")
+            self._refuse(500, "The push could not be handled. See the TFS log.")
+
+    def _ask_push_handler(self, name: str, body: _Body) -> tuple[HTTPStatus, bytes] | None:
+        # Handler errors may echo a token or header. Nothing is logged or raised from inside
+        # the block, so no message, cause or traceback leaves it.
+        with contextlib.suppress(Exception):
+            status, payload = self.server.push_handler(name, body, self.headers)
+            return HTTPStatus(status), json.dumps(payload).encode()
+        return None
 
     def _refuse(self, status: int, message: str) -> None:
         self._send(status, json.dumps({"ok": False, "error": message}).encode(), JSON_TYPE)
