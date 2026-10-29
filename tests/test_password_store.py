@@ -149,12 +149,23 @@ class FileStoreTest(PasswordStoreTestCase):
         self.assertNotIn("hevy-secret-value", str(caught.exception))
         self.assertIn("secrets.json", str(caught.exception))
 
+    def test_a_file_that_is_not_text_is_an_error_that_carries_no_content(self):
+        self.secrets_file.write_bytes(b"\xff")
+        with self.assertRaises(PasswordStoreError) as caught:
+            password_store.get("hevy:api_key")
+        self.assertEqual(
+            str(caught.exception),
+            f"The password file {self.secrets_file} is damaged. "
+            "Delete it and connect your apps again.",
+        )
+        self.assertIsNone(caught.exception.__context__)
+        self.assertIsNone(caught.exception.__cause__)
+
     def test_a_file_that_is_not_a_json_object_is_an_error(self):
         self.secrets_file.write_text(json.dumps(["abc"]), encoding="utf-8")
         with self.assertRaises(PasswordStoreError):
             password_store.get("hevy:api_key")
 
-    @unittest.skipIf(sys.platform == "win32", "Windows has no POSIX file modes")
     def test_a_failed_write_leaves_the_old_file_and_no_temporary_file(self):
         password_store.set("hevy:api_key", "abc")
         with (
@@ -200,17 +211,19 @@ class OsPasswordStoreTest(PasswordStoreTestCase):
 class FailBackendTest(PasswordStoreTestCase):
     def test_values_go_to_the_file(self):
         keyring.set_keyring(keyring.backends.fail.Keyring())
-        password_store.set("hevy:api_key", "abc")
-        self.assertEqual(password_store.get("hevy:api_key"), "abc")
+        with mock.patch.object(password_store.sys, "platform", "linux"):
+            password_store.set("hevy:api_key", "abc")
+            self.assertEqual(password_store.get("hevy:api_key"), "abc")
         self.assertEqual(
             json.loads(self.secrets_file.read_text(encoding="utf-8")), {"hevy:api_key": "abc"}
         )
 
     def test_delete_removes_the_value_from_the_file(self):
         keyring.set_keyring(keyring.backends.fail.Keyring())
-        password_store.set("hevy:api_key", "abc")
-        password_store.delete("hevy:api_key")
-        self.assertIsNone(password_store.get("hevy:api_key"))
+        with mock.patch.object(password_store.sys, "platform", "linux"):
+            password_store.set("hevy:api_key", "abc")
+            password_store.delete("hevy:api_key")
+            self.assertIsNone(password_store.get("hevy:api_key"))
 
     def test_windows_without_a_backend_is_an_error_and_writes_no_file(self):
         keyring.set_keyring(keyring.backends.fail.Keyring())
@@ -266,7 +279,7 @@ class LockedBackendTest(PasswordStoreTestCase):
             password_store.set("hevy:api_key", "abc")
         self.assertEqual(str(caught.exception), LOCKED_MESSAGE)
         self.assertIsNone(caught.exception.__cause__)
-        self.assertTrue(caught.exception.__suppress_context__)
+        self.assertIsNone(caught.exception.__context__)
         self.assertFalse(self.secrets_file.exists())
 
 

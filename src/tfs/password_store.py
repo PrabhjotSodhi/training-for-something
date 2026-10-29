@@ -59,11 +59,13 @@ def _use_file() -> bool:
 
 
 def _ask_os_store(operation: Callable[..., Any], *arguments: str) -> Any:
-    # The keyring error is dropped on purpose: backends may echo what they were given.
+    # The keyring error must not stay on the raised error's context: backends may echo
+    # what they were given. So the raise happens after the except block, not inside it.
     try:
         return operation(*arguments)
     except keyring.errors.KeyringError:
-        raise PasswordStoreError(STORE_UNAVAILABLE) from None
+        pass
+    raise PasswordStoreError(STORE_UNAVAILABLE)
 
 
 def _secrets_path() -> Path:
@@ -72,13 +74,12 @@ def _secrets_path() -> Path:
 
 def _read_file() -> dict[str, str]:
     path = _secrets_path()
+    # Raised after the except block: a UnicodeDecodeError holds every byte of the file.
     try:
-        text = path.read_text(encoding="utf-8")
+        secrets = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return {}
-    try:
-        secrets = json.loads(text)
-    except json.JSONDecodeError:
+    except ValueError:
         secrets = None
     if not isinstance(secrets, dict) or not all(
         isinstance(value, str) for value in secrets.values()
