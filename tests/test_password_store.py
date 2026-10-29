@@ -158,7 +158,7 @@ class FileStoreTest(PasswordStoreTestCase):
     def test_a_failed_write_leaves_the_old_file_and_no_temporary_file(self):
         password_store.set("hevy:api_key", "abc")
         with (
-            mock.patch("tfs.password_store.os.replace", side_effect=OSError("disk full")),
+            mock.patch.object(Path, "replace", side_effect=OSError("disk full")),
             self.assertRaises(OSError),
         ):
             password_store.set("hevy:api_key", "def")
