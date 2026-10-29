@@ -360,8 +360,7 @@ class BackendDiscoveryTest(PasswordStoreTestCase):
                     "The OS password store could not be set up. "
                     "Set TFS_PASSWORD_STORE=file to use a private file instead.",
                 )
-                self.assertIsNone(caught.exception.__cause__)
-                self.assertIsNone(caught.exception.__context__)
+                self.assertIs(caught.exception.__cause__, failure)
         self.assertFalse(self.secrets_file.exists())
 
     def test_the_file_setting_skips_discovery(self):

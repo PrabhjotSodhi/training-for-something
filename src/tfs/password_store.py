@@ -1,6 +1,5 @@
 """App tokens and API keys, kept in the OS password store or a user-only file."""
 
-import contextlib
 import json
 import os
 import sys
@@ -65,15 +64,10 @@ def _use_file() -> bool:
 
 
 def _find_backend() -> Any:
-    # Finding a backend fails with any kind of error on a bad PYTHON_KEYRING_BACKEND
-    # or a broken plugin. The raise stays outside the suppress block so that no
-    # context holds what the backend said.
-    backend = None
-    with contextlib.suppress(Exception):
-        backend = keyring.get_keyring()
-    if backend is None:
-        raise PasswordStoreError(STORE_NOT_SET_UP)
-    return backend
+    try:
+        return keyring.get_keyring()
+    except Exception as error:
+        raise PasswordStoreError(STORE_NOT_SET_UP) from error
 
 
 def _ask_os_store(operation: Callable[..., Any], *arguments: str) -> Any:
