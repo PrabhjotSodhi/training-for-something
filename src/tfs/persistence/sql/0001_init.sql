@@ -1,5 +1,5 @@
 CREATE TABLE files (
-  sha256          TEXT PRIMARY KEY,
+  sha256          TEXT NOT NULL PRIMARY KEY,
   arrival_seq     INTEGER NOT NULL UNIQUE,
   connector       TEXT NOT NULL,
   format          TEXT NOT NULL,
@@ -13,7 +13,7 @@ CREATE TABLE files (
 );
 
 CREATE TABLE sources (
-  connector         TEXT PRIMARY KEY,
+  connector         TEXT NOT NULL PRIMARY KEY,
   enabled           INTEGER NOT NULL DEFAULT 1,
   cursor_json       TEXT,
   last_attempt_at   TEXT,
@@ -23,12 +23,12 @@ CREATE TABLE sources (
 );
 
 CREATE TABLE source_records (
-  id              TEXT PRIMARY KEY,
+  id              TEXT NOT NULL PRIMARY KEY,
   connector       TEXT NOT NULL,
   stream          TEXT NOT NULL,
   key             TEXT NOT NULL,
   kind            TEXT NOT NULL CHECK (kind IN ('session', 'measurement', 'event', 'document')),
-  revision_at     TEXT,
+  revision_at     TEXT NOT NULL,
   arrival_seq     INTEGER NOT NULL,
   file_sha256     TEXT NOT NULL REFERENCES files (sha256),
   reader_version  TEXT NOT NULL,
@@ -54,7 +54,7 @@ CREATE TABLE source_deletes (
   connector    TEXT NOT NULL,
   stream       TEXT NOT NULL,
   key          TEXT NOT NULL,
-  revision_at  TEXT,
+  revision_at  TEXT NOT NULL,
   arrival_seq  INTEGER NOT NULL,
   PRIMARY KEY (connector, stream, key)
 );
@@ -74,7 +74,7 @@ CREATE TABLE session_parts (
 );
 
 CREATE TABLE session_groups (
-  id           TEXT PRIMARY KEY,
+  id           TEXT NOT NULL PRIMARY KEY,
   local_date   TEXT NOT NULL,
   family       TEXT,
   start_utc    TEXT NOT NULL,
@@ -99,5 +99,5 @@ CREATE TABLE day_facts (
 );
 
 CREATE TABLE rebuild_dates (
-  local_date  TEXT PRIMARY KEY
+  local_date  TEXT NOT NULL PRIMARY KEY
 );
