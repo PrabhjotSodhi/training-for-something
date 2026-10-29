@@ -1,9 +1,28 @@
-"""The record shapes every connector returns and the checks the engine runs on them."""
+"""The record shapes every connector returns and the checks the engine runs on them.
+
+A connector is a folder with a `manifest.json` and a module. The module may provide these
+functions. The engine calls only the ones the manifest says the connector supports.
+
+`read(path: str, fmt: str, out_path: str) -> dict`
+    Writes the records from one raw file to `out_path` as JSON Lines. Returns
+    `{"status": "ok" | "partial" | "unreadable", "count": int, "message": str | None}`.
+
+`fetch(cursor: dict | None, secrets: dict, out_dir: str, http, now: str) -> dict`
+    Downloads new raw files into `out_dir`. Returns `{"files": [{"path", "fmt", "ext"}],
+    "cursor": dict | None, "auth_failed": bool, "wait_until": str | None}`.
+
+`connect(answers: dict) -> dict`
+    Turns what the user typed into `{"secrets": {...}}` for the engine to store.
+
+`send` arrives in 0.3.
+"""
 
 import hashlib
+import json
 import re
 import sys
 from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import NamedTuple
 
 FAMILIES = (
@@ -72,8 +91,15 @@ _UNITS = {
 }
 
 
+_NOT_CONNECTORS = ("core", "testing")
+
+
 class RecordError(ValueError):
     """A record does not match the contract. The message says which field and why."""
+
+
+class ManifestError(ValueError):
+    """A manifest does not match the contract. The message says which field and why."""
 
 
 def validate_record(rec: dict) -> dict:
@@ -237,3 +263,96 @@ def _check_session(rec: dict) -> None:
             raise RecordError("each item in parts needs a whole-number seq")
         if not isinstance(part.get("part_kind"), str):
             raise RecordError("each item in parts needs a string part_kind")
+
+
+def load_manifest(path: Path | str) -> dict:
+    """Read one manifest.json and return it, or raise ManifestError naming the bad field."""
+    path = Path(path)
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise ManifestError(f"{path}: cannot read the file: {error}") from error
+    except ValueError as error:
+        raise ManifestError(f"{path}: not valid JSON: {error}") from error
+    try:
+        _check_object("manifest", manifest, _MANIFEST_FIELDS)
+    except ManifestError as error:
+        raise ManifestError(f"{path}: {error}") from error
+    return manifest
+
+
+def load_manifests(root: Path | None = None) -> dict[str, dict]:
+    """Read every <root>/<name>/manifest.json, except core and testing, keyed by folder name."""
+    root = Path(__file__).resolve().parent.parent if root is None else root
+    return {
+        folder.name: load_manifest(folder / "manifest.json")
+        for folder in sorted(root.iterdir())
+        if folder.is_dir()
+        and folder.name not in _NOT_CONNECTORS
+        and (folder / "manifest.json").is_file()
+    }
+
+
+def _check_object(name: str, value: object, checks: dict) -> None:
+    if not isinstance(value, dict):
+        raise ManifestError(f"{name} must be an object")
+    prefix = "" if name == "manifest" else f"{name}."
+    for field in checks:
+        if field not in value:
+            raise ManifestError(f"{prefix}{field} is missing")
+    for field in value:
+        if field not in checks:
+            raise ManifestError(f"{prefix}{field} is not a manifest field")
+    for field, check in checks.items():
+        check(f"{prefix}{field}", value[field])
+
+
+def _check_text(name: str, value: object) -> None:
+    if not isinstance(value, str):
+        raise ManifestError(f"{name} must be text")
+
+
+def _check_flag(name: str, value: object) -> None:
+    if not isinstance(value, bool):
+        raise ManifestError(f"{name} must be true or false")
+
+
+def _check_list(name: str, value: object) -> list:
+    if not isinstance(value, list):
+        raise ManifestError(f"{name} must be a list")
+    return value
+
+
+def _check_text_list(name: str, value: object) -> None:
+    for item in _check_list(name, value):
+        _check_text(name, item)
+
+
+def _check_hours(name: str, value: object) -> None:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise ManifestError(f"{name} must be a whole number above 0")
+
+
+def _check_families(name: str, value: object) -> None:
+    for item in _check_list(name, value):
+        if item not in FAMILIES:
+            raise ManifestError(f"{name} holds {item!r}, use only {', '.join(FAMILIES)}")
+
+
+def _check_asks(name: str, value: object) -> None:
+    for index, ask in enumerate(_check_list(name, value)):
+        _check_object(f"{name}[{index}]", ask, _ASK_FIELDS)
+
+
+_ROUTE_FIELDS = {"fetch": _check_flag, "push": _check_flag, "files": _check_text_list}
+_ASK_FIELDS = {"key": _check_text, "label": _check_text, "secret": _check_flag}
+_MANIFEST_FIELDS = {
+    "label": _check_text,
+    "about": _check_text,
+    "routes": lambda name, value: _check_object(name, value, _ROUTE_FIELDS),
+    "asks": _check_asks,
+    "stale_after_hours": _check_hours,
+    "app_ids": _check_text_list,
+    "notices_deletes": _check_flag,
+    "sends": _check_families,
+}
