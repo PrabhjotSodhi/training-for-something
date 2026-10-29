@@ -1,5 +1,6 @@
 """App tokens and API keys, kept in the OS password store or a user-only file."""
 
+import contextlib
 import json
 import os
 import sys
@@ -10,7 +11,6 @@ from typing import Any
 
 import keyring
 import keyring.backends.fail
-import keyring.errors
 
 from tfs import config
 
@@ -71,12 +71,11 @@ def _find_backend() -> Any:
 
 
 def _ask_os_store(operation: Callable[..., Any], *arguments: str) -> Any:
-    # The keyring error must not stay on the raised error's context: backends may echo
-    # what they were given. So the raise happens after the except block, not inside it.
-    try:
+    # Backends raise many error types and may echo what they were given, for example a
+    # UnicodeDecodeError that holds the secret. So the raise happens after the block,
+    # which leaves no cause or context on the raised error.
+    with contextlib.suppress(Exception):
         return operation(*arguments)
-    except keyring.errors.KeyringError:
-        pass
     raise PasswordStoreError(STORE_UNAVAILABLE)
 
 
@@ -91,7 +90,7 @@ def _read_file() -> dict[str, str]:
         secrets = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return {}
-    except ValueError:
+    except (ValueError, RecursionError):
         secrets = None
     if not isinstance(secrets, dict) or not all(
         isinstance(value, str) for value in secrets.values()

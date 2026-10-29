@@ -166,6 +166,26 @@ class FileStoreTest(PasswordStoreTestCase):
         with self.assertRaises(PasswordStoreError):
             password_store.get("hevy:api_key")
 
+    def test_a_file_nested_too_deep_to_read_is_a_damaged_file_error(self):
+        self.secrets_file.write_text("[" * 100000, encoding="utf-8")
+        with self.assertRaises(PasswordStoreError) as caught:
+            password_store.get("hevy:api_key")
+        self.assertEqual(
+            str(caught.exception),
+            f"The password file {self.secrets_file} is damaged. "
+            "Delete it and connect your apps again.",
+        )
+
+    def test_a_file_with_a_value_that_is_not_text_is_a_damaged_file_error(self):
+        self.secrets_file.write_text(json.dumps({"a": 1}), encoding="utf-8")
+        with self.assertRaises(PasswordStoreError) as caught:
+            password_store.get("a")
+        self.assertEqual(
+            str(caught.exception),
+            f"The password file {self.secrets_file} is damaged. "
+            "Delete it and connect your apps again.",
+        )
+
     def test_a_failed_write_leaves_the_old_file_and_no_temporary_file(self):
         password_store.set("hevy:api_key", "abc")
         with (
@@ -333,6 +353,31 @@ class LockedBackendTest(PasswordStoreTestCase):
         self.assertEqual(str(caught.exception), LOCKED_MESSAGE)
         self.assertIsNone(caught.exception.__cause__)
         self.assertIsNone(caught.exception.__context__)
+        self.assertFalse(self.secrets_file.exists())
+
+    def test_a_read_error_that_holds_the_secret_bytes_raises_the_same_error(self):
+        class UndecodableKeyring(MemoryKeyring):
+            def get_password(self, service, username):
+                return b"made-up-secret\xff".decode("utf-8")
+
+        keyring.set_keyring(UndecodableKeyring())
+        with self.assertRaises(PasswordStoreError) as caught:
+            password_store.get("hevy:api_key")
+        self.assertEqual(str(caught.exception), LOCKED_MESSAGE)
+        self.assertIsNone(caught.exception.__context__)
+        self.assertIsNone(caught.exception.__cause__)
+
+    def test_a_write_error_that_is_not_a_keyring_error_raises_the_same_error(self):
+        class OsErrorKeyring(MemoryKeyring):
+            def set_password(self, service, username, password):
+                raise OSError(1783, "The stub received bad data.")
+
+        keyring.set_keyring(OsErrorKeyring())
+        with self.assertRaises(PasswordStoreError) as caught:
+            password_store.set("hevy:api_key", "abc")
+        self.assertEqual(str(caught.exception), LOCKED_MESSAGE)
+        self.assertIsNone(caught.exception.__context__)
+        self.assertIsNone(caught.exception.__cause__)
         self.assertFalse(self.secrets_file.exists())
 
 
