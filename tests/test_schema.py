@@ -138,6 +138,7 @@ RECORD = {
     "stream": "workouts",
     "key": "w1",
     "kind": "session",
+    "revision_at": "2026-10-20T19:06:12.000Z",
     "arrival_seq": 1,
     "file_sha256": FILE["sha256"],
     "reader_version": "abc123",
@@ -146,7 +147,13 @@ RECORD = {
     "values_json": "{}",
 }
 
-DELETE = {"connector": "hevy", "stream": "workouts", "key": "w1", "arrival_seq": 2}
+DELETE = {
+    "connector": "hevy",
+    "stream": "workouts",
+    "key": "w1",
+    "revision_at": "2026-10-20T19:06:13.000Z",
+    "arrival_seq": 2,
+}
 PART = {"record_id": "r1", "seq": 0, "part_kind": "set"}
 GROUP = {
     "id": "g1",
@@ -180,6 +187,7 @@ NOT_NULL = {
             "stream",
             "key",
             "kind",
+            "revision_at",
             "arrival_seq",
             "file_sha256",
             "reader_version",
@@ -188,7 +196,7 @@ NOT_NULL = {
             "values_json",
         ],
     ),
-    "source_deletes": (DELETE, ["connector", "stream", "key", "arrival_seq"]),
+    "source_deletes": (DELETE, ["connector", "stream", "key", "revision_at", "arrival_seq"]),
     "session_parts": (PART, ["record_id", "seq", "part_kind"]),
     "session_groups": (
         {**GROUP, "id": "g9"},
@@ -396,6 +404,25 @@ class SchemaTest(unittest.TestCase):
                 ):
                     insert(self.conn, table, {**row, column: None})
             self.conn.execute("RELEASE probe")
+
+    def test_the_key_columns_and_revision_columns_refuse_null(self):
+        self.add_file()
+        cases = [
+            ("files", {**FILE, "sha256": None, "arrival_seq": 7}),
+            ("sources", {**SOURCE, "connector": None}),
+            ("source_records", {**RECORD, "id": None, "key": "w7"}),
+            ("session_groups", {**GROUP, "id": None}),
+            ("rebuild_dates", {"local_date": None}),
+            ("source_records", {**RECORD, "id": "r8", "key": "w8", "revision_at": None}),
+            ("source_deletes", {**DELETE, "revision_at": None}),
+        ]
+        for table, row in cases:
+            column = next(name for name, value in row.items() if value is None)
+            with (
+                self.subTest(table=table, column=column),
+                self.assertRaises(sqlite3.IntegrityError),
+            ):
+                insert(self.conn, table, row)
 
     def test_a_delete_notice_is_unique_per_connector_stream_and_key(self):
         insert(self.conn, "source_deletes", DELETE)
