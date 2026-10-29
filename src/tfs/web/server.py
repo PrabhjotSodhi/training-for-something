@@ -107,14 +107,14 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args) -> None:
         """Write no log lines. They would carry client addresses and request lines."""
 
-    def _get(self) -> None:
+    def do_GET(self) -> None:
         """Answer /ping."""
         if self.path == "/ping":
             self._send(200, b"tfs", "text/plain; charset=utf-8")
         else:
             self._refuse(404, "Nothing is served at this address.")
 
-    def _post(self) -> None:
+    def do_POST(self) -> None:
         """Pass a well-framed push to the push handler."""
         match = PUSH_PATH.fullmatch(self.path)
         if match is None:
@@ -146,11 +146,6 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
-
-
-# http.server finds its handlers by the names do_GET and do_POST.
-_Handler.do_GET = _Handler._get
-_Handler.do_POST = _Handler._post
 
 
 class _PushServer(ThreadingHTTPServer):
