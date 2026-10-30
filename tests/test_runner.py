@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -10,6 +11,7 @@ from tfs.connectors.core import runner
 from tfs.connectors.core.contract import validate_record
 from tfs.connectors.core.runner import (
     ConnectorUserError,
+    RunnerFailedError,
     RunnerTimeoutError,
     http_get,
     reader_version,
@@ -25,6 +27,16 @@ class RunTest(unittest.TestCase):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.folder = Path(folder.name)
+        self.real_popen = subprocess.Popen
+        self.children = []
+
+        def remember(*args: object, **kwargs: object) -> subprocess.Popen:
+            self.children.append(self.real_popen(*args, **kwargs))
+            return self.children[-1]
+
+        patch = mock.patch.object(runner.subprocess, "Popen", remember)
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def test_read_returns_the_result_and_writes_the_records_file(self) -> None:
         out_path = self.folder / "out.jsonl"
@@ -36,22 +48,25 @@ class RunTest(unittest.TestCase):
         validate_record(json.loads(lines[0]))
 
     def test_a_stuck_connector_is_killed_and_reaped_at_the_deadline(self) -> None:
-        children = []
-        real_popen = subprocess.Popen
+        with self.assertRaises(RunnerTimeoutError):
+            run("fake_connector", "send", {}, timeout_s=0.5, module=FAKE)
+        self.assertNotIn(self.children[0].returncode, (None, 0))
 
-        def remember(*args: object, **kwargs: object) -> subprocess.Popen:
-            children.append(real_popen(*args, **kwargs))
-            return children[-1]
+    def test_an_interrupted_wait_still_kills_and_reaps_the_child(self) -> None:
+        def interrupted(child: subprocess.Popen, *args: object, **kwargs: object) -> None:
+            child._sigint_wait_secs = 0  # what communicate leaves behind after a real Ctrl+C
+            raise KeyboardInterrupt
 
         with (
-            mock.patch.object(runner.subprocess, "Popen", remember),
-            self.assertRaises(RunnerTimeoutError),
+            mock.patch.object(self.real_popen, "communicate", interrupted),
+            self.assertRaises(KeyboardInterrupt),
         ):
-            run("fake_connector", "send", {}, timeout_s=0.5, module=FAKE)
-        self.assertEqual(len(children), 1)
-        self.assertIsNotNone(children[0].returncode)
+            run("fake_connector", "send", {}, timeout_s=10, module=FAKE)
+        self.assertNotIn(self.children[0].returncode, (None, 0))
 
-    def test_a_user_error_hides_the_secret_and_a_missing_function_is_unsupported(self) -> None:
+    def test_a_user_error_or_crash_hides_the_secret_and_a_missing_function_is_unsupported(
+        self,
+    ) -> None:
         payload = {"answers": {"api_key": "s3cret"}}
         with self.assertRaises(ConnectorUserError) as caught:
             run("fake_connector", "connect", payload, timeout_s=10, module=FAKE)
@@ -59,6 +74,29 @@ class RunTest(unittest.TestCase):
         self.assertEqual(
             run("fake_connector", "fetch", {}, timeout_s=10, module=FAKE), {"unsupported": True}
         )
+        for secret in (
+            "ab\\cd99",
+            "p\u00e4ssw\u00f6rd77",
+            "\n".join(f"LINE{n}" for n in range(30)),
+        ):
+            payload = {"mode": "leak", "secrets": {"key": secret}}
+            with self.subTest(secret=secret):
+                with (
+                    mock.patch.dict(os.environ, {"PYTHONIOENCODING": "cp1252"}),
+                    self.assertRaises(RunnerFailedError) as caught,
+                ):
+                    run("fake_connector", "send", payload, timeout_s=10, module=FAKE)
+                message = str(caught.exception)
+                self.assertIn("[secret]", message)
+                for form in (*secret.splitlines(), repr(secret)[1:-1]):
+                    self.assertNotIn(form, message)
+
+    def test_output_that_is_not_a_json_object_fails_with_the_stderr_tail(self) -> None:
+        for mode in ("list", "deep"):
+            with self.subTest(mode=mode):
+                with self.assertRaises(RunnerFailedError) as caught:
+                    run("fake_connector", "send", {"mode": mode}, timeout_s=10, module=FAKE)
+                self.assertTrue(str(caught.exception).endswith("\nwhy it broke"))
 
     def test_a_bad_connector_name_or_operation_is_refused(self) -> None:
         for connector, op in (
@@ -92,6 +130,10 @@ class ReaderVersionTest(unittest.TestCase):
                 handle.write("\n")
             versions.append(reader_version(folder=copy))
         self.assertEqual(len(set(versions)), len(versions))
+
+    def test_a_connector_folder_that_does_not_exist_is_refused(self) -> None:
+        with self.assertRaises(ValueError):
+            reader_version("no_such_connector")
 
 
 class HttpGetTest(unittest.TestCase):

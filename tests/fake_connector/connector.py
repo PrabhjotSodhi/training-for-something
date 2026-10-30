@@ -1,4 +1,5 @@
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -26,9 +27,16 @@ def read(path: str, fmt: str, out_path: str) -> dict:
     return {"status": "ok", "count": 1, "message": None}
 
 
-def send(**_: object) -> dict:
-    time.sleep(30)
-    return {}
+def send(mode: str = "stuck", secrets: dict | None = None) -> list:
+    if mode == "stuck":
+        time.sleep(30)
+    elif mode == "leak":
+        sys.stderr.write(secrets["key"] + "\n")
+        raise KeyError(secrets["key"])
+    sys.stderr.write("why it broke\n")
+    if mode == "deep":
+        sys.stdout.write("[" * 200000)
+    return []
 
 
 def connect(answers: dict) -> dict:
