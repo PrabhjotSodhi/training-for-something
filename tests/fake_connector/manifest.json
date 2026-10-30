@@ -1,0 +1,10 @@
+{
+  "label": "Fake",
+  "about": "An invented connector for the runner tests.",
+  "routes": {"fetch": false, "push": false, "files": []},
+  "asks": [{"key": "api_key", "label": "API key", "secret": true}],
+  "stale_after_hours": 24,
+  "app_ids": ["com.example.fake"],
+  "notices_deletes": false,
+  "sends": []
+}
