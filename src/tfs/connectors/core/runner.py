@@ -158,6 +158,8 @@ def _require_https(url: str) -> None:
 
 
 def _child(module_name: str, op: str) -> None:
+    # Windows would turn each \n into \r\n, and a multi-line secret would no longer match.
+    sys.stderr.reconfigure(newline="\n")
     payload = json.loads(sys.stdin.buffer.read())
     function = getattr(importlib.import_module(module_name), op, None)
     if function is None:
