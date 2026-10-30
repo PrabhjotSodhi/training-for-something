@@ -43,7 +43,11 @@ def run(
     if op not in _OPS:
         raise ValueError(f"op must be one of {', '.join(_OPS)}, got {op!r}")
     module = module or f"tfs.connectors.{connector}.connector"
-    env = {**os.environ, "PYTHONPATH": os.pathsep.join((str(_SOURCE_ROOT), str(Path.cwd())))}
+    env = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join((str(_SOURCE_ROOT), str(Path.cwd()))),
+        "PYTHONIOENCODING": "utf-8",
+    }
     with (
         tempfile.TemporaryDirectory() as workdir,
         subprocess.Popen(
@@ -64,18 +68,17 @@ def run(
         finally:
             if child.poll() is None:
                 child.kill()
+                child.wait()
     hide = _Hider(payload)
+    tail = "\n".join(hide(err.decode("utf-8", "replace")).splitlines()[-_STDERR_LINES:])
     if child.returncode != 0:
-        tail = "\n".join(err.decode("utf-8", "replace").splitlines()[-_STDERR_LINES:])
-        raise RunnerFailedError(
-            hide(f"{connector} {op} exited with code {child.returncode}:\n{tail}")
-        )
+        raise RunnerFailedError(f"{connector} {op} exited with code {child.returncode}:\n{tail}")
     try:
         result = json.loads(out)
-    except ValueError:
+    except (ValueError, RecursionError):
         result = None
     if not isinstance(result, dict):
-        raise RunnerFailedError(f"{connector} {op} did not return a JSON object")
+        raise RunnerFailedError(f"{connector} {op} did not return a JSON object:\n{tail}")
     if "user_error" in result:
         raise ConnectorUserError(hide(str(result["user_error"])))
     return result
@@ -100,6 +103,8 @@ def reader_version(connector: str | None = None, *, folder: Path | None = None) 
             raise ValueError("give a connector name or a folder")
         _check_name(connector)
         folder = Path(__file__).resolve().parent.parent / connector
+    if not folder.is_dir():
+        raise ValueError(f"connector folder not found: {folder}")
     files = sorted(
         (path.relative_to(folder).as_posix(), path)
         for path in folder.rglob("*")
@@ -122,6 +127,7 @@ class _HttpsOnlyRedirects(urllib.request.HTTPRedirectHandler):
 class _Hider:
     def __init__(self, payload: dict) -> None:
         found = {*_strings(payload.get("secrets")), *_strings(payload.get("answers"))}
+        found |= {repr(secret)[1:-1] for secret in found}
         self.secrets = sorted(found - {""}, key=len, reverse=True)
 
     def __call__(self, text: str) -> str:
