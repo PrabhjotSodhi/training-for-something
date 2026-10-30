@@ -238,11 +238,3 @@ class StoreTest(unittest.TestCase):
 
         self.assertEqual(result.rejected, {"parts repeat seq 1": 1})
         self.assertEqual([row["key"] for row in self.rows()], ["k1"])
-
-    def test_a_delete_record_is_skipped_until_deletes_are_built(self):
-        deleted = {"kind": "deleted", "stream": "records", "key": "k1"}
-
-        result = self.store([deleted])
-
-        self.assertEqual(sum(result.rejected.values()), 1)
-        self.assertEqual(self.rows(), [])
