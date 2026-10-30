@@ -1,11 +1,32 @@
 """The one place that opens tfs.db."""
 
 import sqlite3
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
 ROLES = ("default", "import", "save", "read_only")
+WAL_ATTEMPTS = 10
+WAL_WAIT_SECONDS = 0.05
+
+
+def _switch_to_wal(conn: sqlite3.Connection, path: Path) -> None:
+    """Switch the file to WAL mode, retrying briefly while another process holds a lock."""
+    # SQLite fails this switch at once instead of waiting for busy_timeout.
+    for attempt in range(WAL_ATTEMPTS):
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            return
+        except sqlite3.OperationalError as error:
+            if "locked" not in str(error):
+                raise
+            if attempt == WAL_ATTEMPTS - 1:
+                conn.close()
+                raise sqlite3.OperationalError(
+                    f"Could not switch {path} to WAL mode: the file is locked by another process."
+                ) from error
+            time.sleep(WAL_WAIT_SECONDS)
 
 
 def connect(path: Path, role: str = "default") -> sqlite3.Connection:
@@ -16,7 +37,7 @@ def connect(path: Path, role: str = "default") -> sqlite3.Connection:
         conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
     else:
         conn = sqlite3.connect(path, isolation_level=None)
-        conn.execute("PRAGMA journal_mode=WAL")
+        _switch_to_wal(conn, path)
         conn.execute("PRAGMA synchronous=FULL")
         conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA busy_timeout=5000")
