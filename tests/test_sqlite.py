@@ -1,3 +1,4 @@
+import multiprocessing
 import sqlite3
 import tempfile
 import unittest
@@ -10,6 +11,16 @@ from tfs.persistence.sqlite import connect, transaction
 def pragma(conn: sqlite3.Connection, name: str):
     """Return the current value of one PRAGMA."""
     return conn.execute(f"PRAGMA {name}").fetchone()[0]
+
+
+def open_when_released(path: Path, barrier, results) -> None:
+    """Wait at the barrier, then open the database and report the journal mode or the error."""
+    barrier.wait()
+    try:
+        with closing(connect(path)) as conn:
+            results.put(pragma(conn, "journal_mode"))
+    except sqlite3.Error as error:
+        results.put(f"{type(error).__name__}: {error}")
 
 
 class SqliteTest(unittest.TestCase):
@@ -107,6 +118,41 @@ class SqliteTest(unittest.TestCase):
             with transaction(conn):
                 conn.execute("INSERT INTO parent VALUES (1)")
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM parent").fetchone()[0], 1)
+
+    def test_six_processes_can_open_the_same_new_file_at_once(self):
+        process_count = 6
+        for run in range(20):
+            path = self.path.with_name(f"race{run}.db")
+            barrier = multiprocessing.Barrier(process_count)
+            results = multiprocessing.Queue()
+            processes = [
+                multiprocessing.Process(target=open_when_released, args=(path, barrier, results))
+                for _ in range(process_count)
+            ]
+            for process in processes:
+                process.start()
+            outcomes = [results.get() for _ in processes]
+            for process in processes:
+                process.join()
+            self.assertEqual(outcomes, ["wal"] * process_count)
+
+    def test_a_file_that_stays_locked_raises_an_error_naming_the_file(self):
+        barrier = multiprocessing.Barrier(1)
+        results = multiprocessing.Queue()
+        process = multiprocessing.Process(
+            target=open_when_released, args=(self.path, barrier, results)
+        )
+        with closing(sqlite3.connect(self.path, isolation_level=None)) as reader:
+            reader.execute("CREATE TABLE t (a)")
+            reader.execute("BEGIN")
+            reader.execute("SELECT * FROM t").fetchall()
+            process.start()
+            self.addCleanup(process.join)
+            self.addCleanup(process.terminate)
+            # The guard fails the test if the open waits far longer than the retry loop does.
+            outcome = results.get(timeout=30)
+        self.assertTrue(outcome.startswith("OperationalError: "), outcome)
+        self.assertIn(str(self.path), outcome)
 
 
 if __name__ == "__main__":
