@@ -13,7 +13,8 @@ WAL_WAIT_SECONDS = 0.05
 
 def _switch_to_wal(conn: sqlite3.Connection, path: Path) -> None:
     """Switch the file to WAL mode, retrying briefly while another process holds a lock."""
-    # SQLite fails this switch at once instead of waiting for busy_timeout.
+    # The connection has no busy timeout yet, so this loop is the whole wait: at most
+    # about half a second. A timeout above 0 would let each attempt wait 5 seconds.
     for attempt in range(WAL_ATTEMPTS):
         try:
             conn.execute("PRAGMA journal_mode=WAL")
@@ -36,7 +37,7 @@ def connect(path: Path, role: str = "default") -> sqlite3.Connection:
     if role == "read_only":
         conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
     else:
-        conn = sqlite3.connect(path, isolation_level=None)
+        conn = sqlite3.connect(path, isolation_level=None, timeout=0)
         _switch_to_wal(conn, path)
         conn.execute("PRAGMA synchronous=FULL")
         conn.execute("PRAGMA foreign_keys=ON")

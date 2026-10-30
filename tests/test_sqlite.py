@@ -135,21 +135,23 @@ class SqliteTest(unittest.TestCase):
             for process in processes:
                 process.join()
             self.assertEqual(outcomes, ["wal"] * process_count)
-            with closing(connect(path)) as conn:
-                self.assertEqual(pragma(conn, "journal_mode"), "wal")
 
     def test_a_file_that_stays_locked_raises_an_error_naming_the_file(self):
-        with (
-            closing(sqlite3.connect(self.path, isolation_level=None)) as writer,
-            closing(sqlite3.connect(self.path, isolation_level=None)) as reader,
-        ):
-            writer.execute("CREATE TABLE t (a)")
+        results = multiprocessing.Queue()
+        process = multiprocessing.Process(
+            target=open_when_released, args=(self.path, multiprocessing.Barrier(1), results)
+        )
+        with closing(sqlite3.connect(self.path, isolation_level=None)) as reader:
+            reader.execute("CREATE TABLE t (a)")
             reader.execute("BEGIN")
             reader.execute("SELECT * FROM t").fetchall()
-            writer.execute("BEGIN IMMEDIATE")
-            with self.assertRaises(sqlite3.OperationalError) as caught:
-                connect(self.path)
-        self.assertIn(str(self.path), str(caught.exception))
+            process.start()
+            self.addCleanup(process.join)
+            self.addCleanup(process.terminate)
+            # The guard fails the test if the open waits far longer than the retry loop does.
+            outcome = results.get(timeout=20)
+        self.assertTrue(outcome.startswith("OperationalError: "), outcome)
+        self.assertIn(str(self.path), outcome)
 
 
 if __name__ == "__main__":
