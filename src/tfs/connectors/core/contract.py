@@ -269,12 +269,16 @@ def _check_session(rec: dict) -> None:
     parts = rec.get("parts", [])
     if not isinstance(parts, list):
         raise RecordError("parts must be a list")
+    seen = set()
     for part in parts:
         seq = part.get("seq") if isinstance(part, dict) else None
         if not isinstance(seq, int) or isinstance(seq, bool):
             raise RecordError("each item in parts needs a whole-number seq")
         if not isinstance(part.get("part_kind"), str):
             raise RecordError("each item in parts needs a string part_kind")
+        if seq in seen:
+            raise RecordError(f"parts repeat seq {seq}")
+        seen.add(seq)
 
 
 def load_manifest(path: Path | str) -> dict:
