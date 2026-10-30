@@ -137,9 +137,10 @@ class SqliteTest(unittest.TestCase):
             self.assertEqual(outcomes, ["wal"] * process_count)
 
     def test_a_file_that_stays_locked_raises_an_error_naming_the_file(self):
+        barrier = multiprocessing.Barrier(1)
         results = multiprocessing.Queue()
         process = multiprocessing.Process(
-            target=open_when_released, args=(self.path, multiprocessing.Barrier(1), results)
+            target=open_when_released, args=(self.path, barrier, results)
         )
         with closing(sqlite3.connect(self.path, isolation_level=None)) as reader:
             reader.execute("CREATE TABLE t (a)")
