@@ -150,7 +150,7 @@ class SqliteTest(unittest.TestCase):
             self.addCleanup(process.join)
             self.addCleanup(process.terminate)
             # The guard fails the test if the open waits far longer than the retry loop does.
-            outcome = results.get(timeout=20)
+            outcome = results.get(timeout=30)
         self.assertTrue(outcome.startswith("OperationalError: "), outcome)
         self.assertIn(str(self.path), outcome)
 
