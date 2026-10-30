@@ -115,6 +115,15 @@ class ScanRawTest(unittest.TestCase):
 
         self.assertEqual(self.row(path.stem)["status"], "ok")
 
+    def test_a_file_with_the_same_bytes_as_a_registered_one_is_not_registered_again(self):
+        self.save(b"same")
+        self.drop_file(b"same", OLDER_MTIME, connector="strava", fmt="activities")
+
+        result = scan_raw(self.conn, self.data_dir, now=NOW)
+
+        self.assertEqual(result.registered, [])
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
