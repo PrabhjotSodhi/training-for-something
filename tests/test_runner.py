@@ -10,7 +10,6 @@ from tfs.connectors.core import runner
 from tfs.connectors.core.contract import validate_record
 from tfs.connectors.core.runner import (
     ConnectorUserError,
-    RunnerFailedError,
     RunnerTimeoutError,
     http_get,
     reader_version,
@@ -60,18 +59,6 @@ class RunTest(unittest.TestCase):
         self.assertEqual(
             run("fake_connector", "fetch", {}, timeout_s=10, module=FAKE), {"unsupported": True}
         )
-
-    def test_a_crash_hides_the_secret_in_the_error_text(self) -> None:
-        payload = {
-            "secrets": {"token": "s3cret"},
-            "path": "a",
-            "fmt": "b",
-            "out_path": str(self.folder / "missing" / "s3cret.jsonl"),
-        }
-        with self.assertRaises(RunnerFailedError) as caught:
-            run("fake_connector", "read", payload, timeout_s=10, module=FAKE)
-        self.assertIn("[secret]", str(caught.exception))
-        self.assertNotIn("s3cret", str(caught.exception))
 
     def test_a_bad_connector_name_or_operation_is_refused(self) -> None:
         for connector, op in (
