@@ -26,9 +26,11 @@ class SaveRawTest(unittest.TestCase):
         self.addCleanup(self.conn.close)
         migrate(self.conn)
 
-    def save(self, data: bytes, now: str, connector="hevy", fmt="workouts_page", ext="json", **kw):
+    def save(
+        self, data: bytes, now: str, connector="hevy", fmt="workouts_page", ext="json", **options
+    ):
         return save_raw(
-            self.conn, self.data_dir, connector, fmt, ext, io.BytesIO(data), now=now, **kw
+            self.conn, self.data_dir, connector, fmt, ext, io.BytesIO(data), now=now, **options
         )
 
     def source_row(self, connector: str = "hevy"):
@@ -38,7 +40,7 @@ class SaveRawTest(unittest.TestCase):
 
     def files_on_disk(self) -> list[str]:
         raw = self.data_dir / "raw"
-        return sorted(str(p.relative_to(raw)) for p in raw.rglob("*") if p.is_file())
+        return sorted(path.relative_to(raw).as_posix() for path in raw.rglob("*") if path.is_file())
 
     def test_first_save_stores_the_file_and_registers_it(self):
         saved = self.save(b"hello", FIRST)
