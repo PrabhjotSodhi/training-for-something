@@ -7,8 +7,8 @@ from contextlib import contextmanager
 from pathlib import Path
 
 ROLES = ("default", "import", "save", "read_only")
-WAL_ATTEMPTS = 100
-WAL_WAIT_SECONDS = 0.05
+WAL_WAIT_SECONDS = 5.0
+WAL_RETRY_SECONDS = 0.05
 
 
 def _switch_to_wal(conn: sqlite3.Connection, path: Path) -> None:
@@ -16,19 +16,20 @@ def _switch_to_wal(conn: sqlite3.Connection, path: Path) -> None:
     # The connection has no busy timeout yet, so this loop is the whole wait: at most
     # about 5 seconds, like the busy timeout set later. A timeout above 0 would let
     # each attempt wait that long on its own.
-    for attempt in range(WAL_ATTEMPTS):
+    deadline = time.monotonic() + WAL_WAIT_SECONDS
+    while True:
         try:
             conn.execute("PRAGMA journal_mode=WAL")
             return
         except sqlite3.OperationalError as error:
             if "locked" not in str(error):
                 raise
-            if attempt == WAL_ATTEMPTS - 1:
+            if time.monotonic() >= deadline:
                 conn.close()
                 raise sqlite3.OperationalError(
                     f"Could not switch {path} to WAL mode: the file is locked by another process."
                 ) from error
-            time.sleep(WAL_WAIT_SECONDS)
+            time.sleep(WAL_RETRY_SECONDS)
 
 
 def connect(path: Path, role: str = "default") -> sqlite3.Connection:
