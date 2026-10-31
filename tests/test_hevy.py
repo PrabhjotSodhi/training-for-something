@@ -70,9 +70,9 @@ class HevyReadTest(unittest.TestCase):
                 },
             },
         )
-        self.assertEqual(parts[1]["reps"], 10)
-        self.assertEqual(parts[2]["weight_kg"], 60)
-        self.assertEqual(parts[2]["extras"]["rpe"], 8)
+        self.assertEqual(parts[0]["reps"], 10)
+        self.assertEqual(parts[1]["weight_kg"], 60)
+        self.assertEqual(parts[1]["extras"]["rpe"], 8)
 
     def test_events_page_gives_a_session_and_a_delete(self) -> None:
         result, records = self._read(*EVENTS_PAGE)

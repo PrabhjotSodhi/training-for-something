@@ -1,0 +1,10 @@
+{
+  "label": "Hevy",
+  "about": "Reads your workouts with your Hevy API key. Needs Hevy Pro. Hevy can change its API at any time.",
+  "routes": {"fetch": false, "push": false, "files": []},
+  "asks": [{"key": "api_key", "label": "API key", "secret": true}],
+  "stale_after_hours": 168,
+  "app_ids": ["com.hevyapp.hevy", "Hevy"],
+  "notices_deletes": true,
+  "sends": []
+}
