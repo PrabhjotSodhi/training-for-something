@@ -1,0 +1,67 @@
+{
+  "data": {
+    "metrics": [
+      {
+        "name": "step_count",
+        "units": "count",
+        "data": [
+          {
+            "date": "2026-10-20 00:00:00 +1300",
+            "qty": 4210,
+            "source": "Ana's iPhone|Ana's Apple Watch"
+          },
+          {"date": "2026-10-21 00:00:00 +1300", "qty": 3050}
+        ]
+      },
+      {
+        "name": "active_energy",
+        "units": "kJ",
+        "data": [
+          {"date": "2026-10-20 00:00:00 +1300", "qty": 418.4, "source": "Ana's Apple Watch"}
+        ]
+      },
+      {
+        "name": "heart_rate",
+        "units": "count/min",
+        "data": [
+          {
+            "date": "2026-10-20 09:00:00 +1300",
+            "Min": 61,
+            "Avg": 72.5,
+            "Max": 98,
+            "source": "Ana's Apple Watch"
+          }
+        ]
+      },
+      {
+        "name": "resting_heart_rate",
+        "units": "count/min",
+        "data": [
+          {"date": "2026-10-20 00:00:00 +1300", "qty": 54, "source": "Ana's Apple Watch"}
+        ]
+      },
+      {
+        "name": "weight_body_mass",
+        "units": "lb",
+        "data": [
+          {"date": "2026-10-20 07:30:00 +1300", "qty": 150, "source": "Ana's Scale"}
+        ]
+      },
+      {
+        "name": "heart_rate_variability",
+        "units": "ms",
+        "data": [
+          {"date": "2026-10-20 03:00:00 +1300", "qty": 48.2, "source": "Ana's Apple Watch"}
+        ]
+      },
+      {
+        "name": "dietary_water",
+        "units": "fl_oz_us",
+        "data": [
+          {"date": "2026-10-20 00:00:00 +1300", "qty": 64, "source": "Ana's iPhone"}
+        ]
+      }
+    ],
+    "workouts": []
+  }
+}
