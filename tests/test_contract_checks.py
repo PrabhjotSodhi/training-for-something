@@ -78,3 +78,39 @@ class ContractFailuresTest(unittest.TestCase):
         )
         with self.assertRaises(AssertionError):
             case("test_auth_failed").test_auth_failed()
+
+    def test_no_fixtures(self) -> None:
+        case = self._case("from tests.fake_connector.connector import read\n", fixtures=[])
+        with self.assertRaisesRegex(AssertionError, "fixtures is empty"):
+            case("test_read_twice_same_keys").test_read_twice_same_keys()
+
+    def test_second_read_gives_an_invalid_record(self) -> None:
+        case = self._case(
+            "import json\n"
+            "from pathlib import Path\n"
+            "from tests.fake_connector.connector import RECORD\n"
+            "calls = []\n"
+            "def read(path, fmt, out_path):\n"
+            "    calls.append(1)\n"
+            "    values = {'value': 5.0, 'unit': 'kcal' if len(calls) > 1 else 'count'}\n"
+            "    Path(out_path).write_text(json.dumps({**RECORD, 'values': values}) + '\\n')\n"
+            "    return {'status': 'ok', 'count': 1, 'message': None}\n"
+        )
+        with self.assertRaises(AssertionError):
+            case("test_read_twice_same_keys").test_read_twice_same_keys()
+
+    def test_delete_fixture_gives_a_deleted_record_with_no_key(self) -> None:
+        case = self._case(
+            "import json\n"
+            "from pathlib import Path\n"
+            "from tests.fake_connector.connector import read as fake_read\n"
+            "def read(path, fmt, out_path):\n"
+            "    if path != 'delete.bin':\n"
+            "        return fake_read(path, fmt, out_path)\n"
+            "    Path(out_path).write_text(json.dumps({'kind': 'deleted'}) + '\\n')\n"
+            "    return {'status': 'ok', 'count': 1, 'message': None}\n",
+            {"notices_deletes": True},
+            delete_fixture=("delete.bin", "fake"),
+        )
+        with self.assertRaises(AssertionError):
+            case("test_manifest_matches_code").test_manifest_matches_code()
