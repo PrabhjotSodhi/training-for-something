@@ -1,12 +1,82 @@
-"""Reads saved Hevy API pages into session records and delete records."""
+"""Fetches Hevy workout pages and reads saved pages into session records and delete records."""
 
 import json
+from datetime import timedelta
 from pathlib import Path
+from urllib.parse import quote
 
 from tfs.connectors.core.contract import parse_iso_time, to_revision_text, to_utc_text
 
 _STREAM = "workouts"
 _ORIGIN_APP = "com.hevyapp.hevy"
+_API = "https://api.hevyapp.com/v1"
+_PAGE_SIZE = 10
+_OVERLAP = timedelta(minutes=5)
+_DEFAULT_WAIT_S = 300
+
+
+def connect(answers: dict) -> dict:
+    """Turn the typed API key into the secrets the engine stores."""
+    api_key = answers.get("api_key", "").strip()
+    if not api_key:
+        raise ValueError("Enter your Hevy API key.")
+    return {"secrets": {"api_key": api_key}}
+
+
+def fetch(cursor: dict | None, secrets: dict, out_dir: str, http, now: str) -> dict:
+    """Download every workout page, or the events since the cursor, and return the files and next cursor."""
+    now_time = parse_iso_time(now)
+    if cursor is None:
+        fmt, url = "workouts_page", f"{_API}/workouts?page={{page}}&pageSize={_PAGE_SIZE}"
+    else:
+        since = quote(cursor["since"], safe="")
+        fmt = "events_page"
+        url = f"{_API}/workouts/events?page={{page}}&pageSize={_PAGE_SIZE}&since={since}"
+    headers = {"api-key": secrets["api_key"], "accept": "application/json"}
+    bodies = []
+    page, page_count = 1, 1
+    while page <= page_count:
+        status, reply_headers, body = http(url.format(page=page), headers)
+        if status in (401, 403):
+            return _fetch_result([], cursor, auth_failed=True)
+        if status == 429:
+            wait = _retry_after_seconds(reply_headers)
+            wait_until = to_utc_text(now_time + timedelta(seconds=wait))
+            return _fetch_result([], cursor, wait_until=wait_until)
+        if status != 200:
+            raise ValueError(f"Hevy answered status {status} for page {page}.")
+        bodies.append(body)
+        if page == 1:
+            page_count = _page_count(body)
+        page += 1
+    files = []
+    for page, body in enumerate(bodies, start=1):
+        path = Path(out_dir) / f"{fmt}-{page}.json"
+        path.write_bytes(body)
+        files.append({"path": str(path), "fmt": fmt, "ext": "json"})
+    return _fetch_result(files, {"since": to_utc_text(now_time - _OVERLAP)})
+
+
+def _fetch_result(
+    files: list[dict],
+    cursor: dict | None,
+    *,
+    auth_failed: bool = False,
+    wait_until: str | None = None,
+) -> dict:
+    return {"files": files, "cursor": cursor, "auth_failed": auth_failed, "wait_until": wait_until}
+
+
+def _retry_after_seconds(headers: dict) -> int:
+    value = next((v for k, v in headers.items() if k.lower() == "retry-after"), "")
+    return int(value) if value.isascii() and value.isdigit() else _DEFAULT_WAIT_S
+
+
+def _page_count(body: bytes) -> int:
+    try:
+        return int(json.loads(body)["page_count"])
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("Hevy page 1 has no page_count.") from None
 
 
 def read(path: str, fmt: str, out_path: str) -> dict:
