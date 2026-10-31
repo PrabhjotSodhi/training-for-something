@@ -21,7 +21,7 @@ def read(path: str, fmt: str, out_path: str) -> dict:
             records = [_event_record(event) for event in page["events"]]
     except KeyError as error:
         return _unreadable(f"the page is missing {error}")
-    except (OSError, TypeError, ValueError) as error:
+    except (TypeError, ValueError) as error:
         return _unreadable(str(error))
     lines = "".join(json.dumps(record) + "\n" for record in records)
     Path(out_path).write_text(lines, encoding="utf-8")
