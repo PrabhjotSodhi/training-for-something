@@ -115,3 +115,4 @@ class HevyContractTest(ConnectorContract, unittest.TestCase):
     module = "tfs.connectors.hevy.connector"
     fixtures: ClassVar = [WORKOUTS_PAGE, EVENTS_PAGE]
     delete_fixture = EVENTS_PAGE
+    fetch_args: ClassVar = {"cursor": None, "secrets": {"api_key": "invented-key-123"}}
