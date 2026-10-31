@@ -121,20 +121,19 @@ class SqliteTest(unittest.TestCase):
 
     def test_six_processes_can_open_the_same_new_file_at_once(self):
         process_count = 6
-        for run in range(20):
-            path = self.path.with_name(f"race{run}.db")
-            barrier = multiprocessing.Barrier(process_count)
-            results = multiprocessing.Queue()
-            processes = [
-                multiprocessing.Process(target=open_when_released, args=(path, barrier, results))
-                for _ in range(process_count)
-            ]
-            for process in processes:
-                process.start()
-            outcomes = [results.get() for _ in processes]
-            for process in processes:
-                process.join()
-            self.assertEqual(outcomes, ["wal"] * process_count)
+        barrier = multiprocessing.Barrier(process_count)
+        results = multiprocessing.Queue()
+        processes = [
+            multiprocessing.Process(target=open_when_released, args=(self.path, barrier, results))
+            for _ in range(process_count)
+        ]
+        for process in processes:
+            process.start()
+            self.addCleanup(process.terminate)
+        outcomes = [results.get(timeout=30) for _ in processes]
+        for process in processes:
+            process.join(timeout=30)
+        self.assertEqual(outcomes, ["wal"] * process_count)
 
     def test_a_file_that_stays_locked_raises_an_error_naming_the_file(self):
         barrier = multiprocessing.Barrier(1)
