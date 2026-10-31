@@ -6,14 +6,17 @@ import re
 import sqlite3
 import tempfile
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import BinaryIO
 
+from tfs.connectors.core.contract import to_utc_text
 from tfs.persistence.sqlite import transaction
 
 CHUNK_BYTES = 1024 * 1024
 _NAME = re.compile(r"[a-z0-9_]+")
 _EXTENSION = re.compile(r"[a-z0-9]+")
+_RAW_FILE = re.compile(r"(?P<sha256>[0-9a-f]{64})\.(?P<ext>[a-z0-9]+)")
 
 
 class FileConflictError(Exception):
@@ -26,6 +29,12 @@ class SavedFile:
     path: Path
     arrival_seq: int
     is_new: bool
+
+
+@dataclass(frozen=True)
+class ScanResult:
+    registered: list[str]
+    missing: list[str]
 
 
 def save_raw(
@@ -113,3 +122,53 @@ def _sync_folder(folder: Path) -> None:
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
+
+
+def scan_raw(conn: sqlite3.Connection, data_dir: Path, *, now: str) -> ScanResult:
+    """Register raw files that have no row, mark rows whose file is gone and unstick rows."""
+    raw = data_dir / "raw"
+    # The scan holds the write lock, so it never sees a file that save_raw renamed but
+    # has not committed yet.
+    with transaction(conn):
+        rows = conn.execute("SELECT * FROM files ORDER BY arrival_seq").fetchall()
+        known = {row["sha256"] for row in rows}
+        orphans = []
+        for path in raw.glob("*/*/*"):
+            match = _RAW_FILE.fullmatch(path.name)
+            if match is not None and match["sha256"] not in known and path.is_file():
+                orphans.append((path.stat().st_mtime_ns, path, match))
+        registered = []
+        for _, path, match in sorted(orphans, key=lambda orphan: orphan[:2]):
+            if match["sha256"] in known:
+                continue
+            known.add(match["sha256"])
+            info = path.stat()
+            conn.execute(
+                "INSERT INTO files (sha256, arrival_seq, connector, format, ext, size_bytes,"
+                " received_at) SELECT ?, COALESCE(MAX(arrival_seq), 0) + 1, ?, ?, ?, ?, ?"
+                " FROM files",
+                (
+                    match["sha256"],
+                    path.parent.parent.name,
+                    path.parent.name,
+                    match["ext"],
+                    info.st_size,
+                    to_utc_text(datetime.fromtimestamp(info.st_mtime, UTC)),
+                ),
+            )
+            registered.append(match["sha256"])
+        missing = []
+        for row in rows:
+            name = f"{row['sha256']}.{row['ext']}"
+            if not (raw / row["connector"] / row["format"] / name).is_file():
+                missing.append(row["sha256"])
+                conn.execute(
+                    "UPDATE files SET status = 'missing', message = ? WHERE sha256 = ?",
+                    ("The raw file is missing.", row["sha256"]),
+                )
+            elif row["status"] in ("missing", "reading"):
+                conn.execute(
+                    "UPDATE files SET status = 'new', message = NULL WHERE sha256 = ?",
+                    (row["sha256"],),
+                )
+    return ScanResult(registered, missing)

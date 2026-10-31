@@ -1,4 +1,4 @@
-"""Stores what a reader returns: a new version of a record replaces the old one."""
+"""Stores what a reader returns: a newer version replaces the old one and a delete hides it."""
 
 import json
 import sqlite3
@@ -45,14 +45,13 @@ _PART_FIELDS = (
     "avg_hr",
 )
 
-# deleted_at is left out so a newer version never clears a delete.
 _UPSERT = """
 INSERT INTO source_records (id, connector, stream, key, kind, revision_at, arrival_seq,
   file_sha256, reader_version, start_utc, end_utc, utc_offset_min, local_date, label, family,
-  metric, values_json, origin_app, origin_device, plan_ref)
+  metric, values_json, origin_app, origin_device, plan_ref, deleted_at)
 VALUES (:id, :connector, :stream, :key, :kind, :revision_at, :arrival_seq, :file_sha256,
   :reader_version, :start_utc, :end_utc, :utc_offset_min, :local_date, :label, :family,
-  :metric, :values_json, :origin_app, :origin_device, :plan_ref)
+  :metric, :values_json, :origin_app, :origin_device, :plan_ref, :deleted_at)
 ON CONFLICT (id) DO UPDATE SET
   kind = excluded.kind, revision_at = excluded.revision_at, arrival_seq = excluded.arrival_seq,
   file_sha256 = excluded.file_sha256, reader_version = excluded.reader_version,
@@ -60,7 +59,8 @@ ON CONFLICT (id) DO UPDATE SET
   utc_offset_min = excluded.utc_offset_min, local_date = excluded.local_date,
   label = excluded.label, family = excluded.family, metric = excluded.metric,
   values_json = excluded.values_json, origin_app = excluded.origin_app,
-  origin_device = excluded.origin_device, plan_ref = excluded.plan_ref
+  origin_device = excluded.origin_device, plan_ref = excluded.plan_ref,
+  deleted_at = excluded.deleted_at
 """
 _INSERT_PART = """
 INSERT INTO session_parts (record_id, seq, part_kind, label, duration_s, distance_m, reps,
@@ -77,6 +77,7 @@ class StoreResult:
     inserted: int = 0
     replaced: int = 0
     unchanged: int = 0
+    deleted: int = 0
     rejected: Counter[str] = field(default_factory=Counter)
     dates: set[str] = field(default_factory=set)
 
@@ -97,7 +98,8 @@ def store(
     """Store a reader's records, commit every batch_size records and return what changed.
 
     A record with no local_date gets one from start_utc in tz, or in the computer's zone
-    when tz is None. before_batch runs before each batch's transaction opens.
+    when tz is None. A deleted record hides the stored record unless the record is newer,
+    whichever arrives first. before_batch runs before each batch's transaction opens.
     """
     arrival_revision = to_revision_text(parse_iso_time(received_at))
     result = StoreResult()
@@ -108,9 +110,21 @@ def store(
             changed_dates: set[str] = set()
             for rec in batch:
                 try:
-                    _check(rec)
+                    validate_record(rec)
                 except RecordError as error:
                     result.rejected[str(error)[:REASON_LENGTH]] += 1
+                    continue
+                revision = rec.get("revision_at") or arrival_revision
+                if rec["kind"] == "deleted":
+                    _store_delete(
+                        conn,
+                        rec,
+                        connector=connector,
+                        arrival_seq=arrival_seq,
+                        revision=revision,
+                        result=result,
+                        changed_dates=changed_dates,
+                    )
                     continue
                 _store_one(
                     conn,
@@ -118,7 +132,7 @@ def store(
                     connector=connector,
                     file_sha256=file_sha256,
                     arrival_seq=arrival_seq,
-                    revision=rec.get("revision_at") or arrival_revision,
+                    revision=revision,
                     reader_version=reader_version,
                     tz=tz,
                     result=result,
@@ -132,10 +146,49 @@ def store(
     return result
 
 
-def _check(rec: dict) -> None:
-    validate_record(rec)
-    if rec["kind"] == "deleted":
-        raise RecordError("deleted records are not stored yet")
+def _stored_delete(conn: sqlite3.Connection, connector: str, rec: dict) -> tuple[str, int] | None:
+    found = conn.execute(
+        "SELECT revision_at, arrival_seq FROM source_deletes"
+        " WHERE connector = ? AND stream = ? AND key = ?",
+        (connector, rec["stream"], rec["key"]),
+    ).fetchone()
+    return None if found is None else (found[0], found[1])
+
+
+def _store_delete(
+    conn: sqlite3.Connection,
+    rec: dict,
+    *,
+    connector: str,
+    arrival_seq: int,
+    revision: str,
+    result: StoreResult,
+    changed_dates: set[str],
+) -> None:
+    order = (revision, arrival_seq)
+    known = _stored_delete(conn, connector, rec)
+    if known is not None and order <= known:
+        result.unchanged += 1
+        return
+    conn.execute(
+        "INSERT INTO source_deletes (connector, stream, key, revision_at, arrival_seq)"
+        " VALUES (?, ?, ?, ?, ?)"
+        " ON CONFLICT (connector, stream, key) DO UPDATE SET"
+        " revision_at = excluded.revision_at, arrival_seq = excluded.arrival_seq",
+        (connector, rec["stream"], rec["key"], revision, arrival_seq),
+    )
+    rid = record_id(connector, rec["stream"], rec["key"])
+    stored = conn.execute(
+        "SELECT revision_at, arrival_seq, local_date, deleted_at FROM source_records"
+        " WHERE id = ?",
+        (rid,),
+    ).fetchone()
+    if stored is None or order < (stored[0], stored[1]):
+        return
+    conn.execute("UPDATE source_records SET deleted_at = ? WHERE id = ?", (revision, rid))
+    changed_dates.add(stored[2])
+    if stored[3] is None:
+        result.deleted += 1
 
 
 def _store_one(
@@ -170,6 +223,8 @@ def _store_one(
         result.replaced += 1
     else:
         result.inserted += 1
+    delete = _stored_delete(conn, connector, rec)
+    hidden = delete is not None and delete >= (revision, arrival_seq)
     local_date = rec.get("local_date") or (
         parse_iso_time(rec["start_utc"]).astimezone(tz).date().isoformat()
     )
@@ -183,6 +238,7 @@ def _store_one(
             "arrival_seq": arrival_seq,
             "file_sha256": file_sha256,
             "reader_version": reader_version,
+            "deleted_at": delete[0] if hidden else None,
             "local_date": local_date,
             "values_json": json.dumps(rec.get("values") or {}, sort_keys=True),
         },
