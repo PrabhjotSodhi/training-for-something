@@ -56,7 +56,7 @@ class ConnectTest(unittest.TestCase):
         code, out, err = self.connect("fake_connector", "--module", MODULE, secret="")
         self.assertEqual((code, out, err), (1, "", "Enter your API key.\n"))
         self.assertIsNone(password_store.get("fake_connector:api_key"))
-        self.assertEqual(self.source_rows(), [])
+        self.assertFalse(config.db_path().exists())
 
     def test_the_secret_is_in_no_output_and_no_database_row(self):
         _, out, err = self.connect("fake_connector", "--module", MODULE)
