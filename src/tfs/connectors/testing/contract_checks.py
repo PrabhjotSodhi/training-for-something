@@ -18,7 +18,7 @@ import tempfile
 from pathlib import Path
 from types import ModuleType
 
-from tfs.connectors.core.contract import load_manifest, validate_record
+from tfs.connectors.core.contract import RecordError, load_manifest, validate_record
 
 _RESPONSES_THAT_MEAN_AUTH_FAILED = (401, 403)
 _NOW = "2026-10-27T07:00:00Z"
@@ -34,14 +34,13 @@ class ConnectorContract:
 
     def test_read_twice_same_keys(self) -> None:
         """Reading each fixture twice gives the same non-empty keys, all valid records."""
+        self.assertTrue(self.fixtures, "fixtures is empty")
         for path, fmt in self.fixtures:
             with self.subTest(fixture=path):
                 first = self._read_records(path, fmt)
                 second = self._read_records(path, fmt)
                 self.assertTrue(first, "the fixture gave no records")
                 self.assertEqual(_keys(first), _keys(second))
-                for record in first:
-                    validate_record(record)
 
     def test_manifest_matches_code(self) -> None:
         """The manifest passes its checks and agrees with the functions the module has."""
@@ -85,7 +84,13 @@ class ConnectorContract:
             out_path = Path(folder) / "records.jsonl"
             self._module().read(path, fmt, str(out_path))
             lines = out_path.read_text(encoding="utf-8").splitlines()
-        return [json.loads(line) for line in lines]
+        records = [json.loads(line) for line in lines]
+        for record in records:
+            try:
+                validate_record(record)
+            except RecordError as error:
+                self.fail(f"{path} gave an invalid record: {error}")
+        return records
 
 
 def _keys(records: list[dict]) -> set[tuple[str, str, str]]:
