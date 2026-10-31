@@ -1,0 +1,11 @@
+{
+  "page": 1,
+  "page_count": 1,
+  "events": [
+    {
+      "type": "archived",
+      "id": "w-004",
+      "archived_at": "2026-10-22T08:00:00.000Z"
+    }
+  ]
+}

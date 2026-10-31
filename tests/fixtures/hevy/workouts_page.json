@@ -1,0 +1,41 @@
+{
+  "page": 1,
+  "page_count": 1,
+  "workouts": [
+    {
+      "id": "w-001",
+      "title": "Push A",
+      "description": "Felt strong.",
+      "routine_id": "r-010",
+      "start_time": "2026-10-20T18:00:00+00:00",
+      "end_time": "2026-10-20T19:05:00+00:00",
+      "updated_at": "2026-10-20T19:06:12.000Z",
+      "created_at": "2026-10-20T19:06:12.000Z",
+      "exercises": [
+        {
+          "index": 0,
+          "title": "Bench Press (Barbell)",
+          "notes": "",
+          "exercise_template_id": "3BC06AD3",
+          "supersets_id": null,
+          "sets": [
+            {"index": 0, "type": "warmup", "weight_kg": 40, "reps": 10, "distance_meters": null, "duration_seconds": null, "rpe": null, "custom_metric": null},
+            {"index": 1, "type": "normal", "weight_kg": 60, "reps": 8, "distance_meters": null, "duration_seconds": null, "rpe": 8, "custom_metric": null},
+            {"index": 2, "type": "normal", "weight_kg": 60, "reps": 7, "distance_meters": null, "duration_seconds": null, "rpe": 9, "custom_metric": null}
+          ]
+        },
+        {
+          "index": 1,
+          "title": "Plank",
+          "notes": "",
+          "exercise_template_id": "A7D5C2E1",
+          "supersets_id": null,
+          "sets": [
+            {"index": 0, "type": "normal", "weight_kg": null, "reps": null, "distance_meters": null, "duration_seconds": 60, "rpe": null, "custom_metric": null},
+            {"index": 1, "type": "normal", "weight_kg": null, "reps": null, "distance_meters": null, "duration_seconds": 45, "rpe": null, "custom_metric": null}
+          ]
+        }
+      ]
+    }
+  ]
+}
