@@ -1,0 +1,13 @@
+{
+  "label": "Fake connect",
+  "about": "An invented connector for the connect command tests.",
+  "routes": {"fetch": false, "push": false, "files": []},
+  "asks": [
+    {"key": "api_key", "label": "API key", "secret": true},
+    {"key": "region", "label": "Region", "secret": false}
+  ],
+  "stale_after_hours": 24,
+  "app_ids": ["com.example.fakeconnect"],
+  "notices_deletes": false,
+  "sends": []
+}
