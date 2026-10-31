@@ -1,0 +1,10 @@
+{
+  "label": "Apple Health export",
+  "about": "Reads the full export you make in the Health app: your picture, then Export All Health Data. It covers your history once. Health Auto Export covers new days.",
+  "routes": {"fetch": false, "push": false, "files": ["export.zip", "export.xml"]},
+  "asks": [],
+  "stale_after_hours": 87600,
+  "app_ids": ["com.apple.Health"],
+  "notices_deletes": false,
+  "sends": []
+}
