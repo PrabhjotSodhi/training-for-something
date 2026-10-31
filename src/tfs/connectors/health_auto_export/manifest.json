@@ -1,0 +1,10 @@
+{
+  "label": "Health Auto Export",
+  "about": "The Health Auto Export app on your iPhone sends new Apple Health data to TFS with a REST API automation. Your computer must be on and reachable.",
+  "routes": {"fetch": false, "push": true, "files": []},
+  "asks": [],
+  "stale_after_hours": 48,
+  "app_ids": [],
+  "notices_deletes": false,
+  "sends": []
+}
