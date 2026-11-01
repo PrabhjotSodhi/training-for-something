@@ -24,7 +24,7 @@ FIXTURES = Path(__file__).parent / "fixtures" / "health_auto_export"
 SAFETY_TIMEOUT_S = 10
 
 
-class PushTestCase(unittest.TestCase):
+class PushTest(unittest.TestCase):
     def setUp(self) -> None:
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
@@ -52,12 +52,9 @@ class PushTestCase(unittest.TestCase):
         thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01})
         thread.start()
         self.server = server
-        self.addCleanup(self.stop, server, thread)
-
-    def stop(self, server, thread) -> None:
-        server.shutdown()
-        server.server_close()
-        thread.join()
+        self.addCleanup(thread.join)
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
 
     def post(self, path: str, body: bytes, token: str | None = TOKEN) -> tuple[int, dict]:
         headers = {} if token is None else {"Authorization": f"Bearer {token}"}
@@ -79,8 +76,6 @@ class PushTestCase(unittest.TestCase):
         self.assertEqual(self.file_rows(), [])
         self.assertEqual(self.saved, [])
 
-
-class PushTest(PushTestCase):
     def test_right_token_saves_the_body_and_answers_with_its_hash(self):
         body = (FIXTURES / "metrics.json").read_bytes()
 
