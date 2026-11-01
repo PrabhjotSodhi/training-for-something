@@ -9,6 +9,7 @@ from tfs.connectors.testing.contract_checks import ConnectorContract
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "health_auto_export" / "metrics.json"
 FIXTURE = (str(FIXTURE_PATH), "rest_json")
+WORKOUTS_FIXTURE = (str(FIXTURE_PATH.with_name("workouts.json")), "rest_json")
 
 STEPS_DATE = "2026-10-20 00:00:00 +1300"
 STEPS_SOURCE = "Ana's iPhone|Ana's Apple Watch"
@@ -122,4 +123,4 @@ class HealthAutoExportReadTest(unittest.TestCase):
 
 class HealthAutoExportContractTest(ConnectorContract, unittest.TestCase):
     module = "tfs.connectors.health_auto_export.connector"
-    fixtures: ClassVar = [FIXTURE]
+    fixtures: ClassVar = [FIXTURE, WORKOUTS_FIXTURE]
