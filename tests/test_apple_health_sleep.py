@@ -17,7 +17,7 @@ class AppleHealthSleepTest(unittest.TestCase):
         read(str(SAMPLE), "file", str(out_path))
         lines = out_path.read_text(encoding="utf-8").splitlines()
         records = [json.loads(line) for line in lines]
-        self.sleep = [record for record in records if record["metric"] == "sleep_asleep"]
+        self.sleep = [record for record in records if record.get("metric") == "sleep_asleep"]
 
     def _segment(self, start: str) -> dict:
         (found,) = (record for record in self.sleep if record["key"].split("|")[2] == start)

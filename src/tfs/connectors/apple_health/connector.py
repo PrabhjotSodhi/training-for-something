@@ -1,4 +1,4 @@
-"""Reads an Apple Health export (export.zip or export.xml) into measurement records."""
+"""Reads an Apple Health export (export.zip or export.xml) into measurement and session records."""
 
 import json
 import math
@@ -24,6 +24,34 @@ _METRIC_BY_TYPE = {
     "HKQuantityTypeIdentifierHeartRate": "heart_rate",
     "HKQuantityTypeIdentifierHeartRateVariabilitySDNN": "hrv_sdnn",
 }
+_WORKOUT_STREAM = "workouts"
+_ACTIVITY_PREFIX = "HKWorkoutActivityType"
+_ACTIVITIES_BY_FAMILY = {
+    "run": ("Running",),
+    "ride": ("Cycling",),
+    "swim": ("Swimming",),
+    "strength": ("TraditionalStrengthTraining", "FunctionalStrengthTraining"),
+    "row": ("Rowing",),
+    "walk_hike": ("Walking", "Hiking"),
+    "ski": ("DownhillSkiing", "CrossCountrySkiing", "SnowSports"),
+    "racket": ("Tennis", "Squash", "Badminton", "TableTennis", "Pickleball", "Racquetball"),
+    "combat": ("Boxing", "MartialArts", "Kickboxing", "Wrestling"),
+    "climb": ("Climbing",),
+    "mixed": ("HighIntensityIntervalTraining", "CrossTraining", "MixedCardio"),
+    "mobility": ("Yoga", "Flexibility", "Pilates", "Cooldown"),
+}
+_FAMILY_BY_ACTIVITY = {
+    activity: family
+    for family, activities in _ACTIVITIES_BY_FAMILY.items()
+    for activity in activities
+}
+_DISTANCE_TYPES = tuple(
+    f"HKQuantityTypeIdentifier{name}"
+    for name in ("DistanceWalkingRunning", "DistanceCycling", "DistanceSwimming")
+)
+_ENERGY_TYPE = "HKQuantityTypeIdentifierActiveEnergyBurned"
+_HEART_RATE_TYPE = "HKQuantityTypeIdentifierHeartRate"
+_NO_STATISTIC = ElementTree.Element("WorkoutStatistics")
 _SLEEP_TYPE = "HKCategoryTypeIdentifierSleepAnalysis"
 _ASLEEP_VALUES = {
     f"HKCategoryValueSleepAnalysis{stage}"
@@ -42,14 +70,14 @@ class _SkipError(Exception):
 
 
 def read(path: str, fmt: str, out_path: str) -> dict:
-    """Write the measurements in one Apple Health export to out_path as JSON Lines and return the result."""
+    """Write the measurements and workouts in one Apple Health export to out_path as JSON Lines and return the result."""
     skipped: Counter = Counter()
     count = 0
     try:
         if fmt != "file":
             raise ValueError(f"format must be file, got {fmt!r}")
         with _open_export(path) as export, Path(out_path).open("w", encoding="utf-8") as out:
-            for record in _measurements(export, skipped):
+            for record in _records(export, skipped):
                 out.write(json.dumps(record) + "\n")
                 count += 1
     except _DAMAGED as error:
@@ -86,7 +114,7 @@ def _open_export(path: str) -> Iterator[BinaryIO]:
             yield export
 
 
-def _measurements(export: BinaryIO, skipped: Counter) -> Iterator[dict]:
+def _records(export: BinaryIO, skipped: Counter) -> Iterator[dict]:
     root = None
     depth = 0
     for event, element in ElementTree.iterparse(export, events=("start", "end")):
@@ -97,15 +125,15 @@ def _measurements(export: BinaryIO, skipped: Counter) -> Iterator[dict]:
         depth -= 1
         if depth != 1:
             continue
-        if element.tag == "Record":
+        if element.tag in ("Record", "Workout"):
             try:
-                record = _measurement(element)
+                record = _measurement(element) if element.tag == "Record" else _session(element)
             except _SkipError as skip:
                 skipped[skip.reason] += 1
             else:
                 if record is not None:
                     yield record
-        # Clearing a child on its own would empty a Record before it is read.
+        # Clearing a child on its own would empty a Record or Workout before it is read.
         root.clear()
 
 
@@ -122,7 +150,7 @@ def _measurement(element: ElementTree.Element) -> dict | None:
         start, end = _times(element)
         value, unit = round((end - start).total_seconds() / 3600, 7), "h"
     else:
-        value, unit = _quantity(element, raw_value)
+        value, unit = _quantity(raw_value, element.get("unit"))
         start, end = _times(element)
     if unit != METRICS[metric].unit:
         raise _SkipError(_UNREADABLE_FIELD)
@@ -152,7 +180,73 @@ def _measurement(element: ElementTree.Element) -> dict | None:
     }
 
 
-def _quantity(element: ElementTree.Element, raw_value: str) -> tuple[float, str]:
+def _session(element: ElementTree.Element) -> dict:
+    type_ = element.get("workoutActivityType", "")
+    activity = type_.removeprefix(_ACTIVITY_PREFIX)
+    start, end = _times(element)
+    source = element.get("sourceName", "")
+    key = "|".join((type_, source, element.get("startDate"), element.get("endDate")))
+    device = _DEVICE_NAME.search(element.get("device", ""))
+    start_utc, offset_min, local_date = utc_fields(start)
+    values = _workout_values(element)
+    return {
+        "kind": "session",
+        "stream": _WORKOUT_STREAM,
+        "key": key,
+        "revision_at": None,
+        "start_utc": start_utc,
+        "end_utc": utc_fields(end)[0],
+        "utc_offset_min": offset_min,
+        "local_date": local_date,
+        "label": activity,
+        "family": _FAMILY_BY_ACTIVITY.get(activity),
+        "values": {name: number for name, number in values.items() if number is not None},
+        "origin_app": source,
+        "origin_device": device.group(1).strip() if device else None,
+        "plan_ref": None,
+    }
+
+
+def _workout_values(element: ElementTree.Element) -> dict[str, float | None]:
+    statistics = {stat.get("type"): stat for stat in element.iterfind("WorkoutStatistics")}
+    distance = next((statistics[t] for t in _DISTANCE_TYPES if t in statistics), _NO_STATISTIC)
+    energy = statistics.get(_ENERGY_TYPE, _NO_STATISTIC)
+    heart_rate = statistics.get(_HEART_RATE_TYPE, _NO_STATISTIC)
+    heart_unit = heart_rate.get("unit")
+    return {
+        "duration_s": _amount(element.get("duration"), element.get("durationUnit"), "s"),
+        "distance_m": _statistic_or_total(distance, "sum", element, "totalDistance", "m"),
+        "active_energy_kcal": _statistic_or_total(
+            energy, "sum", element, "totalEnergyBurned", "kcal"
+        ),
+        "avg_hr": _amount(heart_rate.get("average"), heart_unit, "bpm"),
+        "max_hr": _amount(heart_rate.get("maximum"), heart_unit, "bpm"),
+    }
+
+
+def _statistic_or_total(
+    statistic: ElementTree.Element,
+    field: str,
+    workout: ElementTree.Element,
+    total: str,
+    target: str,
+) -> float | None:
+    value = _amount(statistic.get(field), statistic.get("unit"), target)
+    if value is None:
+        value = _amount(workout.get(total), workout.get(f"{total}Unit"), target)
+    return value
+
+
+def _amount(raw_value: str | None, unit: str | None, target: str) -> float | None:
+    if raw_value is None:
+        return None
+    value, converted_unit = _quantity(raw_value, unit)
+    if converted_unit != target:
+        raise _SkipError(_UNREADABLE_FIELD)
+    return value
+
+
+def _quantity(raw_value: str, unit: str | None) -> tuple[float, str]:
     try:
         number = float(raw_value)
     except ValueError:
@@ -160,7 +254,7 @@ def _quantity(element: ElementTree.Element, raw_value: str) -> tuple[float, str]
     if not math.isfinite(number):
         raise _SkipError(_NOT_A_NUMBER)
     try:
-        return convert(number, element.get("unit"))
+        return convert(number, unit)
     except ValueError:
         raise _SkipError(_UNREADABLE_FIELD) from None
 
