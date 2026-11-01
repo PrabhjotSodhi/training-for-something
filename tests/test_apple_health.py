@@ -48,7 +48,7 @@ class AppleHealthReadTest(unittest.TestCase):
     def test_step_record_becomes_a_measurement(self) -> None:
         result, records = self._read(SAMPLE)
 
-        self.assertEqual(result, {"status": "ok", "count": 6, "message": None})
+        self.assertEqual(result, {"status": "ok", "count": 9, "message": None})
         self.assertEqual(
             records[0],
             {
@@ -76,7 +76,15 @@ class AppleHealthReadTest(unittest.TestCase):
         by_metric = {record["metric"]: record for record in records}
         self.assertEqual(
             list(by_metric),
-            ["steps", "active_energy", "weight", "resting_hr", "heart_rate", "hrv_sdnn"],
+            [
+                "steps",
+                "active_energy",
+                "weight",
+                "resting_hr",
+                "heart_rate",
+                "hrv_sdnn",
+                "sleep_asleep",
+            ],
         )
         self.assertAlmostEqual(by_metric["active_energy"]["values"]["value"], 100.0, places=7)
         self.assertEqual(by_metric["active_energy"]["values"]["unit"], "kcal")
@@ -89,8 +97,8 @@ class AppleHealthReadTest(unittest.TestCase):
 
         result, records = self._read(path)
 
-        self.assertEqual(result, {"status": "ok", "count": 6, "message": None})
-        self.assertEqual(len(records), 6)
+        self.assertEqual(result, {"status": "ok", "count": 9, "message": None})
+        self.assertEqual(len(records), 9)
 
     def test_value_that_is_not_a_number_makes_the_file_partial(self) -> None:
         path = self._export_with(_record("HKQuantityTypeIdentifierStepCount", "count", "abc"))
@@ -101,11 +109,11 @@ class AppleHealthReadTest(unittest.TestCase):
             result,
             {
                 "status": "partial",
-                "count": 6,
+                "count": 9,
                 "message": "Skipped 1 record with a value that is not a number.",
             },
         )
-        self.assertEqual(len(records), 6)
+        self.assertEqual(len(records), 9)
 
     def test_cut_off_export_is_unreadable_and_writes_nothing(self) -> None:
         text = SAMPLE.read_text(encoding="utf-8")
