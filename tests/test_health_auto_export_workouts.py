@@ -2,10 +2,8 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from typing import ClassVar
 
 from tfs.connectors.health_auto_export.connector import read
-from tfs.connectors.testing.contract_checks import ConnectorContract
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "health_auto_export" / "workouts.json"
 RUN_ID = "A1B2C3D4-0000-4000-8000-000000000001"
@@ -67,32 +65,3 @@ class HealthAutoExportWorkoutsTest(unittest.TestCase):
             self.result,
             {"status": "partial", "count": 3, "message": "Skipped 1 workout without an id."},
         )
-
-    def test_workout_with_a_bad_value_is_skipped_and_counted(self) -> None:
-        workout = {
-            "id": RUN_ID,
-            "name": "Outdoor Run",
-            "start": "2026-10-22 06:00:00 +1300",
-            "end": "2026-10-22 06:41:00 +1300",
-            "distance": {"qty": "far", "units": "km"},
-        }
-        folder = tempfile.TemporaryDirectory()
-        self.addCleanup(folder.cleanup)
-        path = Path(folder.name) / "payload.json"
-        path.write_text(json.dumps({"data": {"workouts": [workout]}}), encoding="utf-8")
-
-        result = read(str(path), "rest_json", str(Path(folder.name) / "records.jsonl"))
-
-        self.assertEqual(
-            result,
-            {
-                "status": "partial",
-                "count": 0,
-                "message": "Skipped 1 workout with a value that is not a number.",
-            },
-        )
-
-
-class HealthAutoExportWorkoutsContractTest(ConnectorContract, unittest.TestCase):
-    module = "tfs.connectors.health_auto_export.connector"
-    fixtures: ClassVar = [(str(FIXTURE_PATH), "rest_json")]

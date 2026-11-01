@@ -4,7 +4,7 @@ import json
 import math
 from collections import Counter
 from collections.abc import Iterator
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from tfs.connectors.core.contract import METRICS, RecordError, convert, parse_local_time, utc_fields
@@ -20,9 +20,9 @@ _METRIC_BY_NAME = {
     "heart_rate_variability": "hrv_sdnn",
     "heart_rate": "heart_rate",
 }
-_NOT_A_NUMBER = "a value that is not a number"
-_UNREADABLE_TIME = "a time that TFS cannot read"
-_UNREADABLE_UNIT = "a unit or size that TFS cannot read"
+_NOT_A_NUMBER = "with a value that is not a number"
+_UNREADABLE_TIME = "with a time that TFS cannot read"
+_UNREADABLE_UNIT = "with a unit or size that TFS cannot read"
 _NO_ID = "without an id"
 _WORKOUT_STREAM = "workouts"
 _FAMILIES_BY_NAME = {
@@ -48,15 +48,11 @@ class _SkipError(Exception):
 def read(path: str, fmt: str, out_path: str) -> dict:
     """Write the measurements and workouts in one Health Auto Export push to out_path as JSON Lines and return the result."""
     skipped: Counter = Counter()
-    skipped_workouts: Counter = Counter()
     try:
         if fmt != "rest_json":
             raise ValueError(f"format must be rest_json, got {fmt!r}")
         metrics, workouts = _payload(path)
-        records = [
-            *_measurements(metrics, skipped),
-            *_sessions(workouts, skipped_workouts),
-        ]
+        records = [*_measurements(metrics, skipped), *_sessions(workouts, skipped)]
     except ValueError as error:
         Path(out_path).write_text("", encoding="utf-8")
         return {"status": "unreadable", "count": 0, "message": str(error)}
@@ -64,19 +60,13 @@ def read(path: str, fmt: str, out_path: str) -> dict:
         "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
     )
     message = " ".join(
-        [
-            _NOT_AGGREGATED
-            if reason == _NOT_AGGREGATED
-            else f"Skipped {number} sample{'' if number == 1 else 's'} with {reason}."
-            for reason, number in skipped.items()
-        ]
-        + [
-            f"Skipped {number} workout{'' if number == 1 else 's'} {reason}."
-            for reason, number in skipped_workouts.items()
-        ]
+        _NOT_AGGREGATED
+        if reason == _NOT_AGGREGATED
+        else f"Skipped {number} {noun}{'' if number == 1 else 's'} {reason}."
+        for (noun, reason), number in skipped.items()
     )
     return {
-        "status": "partial" if skipped or skipped_workouts else "ok",
+        "status": "partial" if skipped else "ok",
         "count": len(records),
         "message": message or None,
     }
@@ -112,7 +102,7 @@ def _measurements(metrics: list[dict], skipped: Counter) -> Iterator[dict]:
             try:
                 yield _measurement(name, entry.get("units"), sample)
             except _SkipError as skip:
-                skipped[skip.reason] += 1
+                skipped["sample", skip.reason] += 1
 
 
 def _sessions(workouts: list, skipped: Counter) -> Iterator[dict]:
@@ -120,18 +110,14 @@ def _sessions(workouts: list, skipped: Counter) -> Iterator[dict]:
         try:
             yield _session(workout)
         except _SkipError as skip:
-            skipped[skip.reason if skip.reason == _NO_ID else f"with {skip.reason}"] += 1
+            skipped["workout", skip.reason] += 1
 
 
 def _session(workout: object) -> dict:
     workout_id = workout.get("id") if isinstance(workout, dict) else None
     if not isinstance(workout_id, str) or not workout_id:
         raise _SkipError(_NO_ID)
-    try:
-        start = parse_local_time(workout.get("start"))
-        end = parse_local_time(workout.get("end"))
-    except (TypeError, ValueError):
-        raise _SkipError(_UNREADABLE_TIME) from None
+    start, end = _local_time(workout.get("start")), _local_time(workout.get("end"))
     name = workout.get("name")
     name = name if isinstance(name, str) else None
     start_utc, offset_min, local_date = utc_fields(start)
@@ -190,10 +176,7 @@ def _measurement(name: str, units: object, sample: object) -> dict:
     metric = _METRIC_BY_NAME[name]
     target = METRICS[metric].unit
     text = sample.get("date")
-    try:
-        start = parse_local_time(text)
-    except (TypeError, ValueError):
-        raise _SkipError(_UNREADABLE_TIME) from None
+    start = _local_time(text)
     if metric == "heart_rate":
         values = {"value": _number(sample.get("Avg"), units, target)}
         for bound in ("min", "max"):
@@ -209,11 +192,7 @@ def _measurement(name: str, units: object, sample: object) -> dict:
 def _sleep(units: object, sample: dict) -> dict:
     if not sample.get("sleepStart") or not sample.get("sleepEnd"):
         raise _SkipError(_NOT_AGGREGATED)
-    try:
-        start = parse_local_time(sample["sleepStart"])
-        end = parse_local_time(sample["sleepEnd"])
-    except (TypeError, ValueError):
-        raise _SkipError(_UNREADABLE_TIME) from None
+    start, end = _local_time(sample["sleepStart"]), _local_time(sample["sleepEnd"])
     total = sample.get("totalSleep")
     value = _number(sample.get("asleep") if total is None else total, units, "h")
     start_utc, offset_min, _ = utc_fields(start)
@@ -253,6 +232,13 @@ def _record(name: str, key_time: str, sample: dict, metric: str, values: dict, w
         "origin_device": source,
         "plan_ref": None,
     }
+
+
+def _local_time(text: object) -> datetime:
+    try:
+        return parse_local_time(text)
+    except (TypeError, ValueError):
+        raise _SkipError(_UNREADABLE_TIME) from None
 
 
 def _number(raw: object, units: object, target: str) -> float:
