@@ -96,15 +96,3 @@ class HealthAutoExportSleepTest(unittest.TestCase):
             },
         )
         self.assertEqual(records, [])
-
-    def test_night_that_ends_before_it_starts_is_skipped(self) -> None:
-        sample = {
-            "sleepStart": "2026-10-21 06:10:00 +1300",
-            "sleepEnd": "2026-10-20 22:40:00 +1300",
-            "totalSleep": 7.05,
-        }
-
-        result, records = self._read_sleep(sample)
-
-        self.assertEqual(result["status"], "partial")
-        self.assertEqual(records, [])

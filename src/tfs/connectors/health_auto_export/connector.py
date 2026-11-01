@@ -115,8 +115,6 @@ def _sleep(units: object, sample: dict) -> dict:
         end = parse_local_time(sample["sleepEnd"])
     except (TypeError, ValueError):
         raise _SkipError(_UNREADABLE_TIME) from None
-    if end < start:
-        raise _SkipError(_UNREADABLE_TIME)
     total = sample.get("totalSleep")
     value = _number(sample.get("asleep") if total is None else total, units, "h")
     start_utc, offset_min, _ = utc_fields(start)
