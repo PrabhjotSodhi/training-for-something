@@ -35,7 +35,7 @@ class HealthAutoExportReadTest(unittest.TestCase):
     def test_merged_step_total_becomes_a_measurement(self) -> None:
         result, records = self._read_fixture()
 
-        self.assertEqual(result, {"status": "ok", "count": 7, "message": None})
+        self.assertEqual(result, {"status": "ok", "count": 8, "message": None})
         self.assertEqual(
             records[f"steps|step_count|{STEPS_SOURCE}|{STEPS_DATE}"],
             {

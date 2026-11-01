@@ -55,6 +55,19 @@
         ]
       },
       {
+        "name": "sleep_analysis",
+        "units": "hr",
+        "data": [
+          {
+            "date": "2026-10-21 00:00:00 +1300",
+            "sleepStart": "2026-10-20 22:40:00 +1300",
+            "sleepEnd": "2026-10-21 06:10:00 +1300",
+            "totalSleep": 7.05,
+            "source": "Ana's Apple Watch"
+          }
+        ]
+      },
+      {
         "name": "dietary_water",
         "units": "fl_oz_us",
         "data": [
