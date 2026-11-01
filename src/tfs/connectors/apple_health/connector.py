@@ -8,6 +8,7 @@ import zlib
 from collections import Counter
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import BinaryIO
 from xml.etree import ElementTree
@@ -22,6 +23,11 @@ _METRIC_BY_TYPE = {
     "HKQuantityTypeIdentifierBodyMass": "weight",
     "HKQuantityTypeIdentifierHeartRate": "heart_rate",
     "HKQuantityTypeIdentifierHeartRateVariabilitySDNN": "hrv_sdnn",
+}
+_SLEEP_TYPE = "HKCategoryTypeIdentifierSleepAnalysis"
+_ASLEEP_VALUES = {
+    f"HKCategoryValueSleepAnalysis{stage}"
+    for stage in ("AsleepUnspecified", "AsleepCore", "AsleepDeep", "AsleepREM", "Asleep")
 }
 _DEVICE_NAME = re.compile(r"name:([^,>]*)")
 _NOT_A_NUMBER = "a value that is not a number"
@@ -104,29 +110,28 @@ def _measurements(export: BinaryIO, skipped: Counter) -> Iterator[dict]:
 
 
 def _measurement(element: ElementTree.Element) -> dict | None:
-    metric = _METRIC_BY_TYPE.get(element.get("type"))
+    type_ = element.get("type")
+    raw_value = element.get("value", "")
+    if type_ == _SLEEP_TYPE:
+        metric = "sleep_asleep" if raw_value in _ASLEEP_VALUES else None
+    else:
+        metric = _METRIC_BY_TYPE.get(type_)
     if metric is None:
         return None
-    raw_value = element.get("value", "")
-    try:
-        number = float(raw_value)
-    except ValueError:
-        raise _SkipError(_NOT_A_NUMBER) from None
-    if not math.isfinite(number):
-        raise _SkipError(_NOT_A_NUMBER)
-    try:
-        value, unit = convert(number, element.get("unit"))
-        start = parse_local_time(element.get("startDate", ""))
-        end = parse_local_time(element.get("endDate", ""))
-    except ValueError:
-        raise _SkipError(_UNREADABLE_FIELD) from None
+    if metric == "sleep_asleep":
+        start, end = _times(element)
+        value, unit = round((end - start).total_seconds() / 3600, 7), "h"
+    else:
+        value, unit = _quantity(element, raw_value)
+        start, end = _times(element)
     if unit != METRICS[metric].unit:
         raise _SkipError(_UNREADABLE_FIELD)
     start_utc, offset_min, local_date = utc_fields(start)
+    if metric == "sleep_asleep":
+        # Sleep that ends at 18:00 or later belongs to the next day (HLD 5.6).
+        local_date = (end + timedelta(hours=6)).date().isoformat()
     source = element.get("sourceName", "")
-    key = "|".join(
-        (element.get("type"), source, element.get("startDate"), element.get("endDate"), raw_value)
-    )
+    key = "|".join((type_, source, element.get("startDate"), element.get("endDate"), raw_value))
     device = _DEVICE_NAME.search(element.get("device", ""))
     return {
         "kind": "measurement",
@@ -145,3 +150,26 @@ def _measurement(element: ElementTree.Element) -> dict | None:
         "origin_device": device.group(1).strip() if device else None,
         "plan_ref": None,
     }
+
+
+def _quantity(element: ElementTree.Element, raw_value: str) -> tuple[float, str]:
+    try:
+        number = float(raw_value)
+    except ValueError:
+        raise _SkipError(_NOT_A_NUMBER) from None
+    if not math.isfinite(number):
+        raise _SkipError(_NOT_A_NUMBER)
+    try:
+        return convert(number, element.get("unit"))
+    except ValueError:
+        raise _SkipError(_UNREADABLE_FIELD) from None
+
+
+def _times(element: ElementTree.Element) -> tuple[datetime, datetime]:
+    try:
+        return (
+            parse_local_time(element.get("startDate", "")),
+            parse_local_time(element.get("endDate", "")),
+        )
+    except ValueError:
+        raise _SkipError(_UNREADABLE_FIELD) from None
