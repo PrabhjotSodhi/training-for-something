@@ -1,3 +1,4 @@
+import hashlib
 import http.client
 import json
 import os
@@ -86,9 +87,8 @@ class PushTest(PushTestCase):
         status, reply = self.post("/push/health_auto_export", body)
 
         self.assertEqual(status, 200)
-        self.assertEqual(set(reply), {"ok", "sha256"})
-        self.assertIs(reply["ok"], True)
-        sha256 = reply["sha256"]
+        sha256 = hashlib.sha256(body).hexdigest()
+        self.assertEqual(reply, {"ok": True, "sha256": sha256})
         saved = self.data_dir / "raw" / "health_auto_export" / "rest_json" / f"{sha256}.json"
         self.assertEqual(saved.read_bytes(), body)
         (row,) = self.file_rows()

@@ -12,9 +12,6 @@ from tfs.connectors.core.contract import load_manifests, to_utc_text
 from tfs.importer.raw_store import save_raw
 from tfs.web.server import PushHandler
 
-PUSH_FORMAT = "rest_json"
-PUSH_EXTENSION = "json"
-
 
 def make_push_handler(
     *,
@@ -27,7 +24,10 @@ def make_push_handler(
     manifests = load_manifests()
 
     def handle(name: str, body: BinaryIO, headers) -> tuple[int, dict]:
-        if not _token_matches(headers.get("Authorization")):
+        token = password_store.get("push_token")
+        authorization = headers.get("Authorization", "").encode()
+        # Bytes, because compare_digest rejects text that is not ASCII.
+        if not token or not hmac.compare_digest(authorization, f"Bearer {token}".encode()):
             return 401, {"ok": False, "error": "The push token is missing or wrong."}
         manifest = manifests.get(name)
         if manifest is None or not manifest["routes"]["push"]:
@@ -38,8 +38,8 @@ def make_push_handler(
                 conn,
                 data_dir,
                 name,
-                PUSH_FORMAT,
-                PUSH_EXTENSION,
+                "rest_json",
+                "json",
                 body,
                 now=to_utc_text(now_fn()),
             )
@@ -49,12 +49,3 @@ def make_push_handler(
         return 200, {"ok": True, "sha256": saved.sha256}
 
     return handle
-
-
-def _token_matches(authorization: str | None) -> bool:
-    token = password_store.get("push_token")
-    if not token or authorization is None:
-        return False
-    # Bytes, because compare_digest rejects text that is not ASCII.
-    expected = f"Bearer {token}".encode()
-    return hmac.compare_digest(authorization.encode(), expected)
