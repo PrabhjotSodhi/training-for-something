@@ -1,0 +1,60 @@
+"""The push endpoint: phone apps post a file with a bearer token and TFS saves it."""
+
+import hmac
+import sqlite3
+from collections.abc import Callable
+from datetime import datetime
+from pathlib import Path
+from typing import BinaryIO
+
+from tfs import password_store
+from tfs.connectors.core.contract import load_manifests, to_utc_text
+from tfs.importer.raw_store import save_raw
+from tfs.web.server import PushHandler
+
+PUSH_FORMAT = "rest_json"
+PUSH_EXTENSION = "json"
+
+
+def make_push_handler(
+    *,
+    data_dir: Path,
+    conn_factory: Callable[[], sqlite3.Connection],
+    now_fn: Callable[[], datetime],
+    on_saved: Callable[[str], None],
+) -> PushHandler:
+    """Build the handler for make_server. It answers 200 only after the raw file is registered."""
+    manifests = load_manifests()
+
+    def handle(name: str, body: BinaryIO, headers) -> tuple[int, dict]:
+        if not _token_matches(headers.get("Authorization")):
+            return 401, {"ok": False, "error": "The push token is missing or wrong."}
+        manifest = manifests.get(name)
+        if manifest is None or not manifest["routes"]["push"]:
+            return 404, {"ok": False, "error": "This app does not take pushes."}
+        conn = conn_factory()
+        try:
+            saved = save_raw(
+                conn,
+                data_dir,
+                name,
+                PUSH_FORMAT,
+                PUSH_EXTENSION,
+                body,
+                now=to_utc_text(now_fn()),
+            )
+        finally:
+            conn.close()
+        on_saved(saved.sha256)
+        return 200, {"ok": True, "sha256": saved.sha256}
+
+    return handle
+
+
+def _token_matches(authorization: str | None) -> bool:
+    token = password_store.get("push_token")
+    if not token or authorization is None:
+        return False
+    # Bytes, because compare_digest rejects text that is not ASCII.
+    expected = f"Bearer {token}".encode()
+    return hmac.compare_digest(authorization.encode(), expected)
