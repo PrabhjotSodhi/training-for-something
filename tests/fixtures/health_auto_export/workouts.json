@@ -1,0 +1,39 @@
+{
+  "data": {
+    "workouts": [
+      {
+        "id": "A1B2C3D4-0000-4000-8000-000000000001",
+        "name": "Outdoor Run",
+        "start": "2026-10-22 06:00:00 +1300",
+        "end": "2026-10-22 06:41:00 +1300",
+        "duration": 2460.0,
+        "distance": {"qty": 8.02, "units": "km"},
+        "activeEnergyBurned": {"qty": 512.3, "units": "kcal"},
+        "heartRate": {
+          "avg": {"qty": 151.2, "units": "bpm"},
+          "max": {"qty": 176, "units": "bpm"}
+        }
+      },
+      {
+        "id": "A1B2C3D4-0000-4000-8000-000000000002",
+        "name": "Traditional Strength Training",
+        "start": "2026-10-22 18:00:00 +1300",
+        "end": "2026-10-22 18:45:00 +1300",
+        "duration": 2700.0,
+        "avgHeartRate": {"qty": 118, "units": "bpm"},
+        "maxHeartRate": {"qty": 141, "units": "bpm"}
+      },
+      {
+        "id": "A1B2C3D4-0000-4000-8000-000000000003",
+        "name": "Curling",
+        "start": "2026-10-23 19:00:00 +1300",
+        "end": "2026-10-23 20:00:00 +1300"
+      },
+      {
+        "name": "Outdoor Walk",
+        "start": "2026-10-24 07:00:00 +1300",
+        "end": "2026-10-24 07:30:00 +1300"
+      }
+    ]
+  }
+}
