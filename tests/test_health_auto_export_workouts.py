@@ -68,6 +68,30 @@ class HealthAutoExportWorkoutsTest(unittest.TestCase):
             {"status": "partial", "count": 3, "message": "Skipped 1 workout without an id."},
         )
 
+    def test_workout_with_a_bad_value_is_skipped_and_counted(self) -> None:
+        workout = {
+            "id": RUN_ID,
+            "name": "Outdoor Run",
+            "start": "2026-10-22 06:00:00 +1300",
+            "end": "2026-10-22 06:41:00 +1300",
+            "distance": {"qty": "far", "units": "km"},
+        }
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        path = Path(folder.name) / "payload.json"
+        path.write_text(json.dumps({"data": {"workouts": [workout]}}), encoding="utf-8")
+
+        result = read(str(path), "rest_json", str(Path(folder.name) / "records.jsonl"))
+
+        self.assertEqual(
+            result,
+            {
+                "status": "partial",
+                "count": 0,
+                "message": "Skipped 1 workout with a value that is not a number.",
+            },
+        )
+
 
 class HealthAutoExportWorkoutsContractTest(ConnectorContract, unittest.TestCase):
     module = "tfs.connectors.health_auto_export.connector"

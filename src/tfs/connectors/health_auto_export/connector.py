@@ -1,4 +1,4 @@
-"""Reads a Health Auto Export REST push into measurement records."""
+"""Reads a Health Auto Export REST push into measurement and session records."""
 
 import json
 import math
@@ -23,6 +23,19 @@ _METRIC_BY_NAME = {
 _NOT_A_NUMBER = "a value that is not a number"
 _UNREADABLE_TIME = "a time that TFS cannot read"
 _UNREADABLE_UNIT = "a unit or size that TFS cannot read"
+_NO_ID = "without an id"
+_WORKOUT_STREAM = "workouts"
+_FAMILIES_BY_NAME = {
+    "run": ("Outdoor Run", "Indoor Run", "Running"),
+    "ride": ("Outdoor Cycle", "Indoor Cycle", "Cycling"),
+    "swim": ("Pool Swim", "Open Water Swim", "Swimming"),
+    "strength": ("Traditional Strength Training", "Functional Strength Training"),
+    "row": ("Rowing",),
+    "walk_hike": ("Outdoor Walk", "Indoor Walk", "Walking", "Hiking"),
+    "mixed": ("High Intensity Interval Training",),
+    "mobility": ("Yoga", "Pilates", "Flexibility"),
+}
+_FAMILY_BY_NAME = {name: family for family, names in _FAMILIES_BY_NAME.items() for name in names}
 _NOT_AGGREGATED = "Turn on Aggregate Sleep Data in Health Auto Export."
 
 
@@ -33,12 +46,17 @@ class _SkipError(Exception):
 
 
 def read(path: str, fmt: str, out_path: str) -> dict:
-    """Write the measurements in one Health Auto Export push to out_path as JSON Lines and return the result."""
+    """Write the measurements and workouts in one Health Auto Export push to out_path as JSON Lines and return the result."""
     skipped: Counter = Counter()
+    skipped_workouts: Counter = Counter()
     try:
         if fmt != "rest_json":
             raise ValueError(f"format must be rest_json, got {fmt!r}")
-        records = list(_measurements(_metrics(path), skipped))
+        metrics, workouts = _payload(path)
+        records = [
+            *_measurements(metrics, skipped),
+            *_sessions(workouts, skipped_workouts),
+        ]
     except ValueError as error:
         Path(out_path).write_text("", encoding="utf-8")
         return {"status": "unreadable", "count": 0, "message": str(error)}
@@ -46,26 +64,40 @@ def read(path: str, fmt: str, out_path: str) -> dict:
         "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
     )
     message = " ".join(
-        _NOT_AGGREGATED
-        if reason == _NOT_AGGREGATED
-        else f"Skipped {number} sample{'' if number == 1 else 's'} with {reason}."
-        for reason, number in skipped.items()
+        [
+            _NOT_AGGREGATED
+            if reason == _NOT_AGGREGATED
+            else f"Skipped {number} sample{'' if number == 1 else 's'} with {reason}."
+            for reason, number in skipped.items()
+        ]
+        + [
+            f"Skipped {number} workout{'' if number == 1 else 's'} {reason}."
+            for reason, number in skipped_workouts.items()
+        ]
     )
     return {
-        "status": "partial" if skipped else "ok",
+        "status": "partial" if skipped or skipped_workouts else "ok",
         "count": len(records),
         "message": message or None,
     }
 
 
-def _metrics(path: str) -> list[dict]:
+def _payload(path: str) -> tuple[list[dict], list]:
     try:
-        metrics = json.loads(Path(path).read_text(encoding="utf-8"))["data"]["metrics"]
+        data = json.loads(Path(path).read_text(encoding="utf-8"))["data"]
     except (ValueError, KeyError, TypeError):
         raise ValueError(_NOT_A_PAYLOAD) from None
-    if not isinstance(metrics, list) or not all(isinstance(entry, dict) for entry in metrics):
+    if not isinstance(data, dict) or not ("metrics" in data or "workouts" in data):
         raise ValueError(_NOT_A_PAYLOAD)
-    return metrics
+    metrics = data.get("metrics", [])
+    workouts = data.get("workouts", [])
+    if (
+        not isinstance(metrics, list)
+        or not all(isinstance(entry, dict) for entry in metrics)
+        or not isinstance(workouts, list)
+    ):
+        raise ValueError(_NOT_A_PAYLOAD)
+    return metrics, workouts
 
 
 def _measurements(metrics: list[dict], skipped: Counter) -> Iterator[dict]:
@@ -81,6 +113,73 @@ def _measurements(metrics: list[dict], skipped: Counter) -> Iterator[dict]:
                 yield _measurement(name, entry.get("units"), sample)
             except _SkipError as skip:
                 skipped[skip.reason] += 1
+
+
+def _sessions(workouts: list, skipped: Counter) -> Iterator[dict]:
+    for workout in workouts:
+        try:
+            yield _session(workout)
+        except _SkipError as skip:
+            skipped[skip.reason if skip.reason == _NO_ID else f"with {skip.reason}"] += 1
+
+
+def _session(workout: object) -> dict:
+    workout_id = workout.get("id") if isinstance(workout, dict) else None
+    if not isinstance(workout_id, str) or not workout_id:
+        raise _SkipError(_NO_ID)
+    try:
+        start = parse_local_time(workout.get("start"))
+        end = parse_local_time(workout.get("end"))
+    except (TypeError, ValueError):
+        raise _SkipError(_UNREADABLE_TIME) from None
+    name = workout.get("name")
+    name = name if isinstance(name, str) else None
+    start_utc, offset_min, local_date = utc_fields(start)
+    return {
+        "kind": "session",
+        "stream": _WORKOUT_STREAM,
+        "key": workout_id,
+        "revision_at": None,
+        "start_utc": start_utc,
+        "end_utc": utc_fields(end)[0],
+        "utc_offset_min": offset_min,
+        "local_date": local_date,
+        "label": name,
+        "family": _FAMILY_BY_NAME.get(name),
+        "values": {
+            key: value for key, value in _workout_values(workout).items() if value is not None
+        },
+        "origin_app": None,
+        "origin_device": None,
+        "plan_ref": None,
+    }
+
+
+def _workout_values(workout: dict) -> dict[str, float | None]:
+    heart_rate = workout.get("heartRate")
+    if heart_rate is None:
+        heart_rate = {}
+    elif not isinstance(heart_rate, dict):
+        raise _SkipError(_NOT_A_NUMBER)
+    return {
+        "duration_s": _workout_number(workout.get("duration"), "s", "s"),
+        "distance_m": _workout_quantity(workout.get("distance"), "m"),
+        "active_energy_kcal": _workout_quantity(workout.get("activeEnergyBurned"), "kcal"),
+        "avg_hr": _workout_quantity(heart_rate.get("avg", workout.get("avgHeartRate")), "bpm"),
+        "max_hr": _workout_quantity(heart_rate.get("max", workout.get("maxHeartRate")), "bpm"),
+    }
+
+
+def _workout_quantity(raw: object, target: str) -> float | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise _SkipError(_NOT_A_NUMBER)
+    return _workout_number(raw.get("qty"), raw.get("units"), target)
+
+
+def _workout_number(raw: object, units: object, target: str) -> float | None:
+    return None if raw is None else _number(raw, units, target)
 
 
 def _measurement(name: str, units: object, sample: object) -> dict:
