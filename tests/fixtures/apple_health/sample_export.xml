@@ -18,6 +18,11 @@
    <InstantaneousBeatsPerMinute bpm="61" time="3:00:01.00 AM"/>
   </HeartRateVariabilityMetadataList>
  </Record>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Ana's Apple Watch" sourceVersion="10.0" device="&lt;&lt;HKDevice: 0x1&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch&gt;" creationDate="2026-03-01 23:40:00 +1300" startDate="2026-03-01 23:00:00 +1300" endDate="2026-03-01 23:40:00 +1300" value="HKCategoryValueSleepAnalysisAsleepCore"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Ana's Apple Watch" sourceVersion="10.0" device="&lt;&lt;HKDevice: 0x1&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch&gt;" creationDate="2026-03-02 06:30:00 +1300" startDate="2026-03-02 01:00:00 +1300" endDate="2026-03-02 06:30:00 +1300" value="HKCategoryValueSleepAnalysisAsleepDeep"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Ana's Apple Watch" sourceVersion="10.0" device="&lt;&lt;HKDevice: 0x1&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch&gt;" creationDate="2026-03-02 14:30:00 +1300" startDate="2026-03-02 14:00:00 +1300" endDate="2026-03-02 14:30:00 +1300" value="HKCategoryValueSleepAnalysisAsleepREM"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Ana's Apple Watch" sourceVersion="10.0" device="&lt;&lt;HKDevice: 0x1&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch&gt;" creationDate="2026-03-02 06:45:00 +1300" startDate="2026-03-01 22:30:00 +1300" endDate="2026-03-02 06:45:00 +1300" value="HKCategoryValueSleepAnalysisInBed"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Ana's Apple Watch" sourceVersion="10.0" device="&lt;&lt;HKDevice: 0x1&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch&gt;" creationDate="2026-03-02 03:05:00 +1300" startDate="2026-03-02 03:00:00 +1300" endDate="2026-03-02 03:05:00 +1300" value="HKCategoryValueSleepAnalysisAwake"/>
  <Workout workoutActivityType="HKWorkoutActivityTypeRunning" duration="30" durationUnit="min" sourceName="Ana's Apple Watch" sourceVersion="10.0" creationDate="2026-03-01 08:30:00 +1300" startDate="2026-03-01 08:00:00 +1300" endDate="2026-03-01 08:30:00 +1300">
   <MetadataEntry key="HKIndoorWorkout" value="0"/>
  </Workout>
