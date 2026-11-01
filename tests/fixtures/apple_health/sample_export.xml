@@ -26,4 +26,17 @@
  <Workout workoutActivityType="HKWorkoutActivityTypeRunning" duration="30" durationUnit="min" sourceName="Ana's Apple Watch" sourceVersion="10.0" creationDate="2026-03-01 08:30:00 +1300" startDate="2026-03-01 08:00:00 +1300" endDate="2026-03-01 08:30:00 +1300">
   <MetadataEntry key="HKIndoorWorkout" value="0"/>
  </Workout>
+ <Workout workoutActivityType="HKWorkoutActivityTypeRunning" duration="30.5" durationUnit="min" sourceName="Ana's Apple Watch" sourceVersion="10.0" device="&lt;&lt;HKDevice: 0x1&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch&gt;" creationDate="2026-03-02 06:31:00 +1300" startDate="2026-03-02 06:00:00 +1300" endDate="2026-03-02 06:30:30 +1300">
+  <MetadataEntry key="HKIndoorWorkout" value="0"/>
+  <WorkoutEvent type="HKWorkoutEventTypeSegment" date="2026-03-02 06:15:00 +1300" duration="15" durationUnit="min"/>
+  <WorkoutStatistics type="HKQuantityTypeIdentifierHeartRate" startDate="2026-03-02 06:00:00 +1300" endDate="2026-03-02 06:30:30 +1300" average="148" minimum="96" maximum="171" unit="count/min"/>
+  <WorkoutStatistics type="HKQuantityTypeIdentifierActiveEnergyBurned" startDate="2026-03-02 06:00:00 +1300" endDate="2026-03-02 06:30:30 +1300" sum="310" unit="kcal"/>
+  <WorkoutStatistics type="HKQuantityTypeIdentifierDistanceWalkingRunning" startDate="2026-03-02 06:00:00 +1300" endDate="2026-03-02 06:30:30 +1300" sum="5.2" unit="km"/>
+  <WorkoutRoute sourceName="Ana's Apple Watch" sourceVersion="10.0" creationDate="2026-03-02 06:31:00 +1300" startDate="2026-03-02 06:00:00 +1300" endDate="2026-03-02 06:30:30 +1300">
+   <FileReference path="/workout-routes/route_2026-03-02_6.00am.gpx"/>
+  </WorkoutRoute>
+ </Workout>
+ <Workout workoutActivityType="HKWorkoutActivityTypeTraditionalStrengthTraining" duration="45" durationUnit="min" sourceName="Hevy" sourceVersion="2.1" creationDate="2026-03-02 18:50:00 +1300" startDate="2026-03-02 18:00:00 +1300" endDate="2026-03-02 18:45:00 +1300"/>
+ <Workout workoutActivityType="HKWorkoutActivityTypeCurling" duration="90" durationUnit="min" sourceName="Ana's iPhone" sourceVersion="17.4" creationDate="2026-03-02 21:35:00 +1300" startDate="2026-03-02 20:00:00 +1300" endDate="2026-03-02 21:30:00 +1300"/>
+ <Workout workoutActivityType="HKWorkoutActivityTypeWalking" duration="55" durationUnit="min" totalDistance="3.1" totalDistanceUnit="mi" totalEnergyBurned="250" totalEnergyBurnedUnit="kcal" sourceName="Ana's iPhone" sourceVersion="17.4" creationDate="2026-03-03 08:00:00 +1300" startDate="2026-03-03 07:00:00 +1300" endDate="2026-03-03 07:55:00 +1300"/>
 </HealthData>

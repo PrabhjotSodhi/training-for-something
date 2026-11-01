@@ -48,7 +48,7 @@ class AppleHealthReadTest(unittest.TestCase):
     def test_step_record_becomes_a_measurement(self) -> None:
         result, records = self._read(SAMPLE)
 
-        self.assertEqual(result, {"status": "ok", "count": 9, "message": None})
+        self.assertEqual(result, {"status": "ok", "count": 14, "message": None})
         self.assertEqual(
             records[0],
             {
@@ -73,7 +73,9 @@ class AppleHealthReadTest(unittest.TestCase):
     def test_units_convert_and_every_mapped_type_is_read(self) -> None:
         _, records = self._read(SAMPLE)
 
-        by_metric = {record["metric"]: record for record in records}
+        by_metric = {
+            record["metric"]: record for record in records if record["kind"] == "measurement"
+        }
         self.assertEqual(
             list(by_metric),
             [
@@ -97,8 +99,8 @@ class AppleHealthReadTest(unittest.TestCase):
 
         result, records = self._read(path)
 
-        self.assertEqual(result, {"status": "ok", "count": 9, "message": None})
-        self.assertEqual(len(records), 9)
+        self.assertEqual(result, {"status": "ok", "count": 14, "message": None})
+        self.assertEqual(len(records), 14)
 
     def test_value_that_is_not_a_number_makes_the_file_partial(self) -> None:
         path = self._export_with(_record("HKQuantityTypeIdentifierStepCount", "count", "abc"))
@@ -109,11 +111,11 @@ class AppleHealthReadTest(unittest.TestCase):
             result,
             {
                 "status": "partial",
-                "count": 9,
+                "count": 14,
                 "message": "Skipped 1 record with a value that is not a number.",
             },
         )
-        self.assertEqual(len(records), 9)
+        self.assertEqual(len(records), 14)
 
     def test_cut_off_export_is_unreadable_and_writes_nothing(self) -> None:
         text = SAMPLE.read_text(encoding="utf-8")
