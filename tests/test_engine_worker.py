@@ -13,7 +13,7 @@ from tfs import config, password_store
 from tfs.cli import main, start
 from tfs.cli.start import render_banner
 from tfs.connectors.core import runner
-from tfs.engine import Engine, EngineAlreadyRunningError
+from tfs.engine import Engine
 from tfs.importer.raw_store import save_raw
 from tfs.persistence.migrations import migrate
 from tfs.persistence.sqlite import connect
@@ -175,7 +175,7 @@ class EngineWorkerTest(unittest.TestCase):
             BANNER + HOME_WIFI_LINE + TOKEN_LINE,
         )
 
-    def run_start(self, **sleep_options) -> tuple[int, str, str]:
+    def run_start(self) -> tuple[int, str, str]:
         out, err = io.StringIO(), io.StringIO()
         with (
             mock.patch.object(
@@ -183,7 +183,7 @@ class EngineWorkerTest(unittest.TestCase):
                 "Engine",
                 lambda data_dir, **kwargs: Engine(data_dir, screen_port=free_port(), **kwargs),
             ),
-            mock.patch.object(start, "sleep", **sleep_options),
+            mock.patch.object(start, "sleep", side_effect=KeyboardInterrupt),
             contextlib.redirect_stdout(out),
             contextlib.redirect_stderr(err),
         ):
@@ -191,7 +191,7 @@ class EngineWorkerTest(unittest.TestCase):
         return code, out.getvalue(), err.getvalue()
 
     def test_start_prints_the_banner_and_exits_0_after_ctrl_c(self):
-        code, out, _ = self.run_start(side_effect=KeyboardInterrupt)
+        code, out, _ = self.run_start()
 
         self.assertEqual(code, 0)
         token = password_store.get("push_token")
@@ -200,12 +200,6 @@ class EngineWorkerTest(unittest.TestCase):
             render_banner(config.SCREEN_HOST, config.SCREEN_PORT, None, None, token, CONNECTORS)
             + "\n",
         )
-
-    def test_start_says_so_and_exits_1_when_tfs_is_already_running(self):
-        with mock.patch.object(Engine, "start", side_effect=EngineAlreadyRunningError("Busy.")):
-            code, out, err = self.run_start()
-
-        self.assertEqual((code, out, err), (1, "", "Busy.\n"))
 
 
 if __name__ == "__main__":

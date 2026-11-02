@@ -55,7 +55,7 @@ def run(args: argparse.Namespace) -> int:
             ),
             flush=True,
         )
-        # Windows cannot interrupt a wait with no timeout, so wake up now and then.
+        # Ctrl+C interrupts sleep at once. The loop is only here because sleep needs a finite time.
         while True:
             sleep(1)
     except KeyboardInterrupt:

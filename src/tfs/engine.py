@@ -115,7 +115,6 @@ class Engine:
         self._jobs.task_done()
 
     def _process(self, retry_failed: bool) -> None:
-        failed = True
         with contextlib.suppress(Exception):
             conn = connect(self._data_dir / "tfs.db", "import")
             try:
@@ -128,9 +127,8 @@ class Engine:
                 )
             finally:
                 conn.close()
-            failed = False
-        if failed:
-            logger.error("Reading new files failed. TFS tries again after the next push.")
+            return
+        logger.error("Reading new files failed. TFS tries again after the next push.")
 
     def _prepare_data(self, db_path: Path) -> None:
         (self._data_dir / "raw").mkdir(parents=True, exist_ok=True)
