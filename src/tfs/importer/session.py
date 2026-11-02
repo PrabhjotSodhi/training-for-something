@@ -20,6 +20,7 @@ from tfs.duplicates import workouts
 from tfs.importer import records
 from tfs.importer.raw_store import save_raw
 from tfs.persistence.sqlite import transaction
+from tfs.source_priority import daily_totals
 
 logger = logging.getLogger(__name__)
 
@@ -221,7 +222,9 @@ def rebuild_pending(conn: sqlite3.Connection, *, tz: tzinfo | None = None) -> in
             dates = conn.execute(
                 "SELECT local_date FROM rebuild_dates WHERE substr(local_date, 1, 7) = ?", (month,)
             ).fetchall()
-            workouts.update(conn, {date for (date,) in dates})
+            changed = {date for (date,) in dates}
+            workouts.update(conn, changed)
+            daily_totals.rebuild(conn, changed)
             rebuilt += conn.execute(
                 "DELETE FROM rebuild_dates WHERE substr(local_date, 1, 7) = ?", (month,)
             ).rowcount
