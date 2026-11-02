@@ -40,15 +40,14 @@ class DuplicatesTest(unittest.TestCase):
         origin_app: str | None = None,
         local_date: str | None = None,
         values: dict | None = None,
-        deleted_at: str | None = None,
         kind: str = "session",
     ) -> None:
         self.conn.execute(
             "INSERT INTO source_records (id, connector, stream, key, kind, revision_at,"
             " arrival_seq, file_sha256, reader_version, start_utc, end_utc, local_date, family,"
-            " values_json, origin_app, deleted_at)"
+            " values_json, origin_app)"
             " VALUES (?, ?, 'workouts', ?, ?, '2026-10-01T00:00:00.000Z', 1, ?, 'r1', ?, ?, ?, ?,"
-            " ?, ?, ?)",
+            " ?, ?)",
             (
                 record_id,
                 connector,
@@ -61,7 +60,6 @@ class DuplicatesTest(unittest.TestCase):
                 family,
                 json.dumps(values or {}),
                 origin_app,
-                deleted_at,
             ),
         )
 
@@ -81,10 +79,10 @@ class DuplicatesTest(unittest.TestCase):
     def shared(self, first: str, second: str) -> bool:
         return any(first in members and second in members for members in self.groups().values())
 
-    def run_pair(self, offset_s: int, *, length_s: int = 1800, **second) -> bool:
+    def run_pair(self, offset_s: int, **second) -> bool:
         base = 6 * 3600
-        self.add("a", "apple_health", *times(base, base + length_s))
-        self.add("b", "hevy", *times(base + offset_s, base + offset_s + length_s), **second)
+        self.add("a", "apple_health", *times(base, base + 1800))
+        self.add("b", "hevy", *times(base + offset_s, base + offset_s + 1800), **second)
         update(self.conn, {"2026-10-01"}, MANIFESTS)
         return self.shared("a", "b")
 
