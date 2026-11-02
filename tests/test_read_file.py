@@ -9,6 +9,7 @@ from unittest import mock
 
 from tfs import config
 from tfs.connectors.core.runner import reader_version
+from tfs.importer import records
 from tfs.importer.raw_store import save_raw
 from tfs.importer.session import ImportResult, process_pending, read_file, rebuild_pending
 from tfs.persistence.migrations import migrate
@@ -137,6 +138,32 @@ class ReadFileTest(SessionTest):
         row = self.row(sha256)
         self.assertEqual(row["status"], "partial")
         self.assertEqual(row["message"], f"1 record rejected: {REJECTED_REASON}")
+
+    def test_an_unexpected_error_marks_the_file_failed_and_it_is_read_again(self) -> None:
+        sha256 = self.save(b"first")
+
+        with (
+            mock.patch.object(records, "store", side_effect=RuntimeError("invented-secret-77")),
+            self.assertLogs("tfs.importer.session", "ERROR") as logs,
+        ):
+            result = read_file(self.conn, self.data_dir, sha256, now=NOW, module=FAKE)
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.message, "Reader failed: RuntimeError")
+        row = self.row(sha256)
+        self.assertEqual(row["status"], "failed")
+        self.assertEqual(row["message"], "Reader failed: RuntimeError")
+        self.assertEqual(
+            [record.getMessage() for record in logs.records],
+            [f"file processing failed {sha256} RuntimeError"],
+        )
+        self.assertNotIn("invented-secret-77", "\n".join(logs.output))
+        self.assertIsNone(logs.records[0].exc_info)
+
+        again = read_file(self.conn, self.data_dir, sha256, now=NOW, module=FAKE)
+
+        self.assertEqual(again.status, "ok")
+        self.assertEqual(self.row(sha256)["status"], "ok")
 
 
 class ProcessPendingTest(SessionTest):
