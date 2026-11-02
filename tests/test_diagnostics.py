@@ -120,3 +120,13 @@ class DiagnosticsTest(unittest.TestCase):
             code = main(["status"])
         self.assertEqual(code, 0)
         self.assertIn("Hevy", out.getvalue())
+
+    def test_status_command_without_a_database_says_so_and_exits_1(self):
+        self.conn.close()
+        config.db_path().unlink()
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = main(["status"])
+        self.assertEqual(
+            (code, err.getvalue()), (1, "TFS has no data yet. Run tfs connect NAME first.\n")
+        )
