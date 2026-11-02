@@ -2,7 +2,6 @@
 
 import re
 import sqlite3
-from collections.abc import Callable
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
@@ -18,33 +17,14 @@ def migrate(conn: sqlite3.Connection, migrations_dir: Path | None = None) -> int
     """Apply every migration above user_version in one transaction and return the schema number."""
     files = _numbered_files(_folder(migrations_dir))
     newest = len(files)
-    while True:
-        current = _user_version(conn)
-        if current < 0:
-            raise sqlite3.DatabaseError(
-                f"This database has an invalid schema number ({current}). Restore a backup."
-            )
-        if current > newest:
-            raise DatabaseTooNewError(
-                f"This database was made by a newer version of TFS (schema {current}). "
-                "Install that version, or restore a backup."
-            )
-        if current == newest:
-            return newest
-        scripts = [_read(files[number]) for number in range(current + 1, newest + 1)]
-        if conn.in_transaction:
-            raise sqlite3.ProgrammingError(
-                "Finish or roll back the open transaction before migrating the database."
-            )
-        try:
-            _apply(conn, scripts, newest)
-        except sqlite3.Error:
-            # Another process may have migrated between our read of user_version and our lock.
-            # Then our files fail on tables that now exist, so look again before giving up.
-            if _user_version(conn) == current:
-                raise
-        else:
-            return newest
+    if _schema_number(conn, newest) == newest:
+        return newest
+    if conn.in_transaction:
+        raise sqlite3.ProgrammingError(
+            "Finish or roll back the open transaction before migrating the database."
+        )
+    _apply(conn, files)
+    return newest
 
 
 def _folder(migrations_dir: Path | None) -> Traversable:
@@ -100,23 +80,34 @@ def _read(entry: Traversable) -> str:
     return text
 
 
-def _user_version(conn: sqlite3.Connection) -> int:
-    """Return the schema number stored in the database file."""
-    return conn.execute("PRAGMA user_version").fetchone()[0]
+def _schema_number(conn: sqlite3.Connection, newest: int) -> int:
+    """Return the schema number stored in the database file, or raise if TFS cannot use it."""
+    current = conn.execute("PRAGMA user_version").fetchone()[0]
+    if current < 0:
+        raise sqlite3.DatabaseError(
+            f"This database has an invalid schema number ({current}). Restore a backup."
+        )
+    if current > newest:
+        raise DatabaseTooNewError(
+            f"This database was made by a newer version of TFS (schema {current}). "
+            "Install that version, or restore a backup."
+        )
+    return current
 
 
-def _apply(conn: sqlite3.Connection, scripts: list[str], newest: int) -> None:
-    """Run the scripts and the version change inside one transaction, or change nothing."""
-    # A lone ";" after each file stops a missing semicolon or a trailing comment
-    # from joining one file to the next.
-    body = "".join(f"{script}\n;\n" for script in scripts)
-    script = f"BEGIN IMMEDIATE;\n{body}PRAGMA user_version = {newest};\nCOMMIT;"
+def _apply(conn: sqlite3.Connection, files: dict[int, Traversable]) -> None:
+    """Take the write lock, then read the schema number and apply what is missing, or change nothing."""
+    newest = len(files)
+    # In the default mode, executescript commits an open transaction before it runs.
+    legacy_mode = conn.autocommit
+    conn.autocommit = True
     try:
-        conn.set_authorizer(_allow_only_our_transaction(newest))
-        try:
-            conn.executescript(script)
-        finally:
-            conn.set_authorizer(None)
+        conn.execute("BEGIN IMMEDIATE")
+        current = _schema_number(conn, newest)
+        # A lone ";" after each file stops a missing semicolon or a trailing comment
+        # from joining one file to the next.
+        body = "".join(f"{_read(files[number])}\n;\n" for number in range(current + 1, newest + 1))
+        conn.executescript(f"{body}PRAGMA user_version = {newest};\nCOMMIT;")
         if conn.in_transaction:
             # An unclosed /* comment in a file hides the rest of the script, COMMIT included.
             raise sqlite3.OperationalError(
@@ -126,26 +117,5 @@ def _apply(conn: sqlite3.Connection, scripts: list[str], newest: int) -> None:
         if conn.in_transaction:
             conn.execute("ROLLBACK")
         raise
-
-
-def _allow_only_our_transaction(newest: int) -> Callable[..., int]:
-    """Build an authorizer that refuses any BEGIN, COMMIT or ROLLBACK a migration file adds.
-
-    A file that ends the transaction early would leave the earlier work saved
-    when a later file fails.
-    """
-    begun = False
-    version_set = False
-
-    def authorize(action: int, arg1: str | None, arg2: str | None, *_: str | None) -> int:
-        nonlocal begun, version_set
-        if action == sqlite3.SQLITE_PRAGMA and arg1 == "user_version" and arg2 == str(newest):
-            version_set = True
-        if action != sqlite3.SQLITE_TRANSACTION:
-            return sqlite3.SQLITE_OK
-        if arg1 == "BEGIN" and not begun:
-            begun = True
-            return sqlite3.SQLITE_OK
-        return sqlite3.SQLITE_OK if arg1 == "COMMIT" and version_set else sqlite3.SQLITE_DENY
-
-    return authorize
+    finally:
+        conn.autocommit = legacy_mode
