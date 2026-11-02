@@ -73,7 +73,6 @@ def read_file(
 ) -> ImportResult:
     """Read one registered file, store its records and set its status last."""
     row = _file_row(conn, sha256)
-    version = _reader_version(row["connector"], module)
     # Only the process that moves the row to reading may read the file.
     with transaction(conn):
         claimed = conn.execute(
@@ -86,7 +85,8 @@ def read_file(
             sha256, current["connector"], current["status"], current["message"], skipped=True
         )
     path = data_dir / "raw" / row["connector"] / row["format"] / f"{sha256}.{row['ext']}"
-    with tempfile.TemporaryDirectory() as workdir:
+    with _Failure() as failure, tempfile.TemporaryDirectory() as workdir:
+        version = _reader_version(row["connector"], module)
         out_path = Path(workdir) / "records.jsonl"
         payload = {"path": str(path), "fmt": row["format"], "out_path": str(out_path)}
         try:
@@ -115,15 +115,17 @@ def read_file(
                 records=_decode(lines),
                 tz=tz,
             )
-    messages = [reply.get("message"), _rejected_message(stored.rejected)]
-    return _finish(
-        conn,
-        row,
-        "partial" if status == "partial" or stored.rejected else "ok",
-        " ".join(message for message in messages if message) or None,
-        version=version,
-        stored=stored,
-    )
+        messages = [reply.get("message"), _rejected_message(stored.rejected)]
+        return _finish(
+            conn,
+            row,
+            "partial" if status == "partial" or stored.rejected else "ok",
+            " ".join(message for message in messages if message) or None,
+            version=version,
+            stored=stored,
+        )
+    logger.error("file processing failed %s %s", sha256, failure.error_name)
+    return _finish(conn, row, "failed", f"Reader failed: {failure.error_name}")
 
 
 def process_pending(
@@ -146,19 +148,7 @@ def process_pending(
     ).fetchall()
     results = []
     for (sha256,) in pending:
-        failure = _Failure()
-        with failure:
-            results.append(read_file(conn, data_dir, sha256, now=now, tz=tz, module=module))
-        if failure.error_name is not None:
-            logger.error("file processing failed %s %s", sha256, failure.error_name)
-            results.append(
-                _finish(
-                    conn,
-                    _file_row(conn, sha256),
-                    "failed",
-                    f"Processing failed: {failure.error_name}",
-                )
-            )
+        results.append(read_file(conn, data_dir, sha256, now=now, tz=tz, module=module))
     rebuild_pending(conn, tz=tz)
     return results
 

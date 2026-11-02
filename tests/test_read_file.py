@@ -9,6 +9,7 @@ from unittest import mock
 
 from tfs import config
 from tfs.connectors.core.runner import reader_version
+from tfs.importer import records
 from tfs.importer.raw_store import save_raw
 from tfs.importer.session import ImportResult, process_pending, read_file, rebuild_pending
 from tfs.persistence.migrations import migrate
@@ -138,6 +139,31 @@ class ReadFileTest(SessionTest):
         self.assertEqual(row["status"], "partial")
         self.assertEqual(row["message"], f"1 record rejected: {REJECTED_REASON}")
 
+    def test_an_unexpected_error_marks_the_file_failed_and_it_is_read_again(self) -> None:
+        sha256 = self.save(b"first")
+
+        with (
+            mock.patch.object(records, "store", side_effect=RuntimeError("invented-secret-77")),
+            self.assertLogs("tfs.importer.session", "ERROR") as logs,
+        ):
+            result = read_file(self.conn, self.data_dir, sha256, now=NOW, module=FAKE)
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.message, "Reader failed: RuntimeError")
+        row = self.row(sha256)
+        self.assertEqual(row["status"], "failed")
+        self.assertEqual(row["message"], "Reader failed: RuntimeError")
+        self.assertEqual(
+            [record.getMessage() for record in logs.records],
+            [f"file processing failed {sha256} RuntimeError"],
+        )
+        self.assertNotIn("invented-secret-77", "\n".join(logs.output))
+
+        again = read_file(self.conn, self.data_dir, sha256, now=NOW, module=FAKE)
+
+        self.assertEqual(again.status, "ok")
+        self.assertEqual(self.row(sha256)["status"], "ok")
+
 
 class ProcessPendingTest(SessionTest):
     def test_one_failing_file_does_not_block_the_next(self) -> None:
@@ -152,6 +178,27 @@ class ProcessPendingTest(SessionTest):
         self.assertEqual(self.row(fine)["status"], "ok")
         self.assertEqual(self.keys(), ["fine"])
         self.assertEqual(self.dates(), [])
+
+    def test_a_file_from_an_unknown_connector_fails_and_does_not_block_the_next(self) -> None:
+        retired = save_raw(
+            self.conn, self.data_dir, "retired_app", "records", "json", io.BytesIO(b"x"), now=NOW
+        ).sha256
+        fine = save_raw(
+            self.conn,
+            self.data_dir,
+            "health_auto_export",
+            "rest_json",
+            "json",
+            io.BytesIO(b'{"data": {"metrics": []}}'),
+            now=NOW,
+        ).sha256
+
+        results = process_pending(self.conn, self.data_dir, now=NOW)
+
+        self.assertEqual([result.sha256 for result in results], [retired, fine])
+        self.assertEqual(self.row(retired)["status"], "failed")
+        self.assertEqual(self.row(retired)["message"], "Reader failed: ValueError")
+        self.assertEqual(self.row(fine)["status"], "ok")
 
     def test_failed_files_are_read_again_only_when_asked(self) -> None:
         broken = self.save(b"boom")
