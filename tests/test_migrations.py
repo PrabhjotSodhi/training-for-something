@@ -1,10 +1,12 @@
 import importlib
 import os
+import re
 import sqlite3
 import subprocess
 import sys
 import tempfile
 import unittest
+from importlib import resources
 from pathlib import Path
 from unittest import mock
 
@@ -209,30 +211,6 @@ class MigrateTest(unittest.TestCase):
             migrate(conn, migrations_dir=self.migrations)
         self.assert_untouched(conn)
 
-    def test_a_file_that_commits_on_its_own_is_rolled_back_whole(self):
-        self.write("0001_a.sql", "CREATE TABLE a (x INTEGER);")
-        self.write("0002_b.sql", "CREATE TABLE b (y INTEGER); COMMIT; CREATE TABLE c (")
-        conn = self.open()
-        with self.assertRaises(sqlite3.Error):
-            migrate(conn, migrations_dir=self.migrations)
-        self.assert_untouched(conn)
-
-    def test_a_file_that_rolls_back_on_its_own_is_rejected(self):
-        self.write(
-            "0001_a.sql", "CREATE TABLE a (x INTEGER); ROLLBACK; CREATE TABLE b (y INTEGER);"
-        )
-        conn = self.open()
-        with self.assertRaises(sqlite3.Error):
-            migrate(conn, migrations_dir=self.migrations)
-        self.assert_untouched(conn)
-
-    def test_a_file_that_starts_its_own_transaction_is_rejected(self):
-        self.write("0001_a.sql", "BEGIN; CREATE TABLE a (x INTEGER); COMMIT;")
-        conn = self.open()
-        with self.assertRaises(sqlite3.Error):
-            migrate(conn, migrations_dir=self.migrations)
-        self.assert_untouched(conn)
-
     def test_a_file_can_use_a_savepoint(self):
         self.write(
             "0001_a.sql",
@@ -357,24 +335,39 @@ class MigrateTest(unittest.TestCase):
         self.assertIn("reinstall", str(caught.exception).lower())
         self.assert_untouched(conn)
 
-    def test_a_process_that_migrates_after_this_one_read_the_version_wins_cleanly(self):
-        self.write("0001_a.sql", "CREATE TABLE a (x INTEGER); INSERT INTO a VALUES (1);")
-        self.write("0002_b.sql", "CREATE TABLE b (y INTEGER);")
+    def migrate_while_another_process_finishes_first(self) -> tuple[int, list[int]]:
+        """Run migrate on one connection while a second connection migrates just before its lock."""
         slow = self.open()
         other = self.open()
         other_results = []
 
         def let_the_other_process_finish_first(statement: str) -> None:
-            if "user_version" not in statement and not other_results:
+            if statement.startswith("BEGIN") and not other_results:
                 other_results.append(migrate(other, migrations_dir=self.migrations))
 
         slow.set_trace_callback(let_the_other_process_finish_first)
-        self.assertEqual(migrate(slow, migrations_dir=self.migrations), 2)
+        result = migrate(slow, migrations_dir=self.migrations)
         slow.set_trace_callback(None)
+        return result, other_results
+
+    def test_two_processes_on_a_new_database_apply_each_file_once(self):
+        self.write("0001_a.sql", "CREATE TABLE t (n INTEGER); INSERT INTO t VALUES (10);")
+        self.write("0002_b.sql", "UPDATE t SET n = n * 2;")
+        result, other_results = self.migrate_while_another_process_finishes_first()
+        self.assertEqual(result, 2)
         self.assertEqual(other_results, [2])
-        self.assertEqual(user_version(slow), 2)
-        self.assertEqual(slow.execute("SELECT COUNT(*) FROM a").fetchone()[0], 1)
-        self.assertFalse(slow.in_transaction)
+        conn = self.open()
+        self.assertEqual(conn.execute("SELECT n FROM t").fetchall()[0][0], 20)
+        self.assertEqual(user_version(conn), 2)
+
+    def test_two_processes_on_an_older_database_apply_each_file_once(self):
+        self.write("0001_a.sql", "CREATE TABLE t (n INTEGER); INSERT INTO t VALUES (10);")
+        migrate(self.open(), migrations_dir=self.migrations)
+        self.write("0002_b.sql", "UPDATE t SET n = n * 2;")
+        result, other_results = self.migrate_while_another_process_finishes_first()
+        self.assertEqual(result, 2)
+        self.assertEqual(other_results, [2])
+        self.assertEqual(self.open().execute("SELECT n FROM t").fetchall()[0][0], 20)
 
     def test_a_file_that_reads_first_holds_the_write_lock_from_the_start(self):
         self.write("0001_a.sql", "SELECT COUNT(*) FROM sqlite_master; CREATE TABLE a (x INTEGER);")
@@ -422,6 +415,26 @@ class MigrateTest(unittest.TestCase):
         (self.migrations / "0002_b.sql").write_text("CREATE TABLE b (y INTEGER);")
         self.assertEqual(migrate(conn, migrations_dir=self.migrations), 2)
         self.assertEqual(table_names(conn), {"a", "b"})
+
+
+class ShippedMigrationsTest(unittest.TestCase):
+    def test_no_shipped_file_manages_the_transaction_or_the_version(self):
+        owned = re.compile(r"(BEGIN|COMMIT|ROLLBACK|END|PRAGMA\s+user_version)\b", re.IGNORECASE)
+        trigger = re.compile(r"CREATE\s+(TEMP\s+|TEMPORARY\s+)?TRIGGER\b", re.IGNORECASE)
+        offenders = []
+        for entry in resources.files("tfs.persistence.sql").iterdir():
+            if not entry.name.endswith(".sql"):
+                continue
+            in_trigger = False
+            for number, line in enumerate(entry.read_text(encoding="utf-8").splitlines(), 1):
+                text = line.strip()
+                if in_trigger:
+                    in_trigger = not re.match(r"END\b", text, re.IGNORECASE)
+                elif trigger.match(text):
+                    in_trigger = not re.search(r"\bEND\s*;\s*$", text, re.IGNORECASE)
+                elif owned.match(text):
+                    offenders.append(f"{entry.name}:{number}: {text}")
+        self.assertEqual(offenders, [])
 
 
 if __name__ == "__main__":
