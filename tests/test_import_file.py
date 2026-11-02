@@ -128,10 +128,14 @@ class ImportCommandTest(ImportTest):
         self.assertEqual((code, out, err), (2, "", "No connector reads notes.txt.\n"))
 
     def test_a_connector_name_that_does_not_exist_exits_2_and_saves_nothing(self) -> None:
-        code, out, err = self.run_cli(str(self.export), "--connector", "applehealth")
+        for name in ("applehealth", "hevy"):
+            with self.subTest(name=name):
+                code, out, err = self.run_cli(str(self.export), "--connector", name)
 
-        self.assertEqual((code, out, err), (2, "", "No connector named applehealth.\n"))
-        self.assertEqual(self.count("SELECT COUNT(*) FROM files"), 0)
+                self.assertEqual(
+                    (code, out, err), (2, "", f"No connector named {name} reads files.\n")
+                )
+                self.assertEqual(self.count("SELECT COUNT(*) FROM files"), 0)
 
     def test_a_truncated_export_prints_the_reader_message_and_exits_1(self) -> None:
         self.export.write_text(EXPORT[:300], encoding="utf-8")

@@ -106,8 +106,9 @@ def import_file(
     if connector is None:
         connector, fmt, ext = route_file(path.name, load_manifests())
     else:
-        if connector not in load_manifests():
-            raise NoReaderError(f"No connector named {connector}.")
+        manifest = load_manifests().get(connector)
+        if manifest is None or not manifest["routes"]["files"]:
+            raise NoReaderError(f"No connector named {connector} reads files.")
         fmt, ext = "file", path.suffix.lower().removeprefix(".")
     with path.open("rb") as source:
         saved = save_raw(conn, data_dir, connector, fmt, ext, source, now=now)
