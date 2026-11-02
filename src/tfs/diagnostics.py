@@ -50,7 +50,6 @@ def report(conn: sqlite3.Connection, *, now: str, manifests: dict | None = None)
 
 def render_text(report: dict) -> str:
     """Build the plain text of a report: one line per source, then the file problems."""
-    width = max((len(source["label"]) for source in report["sources"]), default=0)
     lines = []
     for source in report["sources"]:
         if source["stale"]:
@@ -62,7 +61,7 @@ def render_text(report: dict) -> str:
             state += f", data until {_short(source['covered_until'])}"
         if source["last_error"]:
             state += f". Last error: {source['last_error']}"
-        lines.append(f"{source['label'].ljust(width)}   {state}")
+        lines.append(f"{source['label']}   {state}")
     counts = [f"{count} {status}" for status, count in report["files"].items() if count]
     lines.append("Files: " + (", ".join(counts) if counts else "none"))
     for problem in report["problems"]:

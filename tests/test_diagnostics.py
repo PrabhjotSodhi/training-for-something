@@ -114,12 +114,12 @@ class DiagnosticsTest(unittest.TestCase):
         self.assertIn("Could not read the file.", text)
 
     def test_status_command_prints_the_text_and_exits_0(self):
-        self.add_source("hevy", "2026-10-27T06:00:00Z")
+        self.add_source("hevy")
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             code = main(["status"])
         self.assertEqual(code, 0)
-        self.assertIn("Hevy", out.getvalue())
+        self.assertEqual(out.getvalue(), render_text(report(self.conn, now=NOW)) + "\n")
 
     def test_status_command_without_a_database_says_so_and_exits_1(self):
         self.conn.close()
