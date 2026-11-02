@@ -273,7 +273,14 @@ class DuplicatesTest(unittest.TestCase):
         self.assertEqual(self.groups(), {"old-a": ["old-a", "old-b"]})
 
     def test_rebuilding_pending_dates_groups_the_sessions_and_clears_the_dates(self) -> None:
-        self.add("a", "apple_health", "2026-10-01T06:00:00Z", "2026-10-01T06:30:00Z")
+        self.add(
+            "a",
+            "apple_health",
+            "2026-10-01T06:00:00Z",
+            "2026-10-01T06:30:00Z",
+            family="mixed",
+            origin_app="Hevy",
+        )
         self.add("b", "hevy", "2026-10-01T06:00:01Z", "2026-10-01T06:30:01Z")
         self.conn.execute("INSERT INTO rebuild_dates (local_date) VALUES ('2026-10-01')")
 

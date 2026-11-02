@@ -16,6 +16,7 @@ from typing import TextIO
 
 from tfs.connectors.core import runner
 from tfs.connectors.core.contract import load_manifests
+from tfs.duplicates import workouts
 from tfs.importer import records
 from tfs.importer.raw_store import save_raw
 from tfs.persistence.sqlite import transaction
@@ -217,7 +218,10 @@ def rebuild_pending(conn: sqlite3.Connection, *, tz: tzinfo | None = None) -> in
     rebuilt = 0
     for (month,) in months:
         with transaction(conn):
-            # The derived steps for these dates run here, before the dates are cleared.
+            dates = conn.execute(
+                "SELECT local_date FROM rebuild_dates WHERE substr(local_date, 1, 7) = ?", (month,)
+            ).fetchall()
+            workouts.update(conn, {date for (date,) in dates})
             rebuilt += conn.execute(
                 "DELETE FROM rebuild_dates WHERE substr(local_date, 1, 7) = ?", (month,)
             ).rowcount
