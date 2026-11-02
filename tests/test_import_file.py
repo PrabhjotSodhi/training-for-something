@@ -76,9 +76,11 @@ class ImportFileTest(ImportTest):
 
         with mock.patch("tfs.connectors.core.runner.run") as run:
             again = import_file(self.conn, config.data_dir(), self.export, now=NOW)
+            code, out, err = self.run_cli(str(self.export))
 
         run.assert_not_called()
         self.assertTrue(again.skipped)
+        self.assertEqual((code, out, err), (0, "export.xml was already imported.\n", ""))
         self.assertEqual(
             (
                 self.count("SELECT COUNT(*) FROM files"),
@@ -117,13 +119,6 @@ class ImportCommandTest(ImportTest):
             (0, "Imported export.xml with apple_health: 3 records stored, 0 rejected (ok).\n", ""),
         )
 
-    def test_importing_the_same_file_again_says_so(self) -> None:
-        self.run_cli(str(self.export))
-
-        code, out, err = self.run_cli(str(self.export))
-
-        self.assertEqual((code, out, err), (0, "export.xml was already imported.\n", ""))
-
     def test_a_file_no_connector_reads_exits_2(self) -> None:
         notes = self.export.with_name("notes.txt")
         notes.write_text("hello", encoding="utf-8")
@@ -132,16 +127,29 @@ class ImportCommandTest(ImportTest):
 
         self.assertEqual((code, out, err), (2, "", "No connector reads notes.txt.\n"))
 
+    def test_a_connector_name_that_does_not_exist_exits_2_and_saves_nothing(self) -> None:
+        code, out, err = self.run_cli(str(self.export), "--connector", "applehealth")
+
+        self.assertEqual((code, out, err), (2, "", "No connector named applehealth.\n"))
+        self.assertEqual(self.count("SELECT COUNT(*) FROM files"), 0)
+
     def test_a_truncated_export_prints_the_reader_message_and_exits_1(self) -> None:
         self.export.write_text(EXPORT[:300], encoding="utf-8")
 
         code, out, err = self.run_cli(str(self.export))
 
-        self.assertEqual((code, out), (1, ""))
-        self.assertTrue(err.startswith("The export is incomplete or damaged: "), err)
+        self.assertEqual(
+            (code, out, err),
+            (
+                1,
+                "",
+                "The export is incomplete or damaged: unclosed token: line 4, column 1.\n",
+            ),
+        )
 
     def test_a_missing_file_exits_1(self) -> None:
-        code, out, err = self.run_cli(str(self.export.parent / "gone" / "export.xml"))
+        missing = self.export.parent / "gone" / "export.xml"
 
-        self.assertEqual((code, out), (1, ""))
-        self.assertIn("gone", err)
+        code, out, err = self.run_cli(str(missing))
+
+        self.assertEqual((code, out, err), (1, "", f"{missing.resolve()} does not exist.\n"))

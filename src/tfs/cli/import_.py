@@ -8,9 +8,10 @@ from pathlib import Path
 
 from tfs import config
 from tfs.connectors.core.contract import to_utc_text
+from tfs.importer.raw_store import FileConflictError
 from tfs.importer.session import AmbiguousRouteError, NoReaderError, import_file
 from tfs.persistence import sqlite
-from tfs.persistence.migrations import migrate
+from tfs.persistence.migrations import DatabaseTooNewError, migrate
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -39,6 +40,9 @@ def run(args: argparse.Namespace) -> int:
         return 2
     except FileNotFoundError as error:
         print(f"{error.filename} does not exist.", file=sys.stderr)
+        return 1
+    except (FileConflictError, DatabaseTooNewError, ValueError) as error:
+        print(error, file=sys.stderr)
         return 1
     name = args.path.name
     if result.status not in ("ok", "partial"):
