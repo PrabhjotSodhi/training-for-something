@@ -13,7 +13,7 @@ DURATION_RATIO = 0.9
 
 _SESSIONS_TO_GROUP = """
 WITH reach AS (
-  SELECT DISTINCT m.group_id FROM session_group_members m
+  SELECT m.group_id FROM session_group_members m
   JOIN source_records r ON r.id = m.record_id
   WHERE r.local_date IN (SELECT value FROM json_each(:days))
 )
@@ -26,7 +26,7 @@ WHERE kind = 'session' AND deleted_at IS NULL AND (
 """
 _DELETE_GROUPS = """
 DELETE FROM session_groups WHERE id IN (
-  SELECT DISTINCT m.group_id FROM session_group_members m
+  SELECT m.group_id FROM session_group_members m
   JOIN source_records r ON r.id = m.record_id
   WHERE r.local_date IN (SELECT value FROM json_each(:days))
 )
@@ -51,8 +51,6 @@ def update(conn: sqlite3.Connection, dates: set[str], manifests: dict | None = N
     Sessions that share a group with any of them are regrouped too. The caller owns the
     transaction. manifests=None reads the connector manifests.
     """
-    if not dates:
-        return 0
     manifests = load_manifests() if manifests is None else manifests
     days = json.dumps(sorted({_shift(day, step) for day in dates for step in (-1, 0, 1)}))
     rows = conn.execute(_SESSIONS_TO_GROUP, {"days": days}).fetchall()

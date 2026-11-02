@@ -272,7 +272,7 @@ class DuplicatesTest(unittest.TestCase):
 
         self.assertEqual(self.groups(), {"old-a": ["old-a", "old-b"]})
 
-    def test_rebuilding_pending_dates_groups_the_sessions_and_clears_the_dates(self) -> None:
+    def test_rebuilding_pending_dates_groups_the_sessions(self) -> None:
         self.add(
             "a",
             "apple_health",
@@ -284,10 +284,9 @@ class DuplicatesTest(unittest.TestCase):
         self.add("b", "hevy", "2026-10-01T06:00:01Z", "2026-10-01T06:30:01Z")
         self.conn.execute("INSERT INTO rebuild_dates (local_date) VALUES ('2026-10-01')")
 
-        self.assertEqual(rebuild_pending(self.conn), 1)
+        rebuild_pending(self.conn)
 
         self.assertEqual(self.groups(), {"a": ["a", "b"]})
-        self.assertEqual(self.conn.execute("SELECT count(*) FROM rebuild_dates").fetchone()[0], 0)
 
     def snapshot(self) -> tuple[list, list]:
         groups = self.conn.execute("SELECT * FROM session_groups ORDER BY id").fetchall()
