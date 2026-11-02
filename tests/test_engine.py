@@ -102,7 +102,7 @@ class EngineTest(unittest.TestCase):
         running = self.new_engine(home_wifi=True, home_wifi_port=free_port())
         running.start()
         started = set(threading.enumerate()) - before
-        self.assertEqual(len(started), 2)
+        self.assertEqual(len(started), 3)
         running.stop()
         self.assertFalse(any(thread.is_alive() for thread in started))
 
