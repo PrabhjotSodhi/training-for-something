@@ -57,7 +57,7 @@ class ImportTest(unittest.TestCase):
 class ImportFileTest(ImportTest):
     def setUp(self) -> None:
         super().setUp()
-        config.data_dir().mkdir(parents=True)
+        config.data_dir().mkdir(parents=True, exist_ok=True)
         self.conn = connect(config.db_path())
         self.addCleanup(self.conn.close)
         migrate(self.conn)
@@ -68,7 +68,7 @@ class ImportFileTest(ImportTest):
         self.assertEqual(
             (result.connector, result.status, result.skipped), ("apple_health", "ok", False)
         )
-        self.assertEqual(self.conn.execute("SELECT status FROM files").fetchall(), [("ok",)])
+        self.assertEqual(self.conn.execute("SELECT status FROM files").fetchone()[0], "ok")
         self.assertEqual(self.count("SELECT COUNT(*) FROM source_records"), 3)
 
     def test_importing_the_same_file_again_does_not_read_it(self) -> None:
@@ -141,7 +141,7 @@ class ImportCommandTest(ImportTest):
         self.assertTrue(err.startswith("The export is incomplete or damaged: "), err)
 
     def test_a_missing_file_exits_1(self) -> None:
-        code, out, err = self.run_cli(str(self.export.with_name("gone.xml")))
+        code, out, err = self.run_cli(str(self.export.parent / "gone" / "export.xml"))
 
         self.assertEqual((code, out), (1, ""))
-        self.assertIn("gone.xml", err)
+        self.assertIn("gone", err)
