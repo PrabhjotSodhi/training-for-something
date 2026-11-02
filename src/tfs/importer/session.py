@@ -73,7 +73,6 @@ def read_file(
 ) -> ImportResult:
     """Read one registered file, store its records and set its status last."""
     row = _file_row(conn, sha256)
-    version = _reader_version(row["connector"], module)
     # Only the process that moves the row to reading may read the file.
     with transaction(conn):
         claimed = conn.execute(
@@ -86,8 +85,8 @@ def read_file(
             sha256, current["connector"], current["status"], current["message"], skipped=True
         )
     path = data_dir / "raw" / row["connector"] / row["format"] / f"{sha256}.{row['ext']}"
-    failure = _Failure()
-    with failure, tempfile.TemporaryDirectory() as workdir:
+    with _Failure() as failure, tempfile.TemporaryDirectory() as workdir:
+        version = _reader_version(row["connector"], module)
         out_path = Path(workdir) / "records.jsonl"
         payload = {"path": str(path), "fmt": row["format"], "out_path": str(out_path)}
         try:

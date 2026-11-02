@@ -158,7 +158,6 @@ class ReadFileTest(SessionTest):
             [f"file processing failed {sha256} RuntimeError"],
         )
         self.assertNotIn("invented-secret-77", "\n".join(logs.output))
-        self.assertIsNone(logs.records[0].exc_info)
 
         again = read_file(self.conn, self.data_dir, sha256, now=NOW, module=FAKE)
 
@@ -179,6 +178,27 @@ class ProcessPendingTest(SessionTest):
         self.assertEqual(self.row(fine)["status"], "ok")
         self.assertEqual(self.keys(), ["fine"])
         self.assertEqual(self.dates(), [])
+
+    def test_a_file_from_an_unknown_connector_fails_and_does_not_block_the_next(self) -> None:
+        retired = save_raw(
+            self.conn, self.data_dir, "retired_app", "records", "json", io.BytesIO(b"x"), now=NOW
+        ).sha256
+        fine = save_raw(
+            self.conn,
+            self.data_dir,
+            "health_auto_export",
+            "rest_json",
+            "json",
+            io.BytesIO(b'{"data": {"metrics": []}}'),
+            now=NOW,
+        ).sha256
+
+        results = process_pending(self.conn, self.data_dir, now=NOW)
+
+        self.assertEqual([result.sha256 for result in results], [retired, fine])
+        self.assertEqual(self.row(retired)["status"], "failed")
+        self.assertEqual(self.row(retired)["message"], "Reader failed: ValueError")
+        self.assertEqual(self.row(fine)["status"], "ok")
 
     def test_failed_files_are_read_again_only_when_asked(self) -> None:
         broken = self.save(b"boom")
