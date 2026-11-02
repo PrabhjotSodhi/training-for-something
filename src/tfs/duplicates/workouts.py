@@ -44,7 +44,6 @@ class _Session:
     start: datetime
     end: datetime | None
     local_date: str
-    label: str | None
     family: str | None
     origin_app: str | None
     arrival_seq: int
@@ -103,21 +102,24 @@ def _choose(members: list[_Session], manifests: dict) -> dict:
             member.id,
         ),
     )
-    both = [m for m in ranked if all(_field(m, name) is not None for name in PACE_FIELDS)]
-    either = [m for m in ranked if any(_field(m, name) is not None for name in PACE_FIELDS)]
-    pace_source = (both or either or [None])[0]
+    both = [
+        member
+        for member in ranked
+        if all(member.values.get(name) is not None for name in PACE_FIELDS)
+    ]
+    either = [
+        member
+        for member in ranked
+        if any(member.values.get(name) is not None for name in PACE_FIELDS)
+    ]
+    pace_source = (both or either)[:1]
     chosen = {}
     for name in CHOSEN_FIELDS:
-        sources = [pace_source] if name in PACE_FIELDS else ranked
-        for member in sources:
-            if member is not None and _field(member, name) is not None:
-                chosen[name] = {"value": _field(member, name), "record_id": member.id}
+        for member in pace_source if name in PACE_FIELDS else ranked:
+            if member.values.get(name) is not None:
+                chosen[name] = {"value": member.values[name], "record_id": member.id}
                 break
     return chosen
-
-
-def _field(member: _Session, name: str) -> object:
-    return {**member.values, "label": member.label, "family": member.family}.get(name)
 
 
 def _shift(day: str, step: int) -> str:
@@ -126,7 +128,7 @@ def _shift(day: str, step: int) -> str:
 
 def _session(row: sqlite3.Row) -> _Session:
     start = parse_iso_time(row["start_utc"])
-    values = json.loads(row["values_json"])
+    values = {**json.loads(row["values_json"]), "label": row["label"], "family": row["family"]}
     duration_s = values.get("duration_s")
     if row["end_utc"] is not None:
         end = parse_iso_time(row["end_utc"])
@@ -139,7 +141,6 @@ def _session(row: sqlite3.Row) -> _Session:
         start,
         end,
         row["local_date"],
-        row["label"],
         row["family"],
         row["origin_app"],
         row["arrival_seq"],
