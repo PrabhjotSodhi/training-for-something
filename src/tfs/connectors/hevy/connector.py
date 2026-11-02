@@ -33,7 +33,7 @@ def fetch(cursor: dict | None, secrets: dict, out_dir: str, http, now: str) -> d
         fmt = "events_page"
         url = f"{_API}/workouts/events?page={{page}}&pageSize={_PAGE_SIZE}&since={since}"
     headers = {"api-key": secrets["api_key"], "accept": "application/json"}
-    bodies = []
+    files = []
     page, page_count = 1, 1
     while page <= page_count:
         status, reply_headers, body = http(url.format(page=page), headers)
@@ -45,15 +45,12 @@ def fetch(cursor: dict | None, secrets: dict, out_dir: str, http, now: str) -> d
             return _fetch_result([], cursor, wait_until=wait_until)
         if status != 200:
             raise ValueError(f"Hevy answered status {status} for page {page}.")
-        bodies.append(body)
-        if page == 1:
-            page_count = _page_count(body)
-        page += 1
-    files = []
-    for page, body in enumerate(bodies, start=1):
         path = Path(out_dir) / f"{fmt}-{page}.json"
         path.write_bytes(body)
         files.append({"path": str(path), "fmt": fmt, "ext": "json"})
+        if page == 1:
+            page_count = _page_count(body)
+        page += 1
     return _fetch_result(files, {"since": to_utc_text(now_time - _OVERLAP)})
 
 
