@@ -1,5 +1,6 @@
 """One import run: read a saved file, store its records and rebuild the dates it changed."""
 
+import fnmatch
 import json
 import logging
 import sqlite3
@@ -14,7 +15,9 @@ from types import TracebackType
 from typing import TextIO
 
 from tfs.connectors.core import runner
+from tfs.connectors.core.contract import load_manifests
 from tfs.importer import records
+from tfs.importer.raw_store import save_raw
 from tfs.persistence.sqlite import transaction
 
 logger = logging.getLogger(__name__)
@@ -38,6 +41,14 @@ class ImportResult:
     skipped: bool = False
 
 
+class NoReaderError(Exception):
+    """No connector reads a file with this name."""
+
+
+class AmbiguousRouteError(Exception):
+    """More than one connector reads a file with this name."""
+
+
 class _Failure:
     """Swallow any error raised in the block and keep only its type name.
 
@@ -59,6 +70,51 @@ class _Failure:
             return False
         self.error_name = exc_type.__name__
         return True
+
+
+def route_file(name: str, manifests: dict) -> tuple[str, str, str]:
+    """Return the connector, format and extension for a file name, matching routes.files without regard to case."""
+    folded = name.lower()
+    matches = sorted(
+        connector
+        for connector, manifest in manifests.items()
+        if any(
+            fnmatch.fnmatchcase(folded, pattern.lower()) for pattern in manifest["routes"]["files"]
+        )
+    )
+    if not matches:
+        raise NoReaderError(f"No connector reads {name}.")
+    if len(matches) > 1:
+        raise AmbiguousRouteError(
+            f"More than one connector reads {name}: {' and '.join(matches)}. "
+            "Choose one with --connector."
+        )
+    return matches[0], "file", Path(folded).suffix.removeprefix(".")
+
+
+def import_file(
+    conn: sqlite3.Connection,
+    data_dir: Path,
+    path: Path,
+    *,
+    now: str,
+    connector: str | None = None,
+    tz: tzinfo | None = None,
+) -> ImportResult:
+    """Save one file under the connector that reads it, read it and rebuild the dates it changed."""
+    path = path.resolve()
+    if connector is None:
+        connector, fmt, ext = route_file(path.name, load_manifests())
+    else:
+        manifest = load_manifests().get(connector)
+        if manifest is None or not manifest["routes"]["files"]:
+            raise NoReaderError(f"No connector named {connector} reads files.")
+        fmt, ext = "file", path.suffix.lower().removeprefix(".")
+    with path.open("rb") as source:
+        saved = save_raw(conn, data_dir, connector, fmt, ext, source, now=now)
+    result = read_file(conn, data_dir, saved.sha256, now=now, tz=tz)
+    rebuild_pending(conn, tz=tz)
+    return result
 
 
 def read_file(
