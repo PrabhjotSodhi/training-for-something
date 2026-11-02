@@ -1,4 +1,4 @@
-"""Links the same workout from different apps into one session group (HLD 7.1, rules 2 and 5)."""
+"""Links the same workout from different apps into one session group and picks each field (HLD 7.1, 7.2)."""
 
 import json
 import sqlite3
@@ -10,6 +10,8 @@ from tfs.connectors.core.contract import load_manifests, parse_iso_time
 TIME_TOLERANCE_S = 180
 NULL_FAMILY_TOLERANCE_S = 60
 DURATION_RATIO = 0.9
+PACE_FIELDS = ("duration_s", "distance_m")
+CHOSEN_FIELDS = ("label", "family", *PACE_FIELDS, "active_energy_kcal", "avg_hr", "max_hr")
 
 _SESSIONS_TO_GROUP = """
 WITH reach AS (
@@ -17,7 +19,8 @@ WITH reach AS (
   JOIN source_records r ON r.id = m.record_id
   WHERE r.local_date IN (SELECT value FROM json_each(:days))
 )
-SELECT id, connector, start_utc, end_utc, local_date, family, origin_app, values_json
+SELECT id, connector, start_utc, end_utc, local_date, label, family, origin_app, arrival_seq,
+  values_json, EXISTS (SELECT 1 FROM session_parts WHERE record_id = source_records.id) AS has_parts
 FROM source_records
 WHERE kind = 'session' AND deleted_at IS NULL AND (
   local_date IN (SELECT value FROM json_each(:days))
@@ -41,8 +44,12 @@ class _Session:
     start: datetime
     end: datetime | None
     local_date: str
+    label: str | None
     family: str | None
     origin_app: str | None
+    arrival_seq: int
+    has_parts: bool
+    values: dict
 
 
 def update(conn: sqlite3.Connection, dates: set[str], manifests: dict | None = None) -> int:
@@ -66,11 +73,12 @@ def update(conn: sqlite3.Connection, dates: set[str], manifests: dict | None = N
             groups.append([session])
     for members in groups:
         group_id = min(member.id for member in members)
-        family = next((m.family for m in members if m.family is not None), None)
+        chosen = _choose(members, manifests)
+        family = chosen.get("family", {}).get("value")
         conn.execute(
             "INSERT INTO session_groups (id, local_date, family, start_utc, chosen_json)"
-            " VALUES (?, ?, ?, ?, '{}')",
-            (group_id, members[0].local_date, family, members[0].start_utc),
+            " VALUES (?, ?, ?, ?, ?)",
+            (group_id, members[0].local_date, family, members[0].start_utc, json.dumps(chosen)),
         )
         conn.executemany(
             "INSERT INTO session_group_members (group_id, record_id) VALUES (?, ?)",
@@ -79,13 +87,47 @@ def update(conn: sqlite3.Connection, dates: set[str], manifests: dict | None = N
     return len(groups)
 
 
+def _choose(members: list[_Session], manifests: dict) -> dict:
+    """Pick each field from the first ranked member that has it (HLD 7.2 defaults).
+
+    An original beats a copy, a member with parts beats one without, then the lower
+    arrival_seq and the smaller id win. Duration and distance come from one member so pace
+    never mixes sources.
+    """
+    ranked = sorted(
+        members,
+        key=lambda member: (
+            any(_claims(member, other, manifests) for other in members if other is not member),
+            not member.has_parts,
+            member.arrival_seq,
+            member.id,
+        ),
+    )
+    both = [m for m in ranked if all(_field(m, name) is not None for name in PACE_FIELDS)]
+    either = [m for m in ranked if any(_field(m, name) is not None for name in PACE_FIELDS)]
+    pace_source = (both or either or [None])[0]
+    chosen = {}
+    for name in CHOSEN_FIELDS:
+        sources = [pace_source] if name in PACE_FIELDS else ranked
+        for member in sources:
+            if member is not None and _field(member, name) is not None:
+                chosen[name] = {"value": _field(member, name), "record_id": member.id}
+                break
+    return chosen
+
+
+def _field(member: _Session, name: str) -> object:
+    return {**member.values, "label": member.label, "family": member.family}.get(name)
+
+
 def _shift(day: str, step: int) -> str:
     return (date.fromisoformat(day) + timedelta(days=step)).isoformat()
 
 
 def _session(row: sqlite3.Row) -> _Session:
     start = parse_iso_time(row["start_utc"])
-    duration_s = json.loads(row["values_json"]).get("duration_s")
+    values = json.loads(row["values_json"])
+    duration_s = values.get("duration_s")
     if row["end_utc"] is not None:
         end = parse_iso_time(row["end_utc"])
     else:
@@ -97,8 +139,12 @@ def _session(row: sqlite3.Row) -> _Session:
         start,
         end,
         row["local_date"],
+        row["label"],
         row["family"],
         row["origin_app"],
+        row["arrival_seq"],
+        bool(row["has_parts"]),
+        values,
     )
 
 

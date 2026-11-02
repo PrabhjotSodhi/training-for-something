@@ -180,11 +180,17 @@ class DuplicatesTest(unittest.TestCase):
         row = self.conn.execute("SELECT * FROM session_groups").fetchone()
         self.assertEqual(
             tuple(row),
-            ("early", "2026-10-20", "run", "2026-10-20T10:59:00Z", "{}"),
+            (
+                "early",
+                "2026-10-20",
+                "run",
+                "2026-10-20T10:59:00Z",
+                '{"family": {"value": "run", "record_id": "early"}}',
+            ),
         )
         self.assertEqual(self.groups(), {"early": ["early", "late"]})
 
-    def test_the_group_family_is_the_first_one_in_start_order(self) -> None:
+    def test_the_group_family_is_the_first_one_any_member_has(self) -> None:
         self.add(
             "first", "apple_health", "2026-10-01T06:00:00Z", "2026-10-01T06:30:00Z", family=None
         )
