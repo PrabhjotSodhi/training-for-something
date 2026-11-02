@@ -1,6 +1,9 @@
 """The background process: it claims its port first, then prepares the data, then serves."""
 
+import contextlib
 import http.client
+import logging
+import queue
 import secrets
 import threading
 from collections.abc import Callable
@@ -12,6 +15,7 @@ from tfs import password_store
 from tfs.config import HOME_WIFI_PORT, SCREEN_HOST, SCREEN_PORT
 from tfs.connectors.core.contract import to_utc_text
 from tfs.importer.raw_store import scan_raw
+from tfs.importer.session import process_pending
 from tfs.persistence.migrations import migrate
 from tfs.persistence.sqlite import connect
 from tfs.web.push import make_push_handler
@@ -19,6 +23,8 @@ from tfs.web.server import PushHandler, make_server
 
 HOME_WIFI_HOST = "0.0.0.0"
 PING_TIMEOUT_S = 1
+
+logger = logging.getLogger(__name__)
 
 
 class EngineAlreadyRunningError(Exception):
@@ -30,7 +36,7 @@ class PortInUseError(Exception):
 
 
 class Engine:
-    """One TFS engine: a screen server and, with home_wifi, a second server that takes pushes."""
+    """One TFS engine: a screen server, with home_wifi a second server that takes pushes, and a worker that reads what they save."""
 
     def __init__(
         self,
@@ -49,15 +55,20 @@ class Engine:
         self._now_fn = now_fn or (lambda: datetime.now(UTC))
         self._tz = tz
         self._running: list[tuple[ThreadingHTTPServer, threading.Thread]] = []
+        # Each job is the retry_failed flag for one process_pending run. None ends the worker.
+        self._jobs: queue.Queue[bool | None] = queue.Queue()
+        self._stopping = threading.Event()
+        self._worker: threading.Thread | None = None
 
     def start(self) -> None:
         """Claim the ports, prepare the data and start serving. On any failure, release the ports."""
+        self._stopping.clear()
         db_path = self._data_dir / "tfs.db"
         handler = make_push_handler(
             data_dir=self._data_dir,
             conn_factory=lambda: connect(db_path, "save"),
             now_fn=self._now_fn,
-            on_saved=lambda sha256: None,
+            on_saved=lambda sha256: self._jobs.put(False),
         )
         servers: list[ThreadingHTTPServer] = []
         running: list[tuple[ThreadingHTTPServer, threading.Thread]] = []
@@ -70,6 +81,8 @@ class Engine:
                 thread = threading.Thread(target=server.serve_forever)
                 thread.start()
                 running.append((server, thread))
+            worker = threading.Thread(target=self._work)
+            worker.start()
         except BaseException:
             _stop(running)
             # shutdown() waits forever on a server whose thread never started.
@@ -77,11 +90,45 @@ class Engine:
                 server.server_close()
             raise
         self._running = running
+        self._worker = worker
+        self._jobs.put(True)
 
     def stop(self) -> None:
-        """Stop serving, wait for requests in progress and release the ports."""
+        """Stop serving, release the ports, let the worker finish the file it is reading and join it."""
         running, self._running = self._running, []
         _stop(running)
+        worker, self._worker = self._worker, None
+        if worker is not None:
+            self._stopping.set()
+            self._jobs.put(None)
+            worker.join()
+
+    def drain(self) -> None:
+        """Block until the startup run, the queue and the job in progress have finished."""
+        self._jobs.join()
+
+    def _work(self) -> None:
+        while (retry_failed := self._jobs.get()) is not None:
+            if not self._stopping.is_set():
+                self._process(retry_failed)
+            self._jobs.task_done()
+        self._jobs.task_done()
+
+    def _process(self, retry_failed: bool) -> None:
+        with contextlib.suppress(Exception):
+            conn = connect(self._data_dir / "tfs.db", "import")
+            try:
+                process_pending(
+                    conn,
+                    self._data_dir,
+                    now=to_utc_text(self._now_fn()),
+                    tz=self._tz,
+                    retry_failed=retry_failed,
+                )
+            finally:
+                conn.close()
+            return
+        logger.error("Reading new files failed. TFS tries again after the next push.")
 
     def _prepare_data(self, db_path: Path) -> None:
         (self._data_dir / "raw").mkdir(parents=True, exist_ok=True)
