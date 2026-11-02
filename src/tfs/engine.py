@@ -19,7 +19,6 @@ from tfs.web.server import PushHandler, make_server
 
 HOME_WIFI_HOST = "0.0.0.0"
 PING_TIMEOUT_S = 1
-POLL_INTERVAL_S = 0.1
 
 
 class EngineAlreadyRunningError(Exception):
@@ -68,9 +67,7 @@ class Engine:
                 servers.append(_bind(HOME_WIFI_HOST, self._home_wifi_port, handler, ask_ping=False))
             self._prepare_data(db_path)
             for server in servers:
-                thread = threading.Thread(
-                    target=server.serve_forever, kwargs={"poll_interval": POLL_INTERVAL_S}
-                )
+                thread = threading.Thread(target=server.serve_forever)
                 thread.start()
                 running.append((server, thread))
         except BaseException:

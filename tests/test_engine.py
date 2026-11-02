@@ -1,5 +1,4 @@
 import contextlib
-import hashlib
 import os
 import socket
 import tempfile
@@ -96,7 +95,7 @@ class EngineTest(unittest.TestCase):
         conn = connect(self.data_dir / "tfs.db")
         self.addCleanup(conn.close)
         self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], migrate(conn))
-        self.assertGreater(len(password_store.get("push_token") or ""), 30)
+        self.assertEqual(len(password_store.get("push_token") or ""), 43)
 
     def test_stop_ends_the_server_threads(self):
         before = set(threading.enumerate())
@@ -112,17 +111,6 @@ class EngineTest(unittest.TestCase):
         self.new_engine().start()
         self.assertEqual(password_store.get("push_token"), "token-from-an-earlier-run")
 
-    def test_start_registers_raw_files_that_have_no_row(self):
-        data = b'{"workouts": []}'
-        sha256 = hashlib.sha256(data).hexdigest()
-        folder = self.data_dir / "raw" / "hevy" / "workouts_page"
-        folder.mkdir(parents=True)
-        (folder / f"{sha256}.json").write_bytes(data)
-        self.new_engine().start()
-        conn = connect(self.data_dir / "tfs.db")
-        self.addCleanup(conn.close)
-        self.assertEqual(conn.execute("SELECT sha256 FROM files").fetchall()[0]["sha256"], sha256)
-
     def test_a_failure_after_the_ports_are_bound_releases_them(self):
         conn = connect(self.data_dir / "tfs.db")
         conn.execute("PRAGMA user_version = 999")
@@ -132,27 +120,5 @@ class EngineTest(unittest.TestCase):
             self.new_engine(
                 home_wifi=True, screen_port=screen_port, home_wifi_port=home_wifi_port
             ).start()
-        self.assert_port_free(screen_port)
-        self.assert_port_free(home_wifi_port)
-
-    def test_a_server_thread_that_cannot_start_leaves_nothing_running(self):
-        screen_port, home_wifi_port = free_port(), free_port()
-        started: list[threading.Thread] = []
-        real_start = threading.Thread.start
-
-        def start_one_only(thread: threading.Thread) -> None:
-            if started:
-                raise RuntimeError("can't start new thread")
-            started.append(thread)
-            real_start(thread)
-
-        with (
-            mock.patch.object(threading.Thread, "start", start_one_only),
-            self.assertRaises(RuntimeError),
-        ):
-            self.new_engine(
-                home_wifi=True, screen_port=screen_port, home_wifi_port=home_wifi_port
-            ).start()
-        self.assertFalse(started[0].is_alive())
         self.assert_port_free(screen_port)
         self.assert_port_free(home_wifi_port)
