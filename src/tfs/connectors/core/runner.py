@@ -69,8 +69,10 @@ def run(
             if child.poll() is None:
                 child.kill()
                 child.wait()
-    hide = _Hider(payload)
-    tail = "\n".join(hide(err.decode("utf-8", "replace")).splitlines()[-_STDERR_LINES:])
+    found = {*_strings(payload.get("secrets")), *_strings(payload.get("answers"))}
+    found |= {repr(secret)[1:-1] for secret in found}
+    secrets = sorted(found - {""}, key=len, reverse=True)
+    tail = "\n".join(_hide(err.decode("utf-8", "replace"), secrets).splitlines()[-_STDERR_LINES:])
     if child.returncode != 0:
         raise RunnerFailedError(f"{connector} {op} exited with code {child.returncode}:\n{tail}")
     try:
@@ -80,7 +82,7 @@ def run(
     if not isinstance(result, dict):
         raise RunnerFailedError(f"{connector} {op} did not return a JSON object:\n{tail}")
     if "user_error" in result:
-        raise ConnectorUserError(hide(str(result["user_error"])))
+        raise ConnectorUserError(_hide(str(result["user_error"]), secrets))
     return result
 
 
@@ -124,16 +126,10 @@ class _HttpsOnlyRedirects(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-class _Hider:
-    def __init__(self, payload: dict) -> None:
-        found = {*_strings(payload.get("secrets")), *_strings(payload.get("answers"))}
-        found |= {repr(secret)[1:-1] for secret in found}
-        self.secrets = sorted(found - {""}, key=len, reverse=True)
-
-    def __call__(self, text: str) -> str:
-        for secret in self.secrets:
-            text = text.replace(secret, "[secret]")
-        return text
+def _hide(text: str, secrets: list[str]) -> str:
+    for secret in secrets:
+        text = text.replace(secret, "[secret]")
+    return text
 
 
 def _strings(value: object) -> Iterator[str]:

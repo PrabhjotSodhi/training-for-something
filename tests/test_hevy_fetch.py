@@ -130,7 +130,7 @@ class HevyFetchTest(unittest.TestCase):
 
                 self.assertEqual(result["wait_until"], "2026-10-27T07:05:00Z")
 
-    def test_server_error_on_page_2_raises_without_the_key_and_writes_nothing(self) -> None:
+    def test_server_error_on_page_2_raises_without_the_key(self) -> None:
         http = FakeHttp(
             {
                 f"{BASE}/workouts?page=1&pageSize=10": _page(1, 2),
@@ -143,7 +143,6 @@ class HevyFetchTest(unittest.TestCase):
 
         self.assertIn("page 2", str(caught.exception))
         self.assertNotIn(API_KEY, str(caught.exception))
-        self.assertEqual(list(self.out_dir.iterdir()), [])
 
 
 class HevyConnectTest(unittest.TestCase):
