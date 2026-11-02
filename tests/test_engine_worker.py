@@ -175,8 +175,8 @@ class EngineWorkerTest(unittest.TestCase):
             BANNER + HOME_WIFI_LINE + TOKEN_LINE,
         )
 
-    def run_start(self) -> tuple[int, str, str]:
-        out, err = io.StringIO(), io.StringIO()
+    def test_start_prints_the_banner_and_exits_0_after_ctrl_c(self):
+        out = io.StringIO()
         with (
             mock.patch.object(
                 start,
@@ -185,18 +185,13 @@ class EngineWorkerTest(unittest.TestCase):
             ),
             mock.patch.object(start, "sleep", side_effect=KeyboardInterrupt),
             contextlib.redirect_stdout(out),
-            contextlib.redirect_stderr(err),
         ):
             code = main(["start"])
-        return code, out.getvalue(), err.getvalue()
-
-    def test_start_prints_the_banner_and_exits_0_after_ctrl_c(self):
-        code, out, _ = self.run_start()
 
         self.assertEqual(code, 0)
         token = password_store.get("push_token")
         self.assertEqual(
-            out,
+            out.getvalue(),
             render_banner(config.SCREEN_HOST, config.SCREEN_PORT, None, None, token, CONNECTORS)
             + "\n",
         )
