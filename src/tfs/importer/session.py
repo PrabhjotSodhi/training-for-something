@@ -26,6 +26,15 @@ from tfs.source_priority import daily_totals
 logger = logging.getLogger(__name__)
 
 _READER_STATUSES = ("ok", "partial", "unreadable")
+_CLEAR_STATEMENTS = (
+    "DELETE FROM session_group_members",
+    "DELETE FROM session_groups",
+    "DELETE FROM session_parts",
+    "DELETE FROM source_deletes",
+    "DELETE FROM source_records",
+    "DELETE FROM day_facts",
+    "DELETE FROM rebuild_dates",
+)
 _FETCH_TIMEOUT_S = 600
 _FETCH_ERRORS = (
     runner.RunnerTimeoutError,
@@ -286,6 +295,22 @@ def process_pending(
         results.append(read_file(conn, data_dir, sha256, tz=tz, module=module))
     rebuild_pending(conn, tz=tz)
     return results
+
+
+def rebuild_all(conn: sqlite3.Connection, data_dir: Path, *, tz: tzinfo | None = None) -> int:
+    """Clear everything made from raw files, read every file again in arrival order and return how many.
+
+    Files keep their hash, arrival number and received time, and sources keep their cursors.
+    A missing file stays missing and adds nothing.
+    """
+    with transaction(conn):
+        for statement in _CLEAR_STATEMENTS:
+            conn.execute(statement)
+        # A cleared reader version stops process_pending from resetting a connector a second time.
+        conn.execute(
+            "UPDATE files SET status = 'new', reader_version = NULL WHERE status != 'missing'"
+        )
+    return len(process_pending(conn, data_dir, tz=tz))
 
 
 def rebuild_pending(conn: sqlite3.Connection, *, tz: tzinfo | None = None) -> int:

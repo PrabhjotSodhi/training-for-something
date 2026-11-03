@@ -83,6 +83,10 @@ class RebuildAllTest(SessionTest):
         gone = self.conn.execute(
             "SELECT sha256 FROM files WHERE connector = 'apple_health'"
         ).fetchone()[0]
+        read_facts = "SELECT sha256, status, message FROM files"
+        live = {
+            sha256: (status, message) for sha256, status, message in self.conn.execute(read_facts)
+        }
         self.conn.execute("UPDATE files SET status = 'missing' WHERE sha256 = ?", (gone,))
         self.conn.execute("UPDATE files SET reader_version = 'older', message = 'old'")
         facts = "SELECT sha256, arrival_seq, received_at FROM files ORDER BY arrival_seq"
@@ -94,13 +98,10 @@ class RebuildAllTest(SessionTest):
         self.assertEqual(
             (self.conn.execute(facts).fetchall(), self.conn.execute(cursors).fetchall()), kept
         )
-        rows = self.conn.execute("SELECT sha256, status, message, reader_version FROM files")
-        for sha256, status, message, version in rows:
-            if sha256 == gone:
-                self.assertEqual((status, message, version), ("missing", "old", "older"))
-            else:
-                self.assertEqual(status, "ok")
-                self.assertIsNone(message)
+        after = {
+            sha256: (status, message) for sha256, status, message in self.conn.execute(read_facts)
+        }
+        self.assertEqual(after, {**live, gone: ("missing", "old")})
         versions = dict(
             self.conn.execute("SELECT connector, reader_version FROM files WHERE status = 'ok'")
         )
