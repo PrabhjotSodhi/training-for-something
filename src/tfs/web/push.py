@@ -1,5 +1,6 @@
 """The push endpoint: phone apps post a file with a bearer token and TFS saves it."""
 
+import contextlib
 import hmac
 import sqlite3
 from collections.abc import Callable
@@ -32,8 +33,7 @@ def make_push_handler(
         manifest = manifests.get(name)
         if manifest is None or not manifest["routes"]["push"]:
             return 404, {"ok": False, "error": "This app does not take pushes."}
-        conn = conn_factory()
-        try:
+        with contextlib.closing(conn_factory()) as conn:
             saved = save_raw(
                 conn,
                 data_dir,
@@ -43,8 +43,6 @@ def make_push_handler(
                 body,
                 now=to_utc_text(now_fn()),
             )
-        finally:
-            conn.close()
         on_saved(saved.sha256)
         return 200, {"ok": True, "sha256": saved.sha256}
 

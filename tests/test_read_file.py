@@ -92,7 +92,7 @@ class ReadFileTest(SessionTest):
     def test_a_registered_file_is_stored_then_its_dates_are_rebuilt(self) -> None:
         sha256 = self.save(b"first")
 
-        result = read_file(self.conn, self.data_dir, sha256, now=NOW, module=FAKE)
+        result = read_file(self.conn, self.data_dir, sha256, module=FAKE)
 
         self.assertEqual(
             result,
@@ -110,10 +110,10 @@ class ReadFileTest(SessionTest):
 
     def test_reading_again_with_the_same_reader_changes_nothing(self) -> None:
         sha256 = self.save(b"first")
-        read_file(self.conn, self.data_dir, sha256, now=NOW, module=FAKE)
+        read_file(self.conn, self.data_dir, sha256, module=FAKE)
         before = tuple(self.row(sha256))
 
-        again = read_file(self.conn, self.data_dir, sha256, now=NOW, module=FAKE)
+        again = read_file(self.conn, self.data_dir, sha256, module=FAKE)
 
         self.assertEqual(
             again, ImportResult(sha256, "fake_connector", "ok", None, skipped=True, rejected={})
@@ -124,14 +124,14 @@ class ReadFileTest(SessionTest):
         sha256 = self.save(b"first")
         self.conn.execute("UPDATE files SET status = 'reading' WHERE sha256 = ?", (sha256,))
 
-        self.assertEqual(process_pending(self.conn, self.data_dir, now=NOW, module=FAKE), [])
+        self.assertEqual(process_pending(self.conn, self.data_dir, module=FAKE), [])
         self.assertEqual(self.row(sha256)["status"], "reading")
-        self.assertTrue(read_file(self.conn, self.data_dir, sha256, now=NOW, module=FAKE).skipped)
+        self.assertTrue(read_file(self.conn, self.data_dir, sha256, module=FAKE).skipped)
 
     def test_a_rejected_record_makes_the_file_partial(self) -> None:
         sha256 = self.save(b"reject")
 
-        result = read_file(self.conn, self.data_dir, sha256, now=NOW, module=THIS)
+        result = read_file(self.conn, self.data_dir, sha256, module=THIS)
 
         self.assertEqual(result.rejected, {REJECTED_REASON: 1})
         self.assertEqual(result.inserted, 1)
@@ -146,7 +146,7 @@ class ReadFileTest(SessionTest):
             mock.patch.object(records, "store", side_effect=RuntimeError("invented-secret-77")),
             self.assertLogs("tfs.importer.session", "ERROR") as logs,
         ):
-            result = read_file(self.conn, self.data_dir, sha256, now=NOW, module=FAKE)
+            result = read_file(self.conn, self.data_dir, sha256, module=FAKE)
 
         self.assertEqual(result.status, "failed")
         self.assertEqual(result.message, "Reader failed: RuntimeError")
@@ -159,7 +159,7 @@ class ReadFileTest(SessionTest):
         )
         self.assertNotIn("invented-secret-77", "\n".join(logs.output))
 
-        again = read_file(self.conn, self.data_dir, sha256, now=NOW, module=FAKE)
+        again = read_file(self.conn, self.data_dir, sha256, module=FAKE)
 
         self.assertEqual(again.status, "ok")
         self.assertEqual(self.row(sha256)["status"], "ok")
@@ -170,7 +170,7 @@ class ProcessPendingTest(SessionTest):
         broken = self.save(b"boom")
         fine = self.save(b"fine")
 
-        results = process_pending(self.conn, self.data_dir, now=NOW, module=THIS)
+        results = process_pending(self.conn, self.data_dir, module=THIS)
 
         self.assertEqual([result.sha256 for result in results], [broken, fine])
         self.assertEqual(self.row(broken)["status"], "failed")
@@ -193,7 +193,7 @@ class ProcessPendingTest(SessionTest):
             now=NOW,
         ).sha256
 
-        results = process_pending(self.conn, self.data_dir, now=NOW)
+        results = process_pending(self.conn, self.data_dir)
 
         self.assertEqual([result.sha256 for result in results], [retired, fine])
         self.assertEqual(self.row(retired)["status"], "failed")
@@ -202,10 +202,10 @@ class ProcessPendingTest(SessionTest):
 
     def test_failed_files_are_read_again_only_when_asked(self) -> None:
         broken = self.save(b"boom")
-        process_pending(self.conn, self.data_dir, now=NOW, module=THIS)
+        process_pending(self.conn, self.data_dir, module=THIS)
 
-        self.assertEqual(process_pending(self.conn, self.data_dir, now=NOW, module=THIS), [])
-        retried = process_pending(self.conn, self.data_dir, now=NOW, retry_failed=True, module=THIS)
+        self.assertEqual(process_pending(self.conn, self.data_dir, module=THIS), [])
+        retried = process_pending(self.conn, self.data_dir, retry_failed=True, module=THIS)
 
         self.assertEqual([result.sha256 for result in retried], [broken])
 
@@ -214,7 +214,7 @@ class ProcessPendingTest(SessionTest):
         fine = self.save(b"fine")
 
         with self.assertLogs("tfs.importer.session", "ERROR") as logs:
-            results = process_pending(self.conn, self.data_dir, now=NOW, module=THIS)
+            results = process_pending(self.conn, self.data_dir, module=THIS)
 
         self.assertEqual(
             [record.getMessage() for record in logs.records],

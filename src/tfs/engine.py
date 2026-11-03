@@ -13,7 +13,6 @@ from pathlib import Path
 
 from tfs import password_store
 from tfs.config import HOME_WIFI_PORT, SCREEN_HOST, SCREEN_PORT
-from tfs.connectors.core.contract import to_utc_text
 from tfs.importer.raw_store import scan_raw
 from tfs.importer.session import process_pending
 from tfs.persistence.migrations import migrate
@@ -116,28 +115,16 @@ class Engine:
 
     def _process(self, retry_failed: bool) -> None:
         with contextlib.suppress(Exception):
-            conn = connect(self._data_dir / "tfs.db", "import")
-            try:
-                process_pending(
-                    conn,
-                    self._data_dir,
-                    now=to_utc_text(self._now_fn()),
-                    tz=self._tz,
-                    retry_failed=retry_failed,
-                )
-            finally:
-                conn.close()
+            with contextlib.closing(connect(self._data_dir / "tfs.db", "import")) as conn:
+                process_pending(conn, self._data_dir, tz=self._tz, retry_failed=retry_failed)
             return
         logger.error("Reading new files failed. TFS tries again after the next push.")
 
     def _prepare_data(self, db_path: Path) -> None:
         (self._data_dir / "raw").mkdir(parents=True, exist_ok=True)
-        conn = connect(db_path)
-        try:
+        with contextlib.closing(connect(db_path)) as conn:
             migrate(conn)
             scan_raw(conn, self._data_dir)
-        finally:
-            conn.close()
         if not password_store.get("push_token"):
             password_store.set("push_token", secrets.token_urlsafe(32))
 
