@@ -47,10 +47,14 @@ class DeleteTest(unittest.TestCase):
 
     def test_a_delete_hides_the_record_and_an_older_version_cannot_bring_it_back(self):
         self.store([SESSION], arrival=2)
+        self.conn.execute("DELETE FROM rebuild_dates")
 
         result = self.store([DELETE], arrival=3)
 
         self.assertEqual(result.deleted, 1)
+        self.assertEqual(result.dates, {"2026-10-02"})
+        saved = self.conn.execute("SELECT local_date FROM rebuild_dates").fetchall()
+        self.assertEqual([row[0] for row in saved], ["2026-10-02"])
         self.assertEqual(self.row()["deleted_at"], RECEIVED_AT[3])
 
         self.store([SESSION], arrival=2)
@@ -76,16 +80,6 @@ class DeleteTest(unittest.TestCase):
         self.store([changed(DELETE, revision_at=None)], arrival=2)
 
         self.assertEqual(self.row()["deleted_at"], RECEIVED_AT[2])
-
-    def test_a_delete_reports_the_local_date_of_the_record_it_hides(self):
-        self.store([SESSION], arrival=1)
-        self.conn.execute("DELETE FROM rebuild_dates")
-
-        result = self.store([DELETE], arrival=2)
-
-        self.assertEqual(result.dates, {"2026-10-02"})
-        saved = self.conn.execute("SELECT local_date FROM rebuild_dates").fetchall()
-        self.assertEqual([row[0] for row in saved], ["2026-10-02"])
 
     def test_the_row_is_the_same_whatever_order_the_content_and_delete_arrive_in(self):
         first = changed(SESSION, label="A", revision_at="2026-10-01T09:00:00.100Z")

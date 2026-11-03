@@ -124,7 +124,7 @@ def _sync_folder(folder: Path) -> None:
         os.close(descriptor)
 
 
-def scan_raw(conn: sqlite3.Connection, data_dir: Path, *, now: str) -> ScanResult:
+def scan_raw(conn: sqlite3.Connection, data_dir: Path) -> ScanResult:
     """Register raw files that have no row, mark rows whose file is gone and unstick rows."""
     raw = data_dir / "raw"
     # The scan holds the write lock, so it never sees a file that save_raw renamed but
@@ -136,13 +136,13 @@ def scan_raw(conn: sqlite3.Connection, data_dir: Path, *, now: str) -> ScanResul
         for path in raw.glob("*/*/*"):
             match = _RAW_FILE.fullmatch(path.name)
             if match is not None and match["sha256"] not in known and path.is_file():
-                orphans.append((path.stat().st_mtime_ns, path, match))
+                info = path.stat()
+                orphans.append((info.st_mtime_ns, path, info, match))
         registered = []
-        for _, path, match in sorted(orphans, key=lambda orphan: orphan[:2]):
+        for _, path, info, match in sorted(orphans, key=lambda orphan: orphan[:2]):
             if match["sha256"] in known:
                 continue
             known.add(match["sha256"])
-            info = path.stat()
             conn.execute(
                 "INSERT INTO files (sha256, arrival_seq, connector, format, ext, size_bytes,"
                 " received_at) SELECT ?, COALESCE(MAX(arrival_seq), 0) + 1, ?, ?, ?, ?, ?"

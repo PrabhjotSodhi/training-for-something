@@ -135,7 +135,7 @@ class Engine:
         conn = connect(db_path)
         try:
             migrate(conn)
-            scan_raw(conn, self._data_dir, now=to_utc_text(self._now_fn()))
+            scan_raw(conn, self._data_dir)
         finally:
             conn.close()
         if not password_store.get("push_token"):

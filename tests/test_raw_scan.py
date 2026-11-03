@@ -45,7 +45,7 @@ class ScanRawTest(unittest.TestCase):
         newer = self.drop_file(b"newer", NEWER_MTIME)
         older = self.drop_file(b"older", OLDER_MTIME)
 
-        result = scan_raw(self.conn, self.data_dir, now=NOW)
+        result = scan_raw(self.conn, self.data_dir)
 
         self.assertEqual(result.registered, [older, newer])
         self.assertEqual(result.missing, [])
@@ -63,7 +63,7 @@ class ScanRawTest(unittest.TestCase):
         sha256 = path.stem
         path.unlink()
 
-        result = scan_raw(self.conn, self.data_dir, now=NOW)
+        result = scan_raw(self.conn, self.data_dir)
 
         self.assertEqual((result.registered, result.missing), ([], [sha256]))
         row = self.row(sha256)
@@ -75,7 +75,7 @@ class ScanRawTest(unittest.TestCase):
         temporary = folder / ".tmp-abc123"
         temporary.write_bytes(b"half written")
 
-        result = scan_raw(self.conn, self.data_dir, now=NOW)
+        result = scan_raw(self.conn, self.data_dir)
 
         self.assertEqual((result.registered, result.missing), ([], []))
         self.assertTrue(temporary.exists())
@@ -88,10 +88,10 @@ class ScanRawTest(unittest.TestCase):
         self.conn.execute("UPDATE files SET status = 'reading' WHERE sha256 = ?", (reading,))
         removed = self.save(b"removed")
         removed.unlink()
-        scan_raw(self.conn, self.data_dir, now=NOW)
+        scan_raw(self.conn, self.data_dir)
         removed.write_bytes(b"removed")
 
-        again = scan_raw(self.conn, self.data_dir, now=NOW)
+        again = scan_raw(self.conn, self.data_dir)
 
         self.assertEqual((again.registered, again.missing), ([], []))
         for sha256 in (orphan, reading, removed.stem):
@@ -101,9 +101,9 @@ class ScanRawTest(unittest.TestCase):
     def test_a_file_that_is_still_gone_is_reported_on_every_scan(self):
         path = self.save(b"gone")
         path.unlink()
-        scan_raw(self.conn, self.data_dir, now=NOW)
+        scan_raw(self.conn, self.data_dir)
 
-        again = scan_raw(self.conn, self.data_dir, now=NOW)
+        again = scan_raw(self.conn, self.data_dir)
 
         self.assertEqual(again.missing, [path.stem])
 
@@ -111,7 +111,7 @@ class ScanRawTest(unittest.TestCase):
         path = self.save(b"done")
         self.conn.execute("UPDATE files SET status = 'ok' WHERE sha256 = ?", (path.stem,))
 
-        scan_raw(self.conn, self.data_dir, now=NOW)
+        scan_raw(self.conn, self.data_dir)
 
         self.assertEqual(self.row(path.stem)["status"], "ok")
 
@@ -119,7 +119,7 @@ class ScanRawTest(unittest.TestCase):
         self.save(b"same")
         self.drop_file(b"same", OLDER_MTIME, connector="strava", fmt="activities")
 
-        result = scan_raw(self.conn, self.data_dir, now=NOW)
+        result = scan_raw(self.conn, self.data_dir)
 
         self.assertEqual(result.registered, [])
         self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 1)
