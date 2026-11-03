@@ -210,7 +210,11 @@ def process_pending(
 
 
 def rebuild_pending(conn: sqlite3.Connection, *, tz: tzinfo | None = None) -> int:
-    """Rebuild the dates in rebuild_dates, one calendar month per transaction, and return how many."""
+    """Rebuild the dates in rebuild_dates and those with partial day facts, one month per transaction, and return how many."""
+    conn.execute(
+        "INSERT OR IGNORE INTO rebuild_dates"
+        " SELECT local_date FROM day_facts WHERE coverage = 'partial'"
+    )
     months = conn.execute(
         "SELECT DISTINCT substr(local_date, 1, 7) FROM rebuild_dates ORDER BY 1"
     ).fetchall()
@@ -222,7 +226,7 @@ def rebuild_pending(conn: sqlite3.Connection, *, tz: tzinfo | None = None) -> in
             ).fetchall()
             changed = {date for (date,) in dates}
             workouts.update(conn, changed)
-            daily_totals.rebuild(conn, changed)
+            daily_totals.rebuild(conn, changed, tz=tz)
             rebuilt += conn.execute(
                 "DELETE FROM rebuild_dates WHERE substr(local_date, 1, 7) = ?", (month,)
             ).rowcount
