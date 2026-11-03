@@ -1,6 +1,8 @@
 import io
 import json
+import os
 from pathlib import Path
+from unittest import mock
 
 from tests.test_read_file import NOW, SessionTest
 from tfs.connectors.core.runner import reader_version
@@ -8,14 +10,14 @@ from tfs.importer.raw_store import save_raw
 from tfs.importer.session import process_pending, rebuild_pending
 
 THIS = "tests.test_reader_replay"
-STOPPED: set[bytes] = set()
+STOPPED_ENV = "TFS_TEST_STOPPED"
 
 
 def read(path: str, fmt: str, out_path: str) -> dict:
     """A reader that emits one record per file: "key@label" is the key k with that label."""
     content = Path(path).read_bytes()
     lines = []
-    if content not in STOPPED:
+    if content.decode() not in os.environ.get(STOPPED_ENV, "").split(","):
         key, _, label = content.decode().partition("@")
         lines.append(
             json.dumps(
@@ -54,19 +56,20 @@ class ReaderReplayTest(SessionTest):
         ).fetchall()
         return [tuple(row) for row in rows]
 
-    def read_all_then_update_reader(self, stopped: set[bytes]) -> None:
+    def read_all_then_update_reader(self, *stopped: str) -> None:
         process_pending(self.conn, self.data_dir, module=THIS)
         rebuild_pending(self.conn)
         self.conn.execute(
             "UPDATE files SET reader_version = 'older' WHERE connector = 'fake_connector'"
         )
-        STOPPED.update(stopped)
-        self.addCleanup(STOPPED.clear)
+        patch = mock.patch.dict(os.environ, {STOPPED_ENV: ",".join(stopped)})
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def test_a_new_reader_version_rereads_the_files_in_arrival_order(self) -> None:
         self.save_for("fake_connector", b"k@first")
         self.save_for("fake_connector", b"k@second")
-        self.read_all_then_update_reader({b"k@second"})
+        self.read_all_then_update_reader("k@second")
         self.assertEqual(self.labels(), [("fake_connector", "second")])
 
         process_pending(self.conn, self.data_dir, module=THIS)
@@ -75,7 +78,7 @@ class ReaderReplayTest(SessionTest):
 
     def test_a_group_left_with_no_members_is_removed(self) -> None:
         self.save_for("fake_connector", b"run1@morning")
-        self.read_all_then_update_reader({b"run1@morning"})
+        self.read_all_then_update_reader("run1@morning")
         self.assertEqual(self.conn.execute("SELECT count(*) FROM session_groups").fetchone()[0], 1)
 
         process_pending(self.conn, self.data_dir, module=THIS)
@@ -88,7 +91,7 @@ class ReaderReplayTest(SessionTest):
     def test_files_from_other_connectors_are_not_reread(self) -> None:
         self.save_for("fake_connector", b"k@first")
         other = self.save_for("other_app", b"k@theirs")
-        self.read_all_then_update_reader({b"k@first", b"k@theirs"})
+        self.read_all_then_update_reader("k@first", "k@theirs")
         self.assertEqual(
             reader_version(folder=Path(__file__).parent), self.row(other)["reader_version"]
         )

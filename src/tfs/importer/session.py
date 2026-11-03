@@ -270,8 +270,12 @@ def process_pending(
 ) -> list[ImportResult]:
     """Read every new file in arrival order, then rebuild the dates they changed.
 
-    A file that fails never stops the others. With retry_failed, failed files are read again.
+    A connector with a file read by an older reader version is reset first, so all its files are
+    read again. A file that fails never stops the others. With retry_failed, failed files are read
+    again.
     """
+    for connector in _connectors_with_older_reads(conn, module):
+        _reset_connector(conn, connector)
     pending = conn.execute(
         "SELECT sha256 FROM files WHERE status = 'new' OR (status = 'failed' AND ?)"
         " ORDER BY arrival_seq",
@@ -306,6 +310,44 @@ def rebuild_pending(conn: sqlite3.Connection, *, tz: tzinfo | None = None) -> in
                 "DELETE FROM rebuild_dates WHERE substr(local_date, 1, 7) = ?", (month,)
             ).rowcount
     return rebuilt
+
+
+def _connectors_with_older_reads(conn: sqlite3.Connection, module: str | None) -> list[str]:
+    found = conn.execute(
+        "SELECT DISTINCT connector, reader_version FROM files WHERE reader_version IS NOT NULL"
+    ).fetchall()
+    older = []
+    for connector, version in found:
+        try:
+            current = _reader_version(connector, module)
+        except ValueError:
+            # A connector that is gone has no reader to read with. Its files keep their records.
+            continue
+        if version != current and connector not in older:
+            older.append(connector)
+    return older
+
+
+def _reset_connector(conn: sqlite3.Connection, connector: str) -> None:
+    """Forget what a connector's files stored, so reading them again starts from nothing.
+
+    Members of a group go with their records, so a group left empty is deleted here.
+    """
+    with transaction(conn):
+        conn.execute(
+            "INSERT OR IGNORE INTO rebuild_dates"
+            " SELECT DISTINCT local_date FROM source_records WHERE connector = ?",
+            (connector,),
+        )
+        conn.execute("DELETE FROM source_records WHERE connector = ?", (connector,))
+        conn.execute("DELETE FROM source_deletes WHERE connector = ?", (connector,))
+        conn.execute(
+            "DELETE FROM session_groups WHERE id NOT IN (SELECT group_id FROM session_group_members)"
+        )
+        conn.execute(
+            "UPDATE files SET status = 'new' WHERE connector = ? AND status NOT IN ('missing', 'reading')",
+            (connector,),
+        )
 
 
 def _file_row(conn: sqlite3.Connection, sha256: str) -> sqlite3.Row:
