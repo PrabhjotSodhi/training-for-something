@@ -136,11 +136,10 @@ def scan_raw(conn: sqlite3.Connection, data_dir: Path) -> ScanResult:
         for path in raw.glob("*/*/*"):
             match = _RAW_FILE.fullmatch(path.name)
             if match is not None and match["sha256"] not in known and path.is_file():
-                orphans.append((path.stat(), path, match))
+                info = path.stat()
+                orphans.append((info.st_mtime_ns, path, info, match))
         registered = []
-        for info, path, match in sorted(
-            orphans, key=lambda orphan: (orphan[0].st_mtime_ns, orphan[1])
-        ):
+        for _, path, info, match in sorted(orphans, key=lambda orphan: orphan[:2]):
             if match["sha256"] in known:
                 continue
             known.add(match["sha256"])
