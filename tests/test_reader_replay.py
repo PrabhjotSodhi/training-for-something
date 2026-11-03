@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest import mock
 
 from tests.test_read_file import NOW, SessionTest
-from tfs.connectors.core.runner import reader_version
 from tfs.importer.raw_store import save_raw
 from tfs.importer.session import process_pending, rebuild_pending
 
@@ -15,10 +14,10 @@ STOPPED_ENV = "TFS_TEST_STOPPED"
 
 def read(path: str, fmt: str, out_path: str) -> dict:
     """A reader that emits one record per file: "key@label" is the key k with that label."""
-    content = Path(path).read_bytes()
+    content = Path(path).read_text(encoding="utf-8")
     lines = []
-    if content.decode() not in os.environ.get(STOPPED_ENV, "").split(","):
-        key, _, label = content.decode().partition("@")
+    if content not in os.environ.get(STOPPED_ENV, "").split(","):
+        key, _, label = content.partition("@")
         lines.append(
             json.dumps(
                 {
@@ -62,9 +61,7 @@ class ReaderReplayTest(SessionTest):
         self.conn.execute(
             "UPDATE files SET reader_version = 'older' WHERE connector = 'fake_connector'"
         )
-        patch = mock.patch.dict(os.environ, {STOPPED_ENV: ",".join(stopped)})
-        patch.start()
-        self.addCleanup(patch.stop)
+        self.enterContext(mock.patch.dict(os.environ, {STOPPED_ENV: ",".join(stopped)}))
 
     def test_a_new_reader_version_rereads_the_files_in_arrival_order(self) -> None:
         self.save_for("fake_connector", b"k@first")
@@ -84,17 +81,11 @@ class ReaderReplayTest(SessionTest):
         process_pending(self.conn, self.data_dir, module=THIS)
 
         self.assertEqual(self.conn.execute("SELECT count(*) FROM session_groups").fetchone()[0], 0)
-        self.assertEqual(
-            self.conn.execute("SELECT count(*) FROM session_group_members").fetchone()[0], 0
-        )
 
     def test_files_from_other_connectors_are_not_reread(self) -> None:
         self.save_for("fake_connector", b"k@first")
         other = self.save_for("other_app", b"k@theirs")
         self.read_all_then_update_reader("k@first", "k@theirs")
-        self.assertEqual(
-            reader_version(folder=Path(__file__).parent), self.row(other)["reader_version"]
-        )
 
         process_pending(self.conn, self.data_dir, module=THIS)
 

@@ -312,19 +312,19 @@ def rebuild_pending(conn: sqlite3.Connection, *, tz: tzinfo | None = None) -> in
     return rebuilt
 
 
-def _connectors_with_older_reads(conn: sqlite3.Connection, module: str | None) -> list[str]:
+def _connectors_with_older_reads(conn: sqlite3.Connection, module: str | None) -> set[str]:
     found = conn.execute(
         "SELECT DISTINCT connector, reader_version FROM files WHERE reader_version IS NOT NULL"
     ).fetchall()
-    older = []
+    older: set[str] = set()
     for connector, version in found:
         try:
             current = _reader_version(connector, module)
         except ValueError:
             # A connector that is gone has no reader to read with. Its files keep their records.
             continue
-        if version != current and connector not in older:
-            older.append(connector)
+        if version != current:
+            older.add(connector)
     return older
 
 
@@ -345,7 +345,7 @@ def _reset_connector(conn: sqlite3.Connection, connector: str) -> None:
             "DELETE FROM session_groups WHERE id NOT IN (SELECT group_id FROM session_group_members)"
         )
         conn.execute(
-            "UPDATE files SET status = 'new' WHERE connector = ? AND status NOT IN ('missing', 'reading')",
+            "UPDATE files SET status = 'new' WHERE connector = ? AND status != 'missing'",
             (connector,),
         )
 
