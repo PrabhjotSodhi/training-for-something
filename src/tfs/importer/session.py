@@ -288,6 +288,22 @@ def process_pending(
     return results
 
 
+def rebuild_all(conn: sqlite3.Connection, data_dir: Path, *, tz: tzinfo | None = None) -> int:
+    """Clear everything made from raw files, read every file again in arrival order and return how many.
+
+    Files keep their hash, arrival number and received time, and sources keep their cursors.
+    A missing file stays missing and adds nothing.
+    """
+    with transaction(conn):
+        conn.execute("DELETE FROM source_records")
+        conn.execute("DELETE FROM session_groups")
+        conn.execute("DELETE FROM source_deletes")
+        conn.execute("DELETE FROM day_facts")
+        conn.execute("DELETE FROM rebuild_dates")
+        conn.execute("UPDATE files SET status = 'new' WHERE status != 'missing'")
+    return len(process_pending(conn, data_dir, tz=tz))
+
+
 def rebuild_pending(conn: sqlite3.Connection, *, tz: tzinfo | None = None) -> int:
     """Rebuild the dates in rebuild_dates and those with partial day facts, one month per transaction, and return how many."""
     conn.execute(
