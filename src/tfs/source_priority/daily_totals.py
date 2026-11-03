@@ -3,7 +3,7 @@
 import json
 import sqlite3
 from collections import defaultdict
-from datetime import datetime, time, timedelta, tzinfo
+from datetime import datetime, timedelta, tzinfo
 
 from tfs.connectors.core.contract import METRICS, parse_iso_time
 
@@ -58,36 +58,29 @@ def _counted(
 ) -> tuple[list[tuple[str, float]], bool]:
     """Return the sources one connector counts for a day, with their values, and if the first is marked merged."""
     totals = {source: sum(record[2] for record in records) for source, records in by_source.items()}
-    marked = [source for source, records in by_source.items() if any(r[3] for r in records)]
-    if marked:
-        best = min(marked, key=lambda source: (-totals[source], source))
-        return [(best, totals[best])], True
     order = sorted(by_source, key=lambda source: (-totals[source], source))
-    spans = {
-        source: [
-            (parse_iso_time(r[0]).timestamp(), r[1] and parse_iso_time(r[1]).timestamp())
-            for r in by_source[source]
-        ]
-        for source in order
-    }
+    marked = [source for source in order if any(record[3] for record in by_source[source])]
+    if marked:
+        return [(marked[0], totals[marked[0]])], True
     if not merge_by_time or any(
-        end is None or end <= start for source in order for start, end in spans[source]
+        end is None or end <= start
+        for records in by_source.values()
+        for start, end, _, _ in records
     ):
         return [(order[0], totals[order[0]])], False
     counted, covered = [], []
     for source in order:
-        added = 0.0
-        for (start, end), record in zip(spans[source], by_source[source], strict=True):
-            added += record[2] * _uncovered_seconds(start, end, covered) / (end - start)
+        records = by_source[source]
+        added = sum(
+            value
+            if not covered
+            else value * _uncovered_seconds(start, end, covered) / (end - start)
+            for start, end, value, _ in records
+        )
         if added > 0 or not counted:
             counted.append((source, added))
-        covered += spans[source]
+        covered += [record[:2] for record in records]
     return counted, False
-
-
-def _day_end(date: str, tz: tzinfo | None) -> datetime:
-    midnight = datetime.combine(datetime.fromisoformat(date) + timedelta(days=1), time())
-    return midnight.replace(tzinfo=tz) if tz else midnight.astimezone()
 
 
 def rebuild(conn: sqlite3.Connection, dates: set[str], *, tz: tzinfo | None = None) -> int:
@@ -113,7 +106,14 @@ def rebuild(conn: sqlite3.Connection, dates: set[str], *, tz: tzinfo | None = No
     for date, name, connector, start, end, value, merged, source in conn.execute(
         _SUMMED, {"metrics": json.dumps(list(summed)), "days": days}
     ):
-        grouped[date, name][connector][source].append((start, end, value, merged))
+        grouped[date, name][connector][source].append(
+            (
+                parse_iso_time(start).timestamp(),
+                end and parse_iso_time(end).timestamp(),
+                value,
+                merged,
+            )
+        )
     for (date, name), connectors in grouped.items():
         counted = {
             connector: _counted(by_source, name != "sleep_asleep")
@@ -127,9 +127,10 @@ def rebuild(conn: sqlite3.Connection, dates: set[str], *, tz: tzinfo | None = No
         value = sum(added for _, added in sources)
         if summed[name].zero_is_missing and value == 0:
             continue
-        arrived = received.get(connector)
-        partial = name != "sleep_asleep" and (
-            arrived is None or parse_iso_time(arrived) < _day_end(date, tz)
+        day_end = (datetime.fromisoformat(date) + timedelta(days=1)).replace(tzinfo=tz)
+        partial = (
+            name != "sleep_asleep"
+            and parse_iso_time(received[connector]).timestamp() < day_end.timestamp()
         )
         conn.execute(
             "INSERT INTO day_facts (local_date, metric, value, unit, source, coverage,"
