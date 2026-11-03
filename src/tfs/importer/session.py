@@ -159,6 +159,8 @@ def sync(
     else:
         manifest = load_manifest(_module_folder(module) / "manifest.json")
     label = manifest["label"]
+    if not manifest["routes"]["fetch"]:
+        raise ValueError(f"{label} does not fetch.")
     with transaction(conn):
         conn.execute(
             "INSERT INTO sources (connector, last_attempt_at) VALUES (?, ?)"
@@ -166,25 +168,27 @@ def sync(
             (connector, now),
         )
     saved: list[SavedFile] = []
-    last_error = needs_you = wait = None
+    needs_you = None
     try:
-        outcome = _fetch_and_save(conn, data_dir, connector, manifest, now, module, saved)
+        last_error = _fetch_and_save(conn, data_dir, connector, manifest, now, module, saved)
     except _FETCH_ERRORS as error:
         last_error, needs_you = str(error), f"{label}: {error}"
     else:
-        if outcome == "auth_failed":
-            last_error, needs_you = outcome, f"Reconnect {label}: tfs connect {connector}"
-        elif outcome is not None:
-            last_error = wait = f"try again after {outcome}."
+        if last_error == "auth_failed":
+            needs_you = f"Reconnect {label}: tfs connect {connector}"
     with transaction(conn):
         conn.execute(
             "UPDATE sources SET last_error = ? WHERE connector = ?", (last_error, connector)
         )
     results = process_pending(conn, data_dir, tz=tz, retry_failed=True, module=module)
-    stored = sum(result.inserted + result.replaced + result.unchanged for result in results)
+    stored = sum(
+        result.inserted + result.replaced + result.unchanged
+        for result in results
+        if result.connector == connector
+    )
     summary = needs_you or (
-        f"{label}: {wait}"
-        if wait
+        f"{label}: {last_error}"
+        if last_error
         else f"{label}: {_count(len(saved), 'file')}, {_count(stored, 'record')} stored."
     )
     return SyncResult(connector, len(saved), needs_you, results, summary)
@@ -320,7 +324,7 @@ def _fetch_and_save(
     module: str | None,
     saved: list[SavedFile],
 ) -> str | None:
-    """Fetch and save the pages. Return "auth_failed", a wait_until time or None."""
+    """Fetch and save the pages. Return the last_error text: None, "auth_failed" or a wait."""
     secrets = {
         ask["key"]: password_store.get(f"{connector}:{ask['key']}")
         for ask in manifest["asks"]
@@ -336,10 +340,10 @@ def _fetch_and_save(
     with tempfile.TemporaryDirectory() as out_dir:
         payload = {"cursor": cursor, "secrets": secrets, "out_dir": out_dir, "now": now}
         reply = runner.run(connector, "fetch", payload, timeout_s=_FETCH_TIMEOUT_S, module=module)
-        if reply.get("unsupported"):
-            raise ValueError(f"{manifest['label']} has no fetch.")
-        if reply["auth_failed"] or reply["wait_until"]:
-            return "auth_failed" if reply["auth_failed"] else reply["wait_until"]
+        if reply["auth_failed"]:
+            return "auth_failed"
+        if reply["wait_until"]:
+            return f"try again after {reply['wait_until']}."
         next_cursor = None if reply["cursor"] is None else json.dumps(reply["cursor"])
         files = reply["files"]
         for number, file in enumerate(files, start=1):
