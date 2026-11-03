@@ -5,7 +5,6 @@ from datetime import timedelta, timezone
 from pathlib import Path
 
 from tests.test_read_file import NOW, SessionTest
-from tfs.connectors.core.runner import reader_version
 from tfs.importer.raw_store import save_raw
 from tfs.importer.session import process_pending, rebuild_all
 
@@ -29,12 +28,9 @@ LIVE_FILES = (
 
 
 class RebuildAllTest(SessionTest):
-    def save_and_process(self, connector: str, fmt: str, ext: str, data: bytes, **kwargs) -> str:
-        sha256 = save_raw(
-            self.conn, self.data_dir, connector, fmt, ext, io.BytesIO(data), now=NOW, **kwargs
-        ).sha256
+    def save_and_process(self, connector: str, fmt: str, ext: str, data: bytes, **kwargs) -> None:
+        save_raw(self.conn, self.data_dir, connector, fmt, ext, io.BytesIO(data), now=NOW, **kwargs)
         process_pending(self.conn, self.data_dir, tz=NZ)
-        return sha256
 
     def read_live(self) -> None:
         for connector, fmt, ext, name in LIVE_FILES:
@@ -83,10 +79,8 @@ class RebuildAllTest(SessionTest):
         gone = self.conn.execute(
             "SELECT sha256 FROM files WHERE connector = 'apple_health'"
         ).fetchone()[0]
-        read_facts = "SELECT sha256, status, message FROM files"
-        live = {
-            sha256: (status, message) for sha256, status, message in self.conn.execute(read_facts)
-        }
+        read_facts = "SELECT sha256, status, message, reader_version FROM files"
+        live = {sha256: tuple(rest) for sha256, *rest in self.conn.execute(read_facts)}
         self.conn.execute("UPDATE files SET status = 'missing' WHERE sha256 = ?", (gone,))
         self.conn.execute("UPDATE files SET reader_version = 'older', message = 'old'")
         facts = "SELECT sha256, arrival_seq, received_at FROM files ORDER BY arrival_seq"
@@ -98,11 +92,5 @@ class RebuildAllTest(SessionTest):
         self.assertEqual(
             (self.conn.execute(facts).fetchall(), self.conn.execute(cursors).fetchall()), kept
         )
-        after = {
-            sha256: (status, message) for sha256, status, message in self.conn.execute(read_facts)
-        }
-        self.assertEqual(after, {**live, gone: ("missing", "old")})
-        versions = dict(
-            self.conn.execute("SELECT connector, reader_version FROM files WHERE status = 'ok'")
-        )
-        self.assertEqual(versions["hevy"], reader_version("hevy"))
+        after = {sha256: tuple(rest) for sha256, *rest in self.conn.execute(read_facts)}
+        self.assertEqual(after, {**live, gone: ("missing", "old", "older")})
