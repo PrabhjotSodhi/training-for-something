@@ -314,7 +314,8 @@ def rebuild_pending(conn: sqlite3.Connection, *, tz: tzinfo | None = None) -> in
 
 def _connectors_with_older_reads(conn: sqlite3.Connection, module: str | None) -> set[str]:
     found = conn.execute(
-        "SELECT DISTINCT connector, reader_version FROM files WHERE reader_version IS NOT NULL"
+        "SELECT DISTINCT connector, reader_version FROM files"
+        " WHERE reader_version IS NOT NULL AND status != 'missing'"
     ).fetchall()
     older: set[str] = set()
     for connector, version in found:
