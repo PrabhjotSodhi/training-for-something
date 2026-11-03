@@ -22,15 +22,10 @@ def report(conn: sqlite3.Connection, *, now: str, manifests: dict | None = None)
         manifest = manifests.get(row["connector"], {})
         sources.append(
             {
-                "connector": row["connector"],
+                **dict(row),
                 "label": manifest.get("label", row["connector"]),
                 "enabled": bool(row["enabled"]),
-                "last_attempt_at": row["last_attempt_at"],
-                "last_contact_at": row["last_contact_at"],
-                "last_received_at": row["last_received_at"],
-                "covered_until": row["covered_until"],
                 "stale": _is_stale(row["last_contact_at"], manifest.get("stale_after_hours"), now),
-                "last_error": row["last_error"],
             }
         )
     files = dict.fromkeys(_FILE_STATUSES, 0)

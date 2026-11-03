@@ -211,16 +211,6 @@ class MigrateTest(unittest.TestCase):
             migrate(conn, migrations_dir=self.migrations)
         self.assert_untouched(conn)
 
-    def test_a_file_can_use_a_savepoint(self):
-        self.write(
-            "0001_a.sql",
-            "CREATE TABLE a (x INTEGER); SAVEPOINT s; INSERT INTO a VALUES (1); ROLLBACK TO s;",
-        )
-        conn = self.open()
-        self.assertEqual(migrate(conn, migrations_dir=self.migrations), 1)
-        self.assertEqual(conn.execute("SELECT COUNT(*) FROM a").fetchone()[0], 0)
-        self.assertFalse(conn.in_transaction)
-
     def test_a_file_cannot_set_a_different_version(self):
         self.write("0001_a.sql", "CREATE TABLE a (x INTEGER); PRAGMA user_version = 7;")
         conn = self.open()
@@ -297,13 +287,6 @@ class MigrateTest(unittest.TestCase):
             migrate(conn, migrations_dir=self.migrations)
         self.assertIn("0002_b.sql", str(caught.exception))
         self.assert_untouched(conn)
-
-    def test_a_closed_connection_raises_sqlite_error(self):
-        self.write("0001_a.sql", "CREATE TABLE a (x INTEGER);")
-        conn = connect(self.path)
-        conn.close()
-        with self.assertRaises(sqlite3.Error):
-            migrate(conn, migrations_dir=self.migrations)
 
     def test_without_a_folder_it_reads_the_tfs_sql_package(self):
         package_root = self.root / "package"

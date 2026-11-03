@@ -215,10 +215,8 @@ def _workout_values(element: ElementTree.Element) -> dict[str, float | None]:
     heart_unit = heart_rate.get("unit")
     return {
         "duration_s": _amount(element.get("duration"), element.get("durationUnit"), "s"),
-        "distance_m": _statistic_or_total(distance, "sum", element, "totalDistance", "m"),
-        "active_energy_kcal": _statistic_or_total(
-            energy, "sum", element, "totalEnergyBurned", "kcal"
-        ),
+        "distance_m": _statistic_or_total(distance, element, "totalDistance", "m"),
+        "active_energy_kcal": _statistic_or_total(energy, element, "totalEnergyBurned", "kcal"),
         "avg_hr": _amount(heart_rate.get("average"), heart_unit, "bpm"),
         "max_hr": _amount(heart_rate.get("maximum"), heart_unit, "bpm"),
     }
@@ -226,12 +224,11 @@ def _workout_values(element: ElementTree.Element) -> dict[str, float | None]:
 
 def _statistic_or_total(
     statistic: ElementTree.Element,
-    field: str,
     workout: ElementTree.Element,
     total: str,
     target: str,
 ) -> float | None:
-    value = _amount(statistic.get(field), statistic.get("unit"), target)
+    value = _amount(statistic.get("sum"), statistic.get("unit"), target)
     if value is None:
         value = _amount(workout.get(total), workout.get(f"{total}Unit"), target)
     return value

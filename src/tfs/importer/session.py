@@ -114,7 +114,7 @@ def import_file(
         fmt, ext = "file", path.suffix.lower().removeprefix(".")
     with path.open("rb") as source:
         saved = save_raw(conn, data_dir, connector, fmt, ext, source, now=now)
-    result = read_file(conn, data_dir, saved.sha256, now=now, tz=tz)
+    result = read_file(conn, data_dir, saved.sha256, tz=tz)
     rebuild_pending(conn, tz=tz)
     return result
 
@@ -124,7 +124,6 @@ def read_file(
     data_dir: Path,
     sha256: str,
     *,
-    now: str,
     tz: tzinfo | None = None,
     timeout_s: float = 3600,
     module: str | None = None,
@@ -190,7 +189,6 @@ def process_pending(
     conn: sqlite3.Connection,
     data_dir: Path,
     *,
-    now: str,
     tz: tzinfo | None = None,
     retry_failed: bool = False,
     module: str | None = None,
@@ -206,7 +204,7 @@ def process_pending(
     ).fetchall()
     results = []
     for (sha256,) in pending:
-        results.append(read_file(conn, data_dir, sha256, now=now, tz=tz, module=module))
+        results.append(read_file(conn, data_dir, sha256, tz=tz, module=module))
     rebuild_pending(conn, tz=tz)
     return results
 
