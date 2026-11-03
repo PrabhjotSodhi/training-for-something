@@ -127,6 +127,30 @@ class SyncTest(unittest.TestCase):
         self.assertEqual(self.source()["last_error"], "auth_failed")
         self.assertEqual(self.files(), 0)
 
+    def test_a_connector_that_does_not_fetch_is_refused_before_anything_is_written(self):
+        with self.assertRaisesRegex(ValueError, "^Apple Health export does not fetch.$"):
+            sync(self.conn, config.data_dir(), "apple_health", now=NOW)
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT COUNT(*) FROM sources WHERE connector = 'apple_health'"
+            ).fetchone()[0],
+            0,
+        )
+
+    def test_the_summary_counts_only_this_connectors_records(self):
+        other = raw_store.save_raw(
+            self.conn,
+            config.data_dir(),
+            "other_app",
+            "page",
+            "json",
+            io.BytesIO(b"page 7"),
+            now=NOW,
+        )
+        self.conn.execute("UPDATE files SET status = 'failed' WHERE sha256 = ?", (other.sha256,))
+        self.plan(files=0, cursor={"n": 3})
+        self.assertEqual(self.sync().summary, "Fake fetch: 0 files, 0 records stored.")
+
 
 if __name__ == "__main__":
     unittest.main()
