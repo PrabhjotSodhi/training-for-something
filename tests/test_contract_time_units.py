@@ -110,6 +110,9 @@ class ConvertTests(unittest.TestCase):
         self.assert_converts(3.1, "mi", 4988.9664, "m")
         self.assertEqual(convert(800, "m"), (800.0, "m"))
 
+    def test_yards_convert_to_metres(self):
+        self.assert_converts(1000, "yd", 914.4, "m")
+
     def test_time(self):
         self.assertEqual(convert(90, "min"), (5400.0, "s"))
         self.assertEqual(convert(7.5, "hr"), (7.5, "h"))

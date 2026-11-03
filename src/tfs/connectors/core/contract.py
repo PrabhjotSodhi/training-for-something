@@ -81,6 +81,7 @@ _UNITS = {
     "kg": ("kg", lambda value: value),
     "km": ("m", lambda value: value * 1000),
     "mi": ("m", lambda value: value * 1609.344),
+    "yd": ("m", lambda value: value * 0.9144),
     "m": ("m", lambda value: value),
     "min": ("s", lambda value: value * 60),
     "s": ("s", lambda value: value),

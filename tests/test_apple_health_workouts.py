@@ -78,3 +78,25 @@ class AppleHealthWorkoutsTest(unittest.TestCase):
         self.assertAlmostEqual(record["values"]["distance_m"], 4988.9664, places=7)
         self.assertEqual(record["values"]["active_energy_kcal"], 250.0)
         self.assertNotIn("avg_hr", record["values"])
+
+
+class AppleHealthYardWorkoutTest(unittest.TestCase):
+    def test_workout_measured_in_yards_keeps_its_distance_in_metres(self) -> None:
+        export = (
+            "<HealthData>"
+            '<Workout workoutActivityType="HKWorkoutActivityTypeSwimming" duration="30"'
+            ' durationUnit="min" totalDistance="1000" totalDistanceUnit="yd"'
+            ' sourceName="Ana\'s Apple Watch" creationDate="2026-03-04 07:40:00 +1300"'
+            ' startDate="2026-03-04 07:00:00 +1300" endDate="2026-03-04 07:30:00 +1300"/>'
+            "</HealthData>"
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            export_path = Path(folder) / "export.xml"
+            out_path = Path(folder) / "records.jsonl"
+            export_path.write_text(export, encoding="utf-8")
+
+            result = read(str(export_path), "file", str(out_path))
+
+            (line,) = out_path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(result, {"status": "ok", "count": 1, "message": None})
+        self.assertAlmostEqual(json.loads(line)["values"]["distance_m"], 914.4, places=7)
