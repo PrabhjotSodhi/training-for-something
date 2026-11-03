@@ -63,9 +63,7 @@ def _counted(
     if marked:
         return [(marked[0], totals[marked[0]])], True
     if not merge_by_time or any(
-        end is None or end <= start
-        for records in by_source.values()
-        for start, end, _, _ in records
+        end is None or end <= start for records in by_source.values() for start, end, *_ in records
     ):
         return [(order[0], totals[order[0]])], False
     counted, covered = [], []
@@ -106,14 +104,8 @@ def rebuild(conn: sqlite3.Connection, dates: set[str], *, tz: tzinfo | None = No
     for date, name, connector, start, end, value, merged, source in conn.execute(
         _SUMMED, {"metrics": json.dumps(list(summed)), "days": days}
     ):
-        grouped[date, name][connector][source].append(
-            (
-                parse_iso_time(start).timestamp(),
-                end and parse_iso_time(end).timestamp(),
-                value,
-                merged,
-            )
-        )
+        span = (parse_iso_time(start).timestamp(), end and parse_iso_time(end).timestamp())
+        grouped[date, name][connector][source].append((*span, value, merged))
     for (date, name), connectors in grouped.items():
         counted = {
             connector: _counted(by_source, name != "sleep_asleep")
@@ -121,7 +113,11 @@ def rebuild(conn: sqlite3.Connection, dates: set[str], *, tz: tzinfo | None = No
         }
         connector = min(
             counted,
-            key=lambda c: (not counted[c][1], -sum(v for _, v in counted[c][0]), c),
+            key=lambda candidate: (
+                not counted[candidate][1],
+                -sum(added for _, added in counted[candidate][0]),
+                candidate,
+            ),
         )
         sources, _ = counted[connector]
         value = sum(added for _, added in sources)
