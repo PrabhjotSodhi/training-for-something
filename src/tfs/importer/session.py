@@ -14,17 +14,29 @@ from pathlib import Path
 from types import TracebackType
 from typing import TextIO
 
+from tfs import password_store
 from tfs.connectors.core import runner
-from tfs.connectors.core.contract import load_manifests
+from tfs.connectors.core.contract import load_manifest, load_manifests
 from tfs.duplicates import workouts
 from tfs.importer import records
-from tfs.importer.raw_store import save_raw
+from tfs.importer.raw_store import FileConflictError, SavedFile, save_raw
 from tfs.persistence.sqlite import transaction
 from tfs.source_priority import daily_totals
 
 logger = logging.getLogger(__name__)
 
 _READER_STATUSES = ("ok", "partial", "unreadable")
+_FETCH_TIMEOUT_S = 600
+_FETCH_ERRORS = (
+    runner.RunnerTimeoutError,
+    runner.RunnerFailedError,
+    runner.ConnectorUserError,
+    password_store.PasswordStoreError,
+    FileConflictError,
+    OSError,
+    ValueError,
+    sqlite3.Error,
+)
 
 
 @dataclass(frozen=True)
@@ -41,6 +53,17 @@ class ImportResult:
     deleted: int = 0
     rejected: dict[str, int] = field(default_factory=dict)
     skipped: bool = False
+
+
+@dataclass(frozen=True)
+class SyncResult:
+    """What one sync did. needs_you is a message when the user must act. summary is the line to show."""
+
+    connector: str
+    files_saved: int
+    needs_you: str | None
+    results: list[ImportResult]
+    summary: str
 
 
 class NoReaderError(Exception):
@@ -117,6 +140,58 @@ def import_file(
     result = read_file(conn, data_dir, saved.sha256, tz=tz)
     rebuild_pending(conn, tz=tz)
     return result
+
+
+def sync(
+    conn: sqlite3.Connection,
+    data_dir: Path,
+    connector: str,
+    *,
+    now: str,
+    tz: tzinfo | None = None,
+    module: str | None = None,
+) -> SyncResult:
+    """Fetch from one app, save every page, move the cursor with the last page and read what is new."""
+    if module is None:
+        manifest = load_manifests().get(connector)
+        if manifest is None:
+            raise ValueError(f"No connector named {connector}.")
+    else:
+        manifest = load_manifest(_module_folder(module) / "manifest.json")
+    label = manifest["label"]
+    if not manifest["routes"]["fetch"]:
+        raise ValueError(f"{label} does not fetch.")
+    with transaction(conn):
+        conn.execute(
+            "INSERT INTO sources (connector, last_attempt_at) VALUES (?, ?)"
+            " ON CONFLICT (connector) DO UPDATE SET last_attempt_at = excluded.last_attempt_at",
+            (connector, now),
+        )
+    saved: list[SavedFile] = []
+    needs_you = None
+    try:
+        last_error = _fetch_and_save(conn, data_dir, connector, manifest, now, module, saved)
+    except _FETCH_ERRORS as error:
+        last_error, needs_you = str(error), f"{label}: {error}"
+    else:
+        if last_error == "auth_failed":
+            needs_you = f"Reconnect {label}: tfs connect {connector}"
+    with transaction(conn):
+        conn.execute(
+            "UPDATE sources SET last_error = ? WHERE connector = ?", (last_error, connector)
+        )
+    results = process_pending(conn, data_dir, tz=tz, retry_failed=True, module=module)
+    stored = sum(
+        result.inserted + result.replaced + result.unchanged
+        for result in results
+        if result.connector == connector
+    )
+    summary = needs_you or (
+        f"{label}: {last_error}"
+        if last_error
+        else f"{label}: {_count(len(saved), 'file')}, {_count(stored, 'record')} stored."
+    )
+    return SyncResult(connector, len(saved), needs_you, results, summary)
 
 
 def read_file(
@@ -240,13 +315,76 @@ def _file_row(conn: sqlite3.Connection, sha256: str) -> sqlite3.Row:
     return row
 
 
-def _reader_version(connector: str, module: str | None) -> str:
-    if module is None:
-        return runner.reader_version(connector)
+def _fetch_and_save(
+    conn: sqlite3.Connection,
+    data_dir: Path,
+    connector: str,
+    manifest: dict,
+    now: str,
+    module: str | None,
+    saved: list[SavedFile],
+) -> str | None:
+    """Fetch and save the pages. Return the last_error text: None, "auth_failed" or a wait."""
+    secrets = {
+        ask["key"]: password_store.get(f"{connector}:{ask['key']}")
+        for ask in manifest["asks"]
+        if ask["secret"]
+    }
+    if None in secrets.values():
+        return "auth_failed"
+    row = conn.execute(
+        "SELECT cursor_json FROM sources WHERE connector = ?", (connector,)
+    ).fetchone()
+    cursor = None if row["cursor_json"] is None else json.loads(row["cursor_json"])
+    # Each fetch gets a new folder, so pages a failed run left behind are never saved later.
+    with tempfile.TemporaryDirectory() as out_dir:
+        payload = {"cursor": cursor, "secrets": secrets, "out_dir": out_dir, "now": now}
+        reply = runner.run(connector, "fetch", payload, timeout_s=_FETCH_TIMEOUT_S, module=module)
+        if reply["auth_failed"]:
+            return "auth_failed"
+        if reply["wait_until"]:
+            return f"try again after {reply['wait_until']}."
+        next_cursor = None if reply["cursor"] is None else json.dumps(reply["cursor"])
+        files = reply["files"]
+        for number, file in enumerate(files, start=1):
+            with Path(file["path"]).open("rb") as source:
+                saved.append(
+                    save_raw(
+                        conn,
+                        data_dir,
+                        connector,
+                        file["fmt"],
+                        file["ext"],
+                        source,
+                        now=now,
+                        cursor_json=next_cursor if number == len(files) else None,
+                    )
+                )
+    if not files:
+        with transaction(conn):
+            conn.execute(
+                "UPDATE sources SET cursor_json = COALESCE(?, cursor_json), last_contact_at = ?"
+                " WHERE connector = ?",
+                (next_cursor, now, connector),
+            )
+    return None
+
+
+def _count(number: int, noun: str) -> str:
+    return f"{number} {noun}" if number == 1 else f"{number} {noun}s"
+
+
+def _module_folder(module: str) -> Path:
     spec = find_spec(module)
     if spec is None or spec.origin is None:
         raise ValueError(f"The connector module {module} cannot be found.")
-    return runner.reader_version(folder=Path(spec.origin).parent)
+    return Path(spec.origin).parent
+
+
+def _reader_version(connector: str, module: str | None) -> str:
+    if module is None:
+        return runner.reader_version(connector)
+    return runner.reader_version(folder=_module_folder(module))
 
 
 def _decode(lines: TextIO) -> Iterator[dict]:

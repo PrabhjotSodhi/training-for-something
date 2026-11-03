@@ -1,0 +1,10 @@
+{
+  "label": "Fake fetch",
+  "about": "An invented connector for the sync tests.",
+  "routes": {"fetch": true, "push": false, "files": []},
+  "asks": [{"key": "api_key", "label": "API key", "secret": true}],
+  "stale_after_hours": 24,
+  "app_ids": ["com.example.fakefetch"],
+  "notices_deletes": false,
+  "sends": []
+}
