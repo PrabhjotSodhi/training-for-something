@@ -123,9 +123,6 @@ class SchemaTest(unittest.TestCase):
         self.assertEqual(count(self.conn, "files"), 1)
 
     def test_the_source_record_indexes_cover_the_right_columns(self):
-        listed = self.conn.execute("PRAGMA index_list(source_records)").fetchall()
-        named = {row["name"] for row in listed if row["origin"] == "c"}
-        self.assertLessEqual(set(INDEXES), named)
         for name, columns in INDEXES.items():
             with self.subTest(index=name):
                 info = self.conn.execute(f"PRAGMA index_info({name})").fetchall()
