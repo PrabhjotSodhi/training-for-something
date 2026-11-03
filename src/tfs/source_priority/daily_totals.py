@@ -111,13 +111,9 @@ def rebuild(conn: sqlite3.Connection, dates: set[str], *, tz: tzinfo | None = No
             connector: _counted(by_source, name != "sleep_asleep")
             for connector, by_source in connectors.items()
         }
-        connector = min(
-            counted,
-            key=lambda candidate: (
-                not counted[candidate][1],
-                -sum(added for _, added in counted[candidate][0]),
-                candidate,
-            ),
+        *_, connector = min(
+            (not marked, -sum(added for _, added in sources), connector)
+            for connector, (sources, marked) in counted.items()
         )
         sources, _ = counted[connector]
         value = sum(added for _, added in sources)
