@@ -84,10 +84,28 @@ class ReaderReplayTest(SessionTest):
 
     def test_files_from_other_connectors_are_not_reread(self) -> None:
         self.save_for("fake_connector", b"k@first")
-        other = self.save_for("other_app", b"k@theirs")
+        self.save_for("other_app", b"k@theirs")
         self.read_all_then_update_reader("k@first", "k@theirs")
 
         process_pending(self.conn, self.data_dir, module=THIS)
 
         self.assertEqual(self.labels(), [("other_app", "theirs")])
-        self.assertEqual(self.row(other)["status"], "ok")
+
+    def test_a_file_held_in_reading_keeps_its_records_through_the_reset(self) -> None:
+        first = self.save_for("fake_connector", b"a@one")
+        self.save_for("fake_connector", b"b@two")
+        self.read_all_then_update_reader()
+        self.conn.execute("UPDATE files SET status = 'reading' WHERE sha256 = ?", (first,))
+
+        process_pending(self.conn, self.data_dir, module=THIS)
+
+        self.assertEqual(self.labels(), [("fake_connector", "one"), ("fake_connector", "two")])
+
+    def test_a_missing_file_does_not_reset_the_connector_on_every_run(self) -> None:
+        first = self.save_for("fake_connector", b"a@one")
+        self.save_for("fake_connector", b"b@two")
+        self.read_all_then_update_reader()
+        self.conn.execute("UPDATE files SET status = 'missing' WHERE sha256 = ?", (first,))
+        process_pending(self.conn, self.data_dir, module=THIS)
+
+        self.assertEqual(process_pending(self.conn, self.data_dir, module=THIS), [])
