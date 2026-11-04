@@ -3,7 +3,8 @@
 Usage: python -m tests.crash_child <crash point or "none"> <data folder> [scenario]
 
 A scenario is a list of files saved one after another. All but the last run to the end first,
-so the crash comes during the last one.
+so the crash comes during the last one. The scenarios "push" and "sync" run one phone push or
+one fetch instead.
 """
 
 import functools
@@ -11,19 +12,27 @@ import io
 import json
 import os
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
+from tfs import password_store
 from tfs.duplicates import workouts
 from tfs.importer import records, session
 from tfs.importer.raw_store import save_raw
 from tfs.persistence.migrations import migrate
 from tfs.persistence.sqlite import connect
+from tfs.web.push import make_push_handler
 
 CONNECTOR = "fake_connector"
 MODULE = "tests.crash_child"
 NOW = "2026-10-27T09:00:00Z"
 DATA = b"invented crash test file"
 CURSOR_JSON = '{"page": 2}'
+PUSH_CONNECTOR = "health_auto_export"
+PUSH_BODY = Path(__file__).parent / "fixtures" / "health_auto_export" / "metrics.json"
+PUSH_NOW = datetime(2026, 10, 27, 9, 0, tzinfo=UTC)
+FETCH_CONNECTOR = "fake_fetch_connector"
+FETCH_MODULE = "tests.fake_fetch_connector.connector"
 BATCH_SIZE = 500
 RECORD_COUNT = BATCH_SIZE + 100
 
@@ -120,6 +129,34 @@ def operate(data_dir: Path, data: bytes = DATA, now: str = NOW) -> None:
     conn.close()
 
 
+def after_push_saved(sha256: str) -> None:
+    """Called by the push handler once the file is registered. A crash point replaces it."""
+
+
+def operate_push(data_dir: Path) -> None:
+    """Handle one phone push of PUSH_BODY, as the engine's push handler does."""
+    conn = connect(data_dir / "tfs.db")
+    migrate(conn)
+    conn.close()
+    handle = make_push_handler(
+        data_dir=data_dir,
+        conn_factory=lambda: connect(data_dir / "tfs.db", "save"),
+        now_fn=lambda: PUSH_NOW,
+        on_saved=lambda sha256: after_push_saved(sha256),
+    )
+    headers = {"Authorization": f"Bearer {password_store.get('push_token')}"}
+    with PUSH_BODY.open("rb") as body:
+        handle(PUSH_CONNECTOR, body, headers)
+
+
+def operate_sync(data_dir: Path) -> None:
+    """Fetch from the fake fetch connector, save its pages and read them."""
+    conn = connect(data_dir / "tfs.db")
+    migrate(conn)
+    session.sync(conn, data_dir, FETCH_CONNECTOR, now=NOW, module=FETCH_MODULE)
+    conn.close()
+
+
 def _exit(*args: object, **kwargs: object) -> None:
     os._exit(1)
 
@@ -163,15 +200,26 @@ CRASH_POINTS = {
     "mid_read": (records, "store", _exit_at_second_batch),
     "before_rebuild": (session, "rebuild_pending", lambda original: _exit),
     "before_second_month": (workouts, "update", _exit_at_second_call),
+    "after_push_saved": (sys.modules[__name__], "after_push_saved", lambda original: _exit),
+    "after_first_page": (session, "save_raw", _exit_at_second_call),
+    "before_sync_read": (session, "process_pending", lambda original: _exit),
 }
 
 
 if __name__ == "__main__":
     point, folder, *rest = sys.argv[1:]
-    *settled, last = SCENARIOS[rest[0] if rest else "one file"]
+    scenario = rest[0] if rest else "one file"
+    settled, last = [], None
+    if scenario in SCENARIOS:
+        *settled, last = SCENARIOS[scenario]
     for upload in settled:
         operate(Path(folder), *upload)
     if point != "none":
         target, name, build = CRASH_POINTS[point]
         setattr(target, name, build(getattr(target, name)))
-    operate(Path(folder), *last)
+    if scenario == "push":
+        operate_push(Path(folder))
+    elif scenario == "sync":
+        operate_sync(Path(folder))
+    else:
+        operate(Path(folder), *last)
