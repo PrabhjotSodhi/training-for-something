@@ -70,16 +70,13 @@ def _steps(key: str, local_date: str) -> dict:
     )
 
 
-def _delete(key: str) -> dict:
-    return {"kind": "deleted", "stream": "workouts", "key": key}
-
-
-# What the reader returns for each file. A file it does not know gets 600 steps and a run, which
-# make two batches.
+# What the reader returns for each file. DATA gets a run and 599 steps, which make two batches.
 FILES = {
+    DATA: [_run("run", "2026-02-28")]
+    + [_steps(f"steps{number}", "2026-02-28") for number in range(RECORD_COUNT - 1)],
     b"moved first": [_run("run", "2026-10-01"), _steps("steps", "2026-10-01")],
     b"moved second": [_run("run", "2026-10-20"), _steps("steps", "2026-10-20")],
-    b"deleted": [_delete("run")],
+    b"deleted": [{"kind": "deleted", "stream": "workouts", "key": "run"}],
     b"two months": [
         _run("august", "2026-08-30"),
         _steps("august steps", "2026-08-30"),
@@ -98,18 +95,14 @@ SCENARIOS = {
 
 def read(path: str, fmt: str, out_path: str) -> dict:
     """A reader that returns the records listed for the file's contents."""
-    found = FILES.get(Path(path).read_bytes())
-    if found is None:
-        found = [_run("run", "2026-02-28")]
-        found += [_steps(f"steps{number}", "2026-02-28") for number in range(RECORD_COUNT - 1)]
+    found = FILES[Path(path).read_bytes()]
     lines = [json.dumps(record) for record in found]
     Path(out_path).write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
     return {"status": "ok", "count": len(lines), "message": None}
 
 
-def operate(data_dir: Path, upload: tuple[bytes, str] = SCENARIOS["one file"][0]) -> None:
+def operate(data_dir: Path, data: bytes = DATA, now: str = NOW) -> None:
     """Save one file, read it and rebuild the dates it changed, as an import does."""
-    data, now = upload
     conn = connect(data_dir / "tfs.db")
     migrate(conn)
     saved = save_raw(
@@ -177,8 +170,8 @@ if __name__ == "__main__":
     point, folder, *rest = sys.argv[1:]
     *settled, last = SCENARIOS[rest[0] if rest else "one file"]
     for upload in settled:
-        operate(Path(folder), upload)
+        operate(Path(folder), *upload)
     if point != "none":
         target, name, build = CRASH_POINTS[point]
         setattr(target, name, build(getattr(target, name)))
-    operate(Path(folder), last)
+    operate(Path(folder), *last)

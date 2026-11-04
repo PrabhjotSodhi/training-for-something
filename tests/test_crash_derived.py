@@ -1,15 +1,10 @@
 import contextlib
 import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
-from tests import crash_child
-from tests.test_crash_raw import ROOT, SNAPSHOT_QUERIES
-from tfs.importer.raw_store import scan_raw
-from tfs.importer.session import process_pending
-from tfs.persistence.migrations import migrate
+from tests import crash_child, test_crash_raw
 from tfs.persistence.sqlite import connect
 
 GROUP_DATES = "SELECT local_date FROM session_groups ORDER BY local_date"
@@ -19,17 +14,16 @@ GROUPED_RECORDS = "SELECT record_id FROM session_group_members"
 
 
 class CrashDerivedTest(unittest.TestCase):
-    def new_folder(self) -> Path:
-        folder = tempfile.TemporaryDirectory()
-        self.addCleanup(folder.cleanup)
-        return Path(folder.name)
+    new_folder = test_crash_raw.CrashRawTest.new_folder
+    restart = test_crash_raw.CrashRawTest.restart
+    snapshot = test_crash_raw.CrashRawTest.snapshot
 
     def crash_at(self, point: str, scenario: str) -> Path:
         """Run the scenario in a child process that stops at the point, and return its folder."""
         folder = self.new_folder()
         child = subprocess.run(
             [sys.executable, "-m", "tests.crash_child", point, str(folder), scenario],
-            cwd=ROOT,
+            cwd=test_crash_raw.ROOT,
             capture_output=True,
             text=True,
             check=False,
@@ -37,26 +31,11 @@ class CrashDerivedTest(unittest.TestCase):
         self.assertEqual((child.returncode, child.stderr), (1, ""))
         return folder
 
-    def restart(self, folder: Path) -> None:
-        """Start up as the engine does: register what is on disk, then read what is new."""
-        with contextlib.closing(connect(folder / "tfs.db")) as conn:
-            migrate(conn)
-            scan_raw(conn, folder)
-            process_pending(conn, folder, module=crash_child.MODULE)
-
     def uncrashed(self, scenario: str) -> Path:
         folder = self.new_folder()
         for upload in crash_child.SCENARIOS[scenario]:
-            crash_child.operate(folder, upload)
+            crash_child.operate(folder, *upload)
         return folder
-
-    def snapshot(self, folder: Path) -> dict:
-        """Every table the import fills, as plain rows."""
-        with contextlib.closing(connect(folder / "tfs.db")) as conn:
-            return {
-                table: [dict(row) for row in conn.execute(query)]
-                for table, query in SNAPSHOT_QUERIES.items()
-            }
 
     def column(self, folder: Path, query: str) -> list[str]:
         with contextlib.closing(connect(folder / "tfs.db")) as conn:
