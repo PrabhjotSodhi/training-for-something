@@ -143,6 +143,7 @@ def scan_raw(conn: sqlite3.Connection, data_dir: Path) -> ScanResult:
             if match["sha256"] in known:
                 continue
             known.add(match["sha256"])
+            received_at = to_utc_text(datetime.fromtimestamp(info.st_mtime, UTC))
             conn.execute(
                 "INSERT INTO files (sha256, arrival_seq, connector, format, ext, size_bytes,"
                 " received_at) SELECT ?, COALESCE(MAX(arrival_seq), 0) + 1, ?, ?, ?, ?, ?"
@@ -153,8 +154,13 @@ def scan_raw(conn: sqlite3.Connection, data_dir: Path) -> ScanResult:
                     path.parent.name,
                     match["ext"],
                     info.st_size,
-                    to_utc_text(datetime.fromtimestamp(info.st_mtime, UTC)),
+                    received_at,
                 ),
+            )
+            conn.execute(
+                "INSERT INTO sources (connector, last_received_at) VALUES (?, ?)"
+                " ON CONFLICT (connector) DO NOTHING",
+                (path.parent.parent.name, received_at),
             )
             registered.append(match["sha256"])
         missing = []
