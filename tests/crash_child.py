@@ -21,7 +21,7 @@ from tfs.importer import records, session
 from tfs.importer.raw_store import save_raw
 from tfs.persistence.migrations import migrate
 from tfs.persistence.sqlite import connect
-from tfs.web.push import make_push_handler
+from tfs.web import push
 
 CONNECTOR = "fake_connector"
 MODULE = "tests.crash_child"
@@ -129,20 +129,16 @@ def operate(data_dir: Path, data: bytes = DATA, now: str = NOW) -> None:
     conn.close()
 
 
-def after_push_saved(sha256: str) -> None:
-    """Called by the push handler once the file is registered. A crash point replaces it."""
-
-
 def operate_push(data_dir: Path) -> None:
     """Handle one phone push of PUSH_BODY, as the engine's push handler does."""
     conn = connect(data_dir / "tfs.db")
     migrate(conn)
     conn.close()
-    handle = make_push_handler(
+    handle = push.make_push_handler(
         data_dir=data_dir,
         conn_factory=lambda: connect(data_dir / "tfs.db", "save"),
         now_fn=lambda: PUSH_NOW,
-        on_saved=lambda sha256: after_push_saved(sha256),
+        on_saved=lambda sha256: None,
     )
     headers = {"Authorization": f"Bearer {password_store.get('push_token')}"}
     with PUSH_BODY.open("rb") as body:
@@ -200,7 +196,7 @@ CRASH_POINTS = {
     "mid_read": (records, "store", _exit_at_second_batch),
     "before_rebuild": (session, "rebuild_pending", lambda original: _exit),
     "before_second_month": (workouts, "update", _exit_at_second_call),
-    "after_push_saved": (sys.modules[__name__], "after_push_saved", lambda original: _exit),
+    "after_push_saved": (push, "save_raw", _exit_after),
     "after_first_page": (session, "save_raw", _exit_at_second_call),
     "before_sync_read": (session, "process_pending", lambda original: _exit),
 }

@@ -2,13 +2,11 @@ import contextlib
 import http.client
 import json
 import os
-import subprocess
-import sys
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from tests import crash_child, test_crash_raw
+from tests import crash_child, test_crash_derived, test_crash_raw
 from tests.test_engine import free_port
 from tfs import config, password_store
 from tfs.connectors.core import runner
@@ -43,18 +41,7 @@ class CrashSyncPushTest(unittest.TestCase):
         password_store.set("push_token", TOKEN)
         password_store.set(f"{crash_child.FETCH_CONNECTOR}:api_key", "invented-key")
 
-    def crash_at(self, point: str, scenario: str) -> Path:
-        """Run the scenario in a child process that stops at the point, and return its folder."""
-        folder = self.new_folder()
-        child = subprocess.run(
-            [sys.executable, "-m", "tests.crash_child", point, str(folder), scenario],
-            cwd=test_crash_raw.ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        self.assertEqual((child.returncode, child.stderr), (1, ""))
-        return folder
+    crash_at = test_crash_derived.CrashDerivedTest.crash_at
 
     def phone_pushes(self, folder: Path) -> None:
         """Start an engine on the folder, push the body once, and wait for the records."""
