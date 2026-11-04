@@ -3,12 +3,12 @@
 Usage: python -m tests.crash_child <crash point or "none"> <data folder>
 """
 
+import functools
 import io
 import json
 import os
 import sys
 from pathlib import Path
-from unittest import mock
 
 from tfs.importer import records, session
 from tfs.importer.raw_store import save_raw
@@ -99,16 +99,15 @@ def _exit_after(original):
     return wrapper
 
 
-def _exit_after_first_batch(original):
-    def wrapper(*args, **kwargs):
-        batches = []
-        return original(*args, **kwargs, before_batch=lambda: batches.append(1) or _stop(batches))
+def _exit_at_second_batch(original):
+    batches = []
 
-    def _stop(batches):
+    def before_batch():
+        batches.append(1)
         if len(batches) == 2:
             os._exit(1)
 
-    return wrapper
+    return functools.partial(original, before_batch=before_batch)
 
 
 # Each point is the object and function to patch, and how to build the replacement.
@@ -116,7 +115,7 @@ CRASH_POINTS = {
     "before_rename": (Path, "replace", lambda original: _exit),
     "after_rename": (Path, "replace", _exit_after),
     "before_read": (session, "read_file", lambda original: _exit),
-    "mid_read": (records, "store", _exit_after_first_batch),
+    "mid_read": (records, "store", _exit_at_second_batch),
 }
 
 
@@ -124,5 +123,5 @@ if __name__ == "__main__":
     point, folder = sys.argv[1:]
     if point != "none":
         target, name, build = CRASH_POINTS[point]
-        mock.patch.object(target, name, build(getattr(target, name))).start()
+        setattr(target, name, build(getattr(target, name)))
     operate(Path(folder))
