@@ -97,7 +97,8 @@ class CrashRawTest(unittest.TestCase):
         expected = self.uncrashed()
         found = self.snapshot(folder)
         # The cursor was in the transaction that never committed, so the next fetch sets it.
-        found["sources"] = expected["sources"]
+        for snapshot in (found, expected):
+            snapshot["sources"] = [row["connector"] for row in snapshot["sources"]]
         self.assertEqual(found, expected)
 
     def test_a_crash_before_the_reader_starts_loses_nothing(self) -> None:
