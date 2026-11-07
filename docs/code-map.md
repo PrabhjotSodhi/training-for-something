@@ -38,6 +38,7 @@ training-for-something/
         connector.py          fetch(), read(), send(), connect() as the app supports
       health_auto_export/
       hevy/
+        routines.py           Hevy-only routine mapping/readback; writes stay disabled pending proof
     duplicates/
       workouts.py             links the same workout from two apps into one session group
       review.py               the "Possible duplicates" screen: your links and unlinks

@@ -1,11 +1,13 @@
 """Fetches Hevy workout pages and reads saved pages into session records and delete records."""
 
 import json
+from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
 from urllib.parse import quote
 
 from tfs.connectors.core.contract import parse_iso_time, to_revision_text, to_utc_text
+from tfs.connectors.hevy import routines
 
 _STREAM = "workouts"
 _ORIGIN_APP = "com.hevyapp.hevy"
@@ -161,3 +163,17 @@ def _parts(exercises: list[dict]) -> list[dict]:
                 }
             )
     return parts
+
+
+def send(
+    item: dict,
+    op_id: str,
+    remote_id: str | None,
+    remote_version: str | None,
+    in_doubt: bool,
+    secrets: dict,
+    now: str,
+    http: Callable,
+) -> dict:
+    """Prepare routine delivery through the provider-verified write gate."""
+    return routines.send(item, op_id, remote_id, remote_version, in_doubt, secrets, now, http)
