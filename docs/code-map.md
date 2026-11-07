@@ -49,6 +49,7 @@ training-for-something/
       views.sql               the coach_v1_* views
       tool_access.py          the guarded read-only reader
       server.py               the ask TFS tool over stdio
+      proposal_tools.py       schemas and dispatch for propose, save and undo
     providers/
       briefing.py             the briefing that starts every run TFS starts
       claude_code.py          one file per AI tool
