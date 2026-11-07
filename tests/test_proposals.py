@@ -79,6 +79,52 @@ class ProposalsTest(unittest.TestCase):
         )
         self.assertEqual(row["saved_at"], "2026-11-06T23:00:00Z")
 
+    def test_start_time_add_move_clear_retry_and_undo(self) -> None:
+        first = proposal({**ADD, "start_hint": "07:30"})
+        self.assertEqual(preview(self.path, first, now=NOW)["items"][0]["start_hint"], "07:30")
+        self.save(first)
+        moved = proposal({"action": "move_session", "item": "p1", "to": "2026-11-10"}, version=1)
+        self.save(moved, "move")
+        self.assertEqual(
+            self.conn.execute("SELECT start_hint FROM plan_items").fetchone()[0], "07:30"
+        )
+        changed = proposal(
+            {"action": "change_session", "item": "p1", "start_hint": "23:59"}, version=2
+        )
+        receipt = self.save(changed, "time")
+        self.assertEqual(self.save(changed, "time"), receipt)
+        self.assertEqual(
+            self.conn.execute("SELECT start_hint FROM plan_items").fetchone()[0], "23:59"
+        )
+        self.save(
+            proposal({"action": "change_session", "item": "p1", "start_hint": None}, version=3),
+            "clear",
+        )
+        self.assertIsNone(self.conn.execute("SELECT start_hint FROM plan_items").fetchone()[0])
+        undo(self.path, 4, request_id="undo-time", approved_by="chat", now=NOW)
+        self.assertEqual(
+            self.conn.execute("SELECT start_hint FROM plan_items").fetchone()[0], "23:59"
+        )
+        self.save(
+            proposal(
+                {"action": "move_session", "item": "p1", "to": "2026-11-11", "start_hint": "00:00"},
+                version=5,
+            ),
+            "midnight",
+        )
+        self.assertEqual(
+            tuple(self.conn.execute("SELECT local_date, start_hint FROM plan_items").fetchone()),
+            ("2026-11-11", "00:00"),
+        )
+
+    def test_invalid_start_time_in_later_action_saves_nothing(self) -> None:
+        for hint in ("7:30", "24:00", "12:60", "07:30:00", "07:30+13:00", " 07:30", True, 730):
+            with self.subTest(hint=hint), self.assertRaises(ValueError):
+                self.save(
+                    proposal(ADD, {"action": "change_session", "item": "p1", "start_hint": hint})
+                )
+            self.assertEqual(self.counts(), (0, 0, 0))
+
     def test_invalid_later_action_and_unknown_fields_save_nothing(self) -> None:
         cases = [
             proposal(ADD, {"action": "move_session", "item": "missing", "to": "2026-11-09"}),

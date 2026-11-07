@@ -3,6 +3,7 @@
 import copy
 import json
 import math
+import re
 import sqlite3
 from datetime import date
 from urllib.parse import urlsplit
@@ -11,9 +12,12 @@ from tfs.connectors.core.contract import FAMILIES
 from tfs.proposals import journal, targets
 
 FIELDS = {
-    "add_session": ({"action", "item", "date", "family", "label", "parts"}, {"goal_ids"}),
-    "move_session": ({"action", "item", "to"}, set()),
-    "change_session": ({"action", "item"}, {"label", "parts"}),
+    "add_session": (
+        {"action", "item", "date", "family", "label", "parts"},
+        {"goal_ids", "start_hint"},
+    ),
+    "move_session": ({"action", "item", "to"}, {"start_hint"}),
+    "change_session": ({"action", "item"}, {"label", "parts", "start_hint"}),
     "remove_session": ({"action", "item"}, set()),
     "mark_done": ({"action", "item"}, set()),
     "set_goal": ({"action", "item", "type", "date", "target"}, set()),
@@ -41,6 +45,14 @@ def _day(value: object, today: date) -> str:
         raise ValueError("Expected an ISO local date.") from error
     if parsed.isoformat() != value or parsed < today:
         raise ValueError("A planned date must be today or later, in YYYY-MM-DD form.")
+    return value
+
+
+def _start_hint(value: object) -> str | None:
+    if value is not None and (
+        not isinstance(value, str) or not re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", value)
+    ):
+        raise ValueError("start_hint must be a local HH:MM time or null.")
     return value
 
 
@@ -131,7 +143,7 @@ def _add(conn: sqlite3.Connection, action: dict, today: date, pending_goals: dic
         "id": action["item"],
         "version": 0,
         "local_date": _day(action["date"], today),
-        "start_hint": None,
+        "start_hint": _start_hint(action.get("start_hint")),
         "family": action["family"],
         "label": action["label"],
         "goal_ids": list(dict.fromkeys(goals)),
@@ -144,11 +156,13 @@ def _edit(state: dict | None, action: dict, today: date) -> None:
     if state is None or state["status"] in ("done", "removed", "replaced"):
         raise ValueError("The plan item is missing or can no longer be changed.")
     name = action["action"]
+    if "start_hint" in action:
+        state["start_hint"] = _start_hint(action["start_hint"])
     if name == "move_session":
         state["local_date"] = _day(action["to"], today)
     elif name == "change_session":
-        if not ({"label", "parts"} & action.keys()):
-            raise ValueError("A change needs a label or parts.")
+        if not ({"label", "parts", "start_hint"} & action.keys()):
+            raise ValueError("A change needs a label, parts or start_hint.")
         if "label" in action:
             _text(action["label"])
             state["label"] = action["label"]

@@ -78,10 +78,14 @@ and a stable `item` ID. Unknown fields are errors.
 
 | Action | Additional fields |
 |---|---|
-| add_session | date, family, label, parts; optional goal_ids naming existing goals |
-| move_session | to |
-| change_session | label and/or parts |
+| add_session | date, family, label, parts; optional goal_ids naming existing goals, start_hint |
+| move_session | to; optional start_hint |
+| change_session | at least one of label, parts, start_hint |
 | remove_session, mark_done | none |
+
+`start_hint` is a local 24-hour HH:MM time, or null for no preferred time.
+Omission on add means null; omission on move/change keeps the previous hint.
+Explicit null clears it. Seconds and timezone offsets are not accepted.
 
 Dates are local YYYY-MM-DD dates, today or later. The caller passes an aware
 `now` in the person's local zone; journal time is stored in UTC. Parts are an
