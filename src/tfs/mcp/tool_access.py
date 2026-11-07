@@ -43,6 +43,14 @@ VIEWS = {
         "Exactly one row: the current global plan_version to use for a proposal,"
         " or zero before the first Save. This can exceed an unchanged item's plan_version."
     ),
+    "coach_v1_goals": (
+        "One row per user-approved goal. target_json holds its description and optional"
+        " value/unit pair in the saved units. local_date is its target date, not a forecast."
+    ),
+    "coach_v1_limits": (
+        "One row per user-approved training constraint. values_json holds the kind's"
+        " fields, such as minutes, a date or user-recorded injury text; not a diagnosis."
+    ),
 }
 MAX_ROWS = 500
 MAX_BYTES = 200_000
