@@ -56,3 +56,14 @@ From HLD section 11, in this order:
 3. You can always mark done by hand, or unlink a wrong match.
 
 Sending a plan never marks it done.
+
+## Stored plan state
+
+`plan_items` holds the current version of each planned session. Its `plan_version`
+references the journal entry that last changed it. Removed items use the status
+`removed`; undo history lives in the journal rather than duplicate current rows.
+
+`session_parts` has exactly one owner: `record_id` for an imported workout or
+`plan_item_id` for a planned session. Sequence numbers are unique within each
+owner. Both owners use the same part fields and stored units. Deleting an imported
+record cannot delete planned parts.
