@@ -1,9 +1,12 @@
+import io
 import json
 import os
 import shutil
 import subprocess
 import tempfile
 import unittest
+import urllib.error
+import urllib.request
 from pathlib import Path
 from unittest import mock
 
@@ -14,6 +17,7 @@ from tfs.connectors.core.runner import (
     RunnerFailedError,
     RunnerTimeoutError,
     http_get,
+    http_request,
     reader_version,
     run,
 )
@@ -98,6 +102,13 @@ class RunTest(unittest.TestCase):
                     run("fake_connector", "send", {"mode": mode}, timeout_s=10, module=FAKE)
                 self.assertTrue(str(caught.exception).endswith("\nwhy it broke"))
 
+    def test_send_receives_transport_in_the_real_helper(self) -> None:
+        result = run("fake_connector", "send", {"mode": "transport"}, timeout_s=10, module=FAKE)
+        self.assertEqual(
+            result,
+            {"transport": "http_request", "error": "Only https:// addresses can be fetched."},
+        )
+
     def test_a_bad_connector_name_or_operation_is_refused(self) -> None:
         for connector, op in (
             ("../x", "read"),
@@ -141,6 +152,73 @@ class HttpGetTest(unittest.TestCase):
         for url in ("http://example.com/", "file:///etc/hostname"):
             with self.subTest(url=url), self.assertRaises(ValueError):
                 http_get(url, {})
+
+
+class HttpRequestTest(unittest.TestCase):
+    def test_exact_request_and_response(self) -> None:
+        for method in ("GET", "POST", "PUT"):
+            with (
+                self.subTest(method=method),
+                mock.patch.object(runner.urllib.request, "build_opener") as build,
+            ):
+                reply = build.return_value.open.return_value.__enter__.return_value
+                reply.status, reply.headers = 200, {"Content-Type": "application/json"}
+                reply.read.return_value = b'{"id":"routine-1"}'
+                body = None if method == "GET" else '{"title":"café ✓"}'.encode()
+                result = http_request(
+                    method, "https://example.invalid/routines", {"Api-Key": "invented"}, body, 7
+                )
+                request = build.return_value.open.call_args.args[0]
+                self.assertEqual(request.get_method(), method)
+                self.assertEqual(request.full_url, "https://example.invalid/routines")
+                self.assertEqual(request.data, body)
+                self.assertEqual(request.get_header("Api-key"), "invented")
+                self.assertEqual(build.return_value.open.call_args.kwargs, {"timeout": 7})
+                self.assertEqual(result, (200, reply.headers, b'{"id":"routine-1"}'))
+                self.assertEqual(build.return_value.open.call_count, 1)
+
+    def test_http_failure_and_redirect_return_without_resend(self) -> None:
+        for status in (401, 429, 500, 301, 302, 303, 307, 308):
+            with (
+                self.subTest(status=status),
+                mock.patch.object(runner.urllib.request, "build_opener") as build,
+            ):
+                headers = {"Location": "https://other.invalid/", "Retry-After": "30"}
+                error = urllib.error.HTTPError(
+                    "https://example.invalid/", status, "response", headers, io.BytesIO(b"result")
+                )
+                build.return_value.open.side_effect = error
+                self.assertEqual(
+                    http_request("POST", "https://example.invalid/", {}, b"body"),
+                    (status, headers, b"result"),
+                )
+                self.assertEqual(build.return_value.open.call_count, 1)
+                handler = build.call_args.args[0]()
+                request = urllib.request.Request("https://example.invalid/", data=b"body")
+                if 300 <= status < 400:
+                    self.assertIsNone(
+                        handler.redirect_request(
+                            request, None, status, "redirect", headers, headers["Location"]
+                        )
+                    )
+
+    def test_transport_failure_propagates_once(self) -> None:
+        with mock.patch.object(runner.urllib.request, "build_opener") as build:
+            build.return_value.open.side_effect = TimeoutError("uncertain")
+            with self.assertRaises(TimeoutError):
+                http_request("PUT", "https://example.invalid/", {}, b"body")
+            self.assertEqual(build.return_value.open.call_count, 1)
+
+    def test_invalid_method_or_scheme_never_opens_a_request(self) -> None:
+        with mock.patch.object(runner.urllib.request, "build_opener") as build:
+            for method, url in (
+                ("DELETE", "https://example.invalid/"),
+                ("POST", "http://example.invalid/"),
+                ("PUT", "file:///invented"),
+            ):
+                with self.subTest(method=method, url=url), self.assertRaises(ValueError):
+                    http_request(method, url, {})
+            build.assert_not_called()
 
 
 if __name__ == "__main__":

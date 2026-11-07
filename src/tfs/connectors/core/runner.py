@@ -88,10 +88,26 @@ def run(
 
 def http_get(url: str, headers: dict, timeout_s: float = 30) -> tuple[int, dict, bytes]:
     """GET an https URL and return status, headers and body. 4xx and 5xx are returned, not raised."""
+    return _request("GET", url, headers, None, timeout_s, _HttpsOnlyRedirects)
+
+
+def http_request(
+    method: str, url: str, headers: dict, body: bytes | None = None, timeout_s: float = 30
+) -> tuple[int, dict, bytes]:
+    """Make one HTTPS send request without redirects or retries; transport errors propagate."""
+    if method not in ("GET", "POST", "PUT"):
+        raise ValueError("Send requests support GET, POST and PUT only.")
+    return _request(method, url, headers, body, timeout_s, _NoRedirects)
+
+
+def _request(
+    method: str, url: str, headers: dict, body: bytes | None, timeout_s: float, redirects: type
+) -> tuple[int, dict, bytes]:
     _require_https(url)
-    opener = urllib.request.build_opener(_HttpsOnlyRedirects)
+    opener = urllib.request.build_opener(redirects)
+    request = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
-        with opener.open(urllib.request.Request(url, headers=headers), timeout=timeout_s) as reply:
+        with opener.open(request, timeout=timeout_s) as reply:
             return reply.status, dict(reply.headers), reply.read()
     except urllib.error.HTTPError as error:
         with error:
@@ -124,6 +140,12 @@ class _HttpsOnlyRedirects(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         _require_https(newurl)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+class _NoRedirects(urllib.request.HTTPRedirectHandler):
+    # A redirected write could change its method or reach an unintended target.
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 
 def _hide(text: str, secrets: list[str]) -> str:
@@ -161,7 +183,9 @@ def _child(module_name: str, op: str) -> None:
     if function is None:
         result = {"unsupported": True}
     else:
-        extra = {"http": http_get} if op == "fetch" else {}
+        extra = (
+            {"http": http_get} if op == "fetch" else {"http": http_request} if op == "send" else {}
+        )
         try:
             result = function(**payload, **extra)
         except ValueError as error:

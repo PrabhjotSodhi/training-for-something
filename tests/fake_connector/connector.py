@@ -27,7 +27,12 @@ def read(path: str, fmt: str, out_path: str) -> dict:
     return {"status": "ok", "count": 1, "message": None}
 
 
-def send(mode: str = "stuck", secrets: dict | None = None) -> list:
+def send(mode: str = "stuck", secrets: dict | None = None, http=None) -> list | dict:
+    if mode == "transport":
+        try:
+            http("POST", "http://example.invalid/", {}, b"invented")
+        except ValueError as error:
+            return {"transport": http.__name__, "error": str(error)}
     if mode == "stuck":
         time.sleep(30)
     elif mode == "leak":
