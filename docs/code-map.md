@@ -30,7 +30,7 @@ training-for-something/
       core/
         contract.py           the record and result shapes every connector returns
         runner.py             runs one connector operation in a short-lived process with a deadline
-        send.py               sends a plan item through a connector's send()
+        send.py               runs a send helper and validates/redacts its outcome
       testing/
         contract_checks.py    the 5 checks every connector must pass
       apple_health/           one folder per connector
@@ -61,7 +61,7 @@ training-for-something/
       journal.py              the append-only journal
     scheduling/
       scheduler.py            the 60 second loop, next_due
-      jobs.py                 atomic approved queue and unsent undo; worker/recovery follow
+      jobs.py                 atomic queue, unsent undo, claim, finish and crash reconciliation
       triggers.py             the missed-session rule
     web/
       server.py               HTTP server on 127.0.0.1, sessions, request checks

@@ -4,14 +4,16 @@ import argparse
 import contextlib
 import getpass
 import sys
+from datetime import UTC, datetime
 from importlib.util import find_spec
 from pathlib import Path
 
 from tfs import config, password_store
 from tfs.connectors.core import runner
-from tfs.connectors.core.contract import load_manifest, load_manifests
+from tfs.connectors.core.contract import load_manifest, load_manifests, to_utc_text
 from tfs.persistence import sqlite
 from tfs.persistence.migrations import DatabaseTooNewError, migrate
+from tfs.scheduling import jobs
 
 _CONNECT_TIMEOUT_S = 60
 
@@ -60,11 +62,13 @@ def connect_source(name: str, answers: dict[str, str], *, module: str | None = N
     config.data_dir().mkdir(parents=True, exist_ok=True)
     with contextlib.closing(sqlite.connect(config.db_path())) as conn:
         migrate(conn)
-        conn.execute(
-            "INSERT INTO sources (connector, enabled) VALUES (?, 1)"
-            " ON CONFLICT (connector) DO UPDATE SET enabled = 1",
-            (name,),
-        )
+        with sqlite.transaction(conn):
+            conn.execute(
+                "INSERT INTO sources (connector, enabled) VALUES (?, 1)"
+                " ON CONFLICT (connector) DO UPDATE SET enabled = 1",
+                (name,),
+            )
+            jobs.resume_auth(conn, name, to_utc_text(datetime.now(UTC)))
 
 
 def _manifest(name: str, module: str | None) -> dict | None:

@@ -5,6 +5,7 @@ import http.client
 import logging
 import queue
 import secrets
+import sqlite3
 import threading
 from collections.abc import Callable
 from datetime import UTC, datetime, tzinfo
@@ -13,10 +14,12 @@ from pathlib import Path
 
 from tfs import password_store
 from tfs.config import HOME_WIFI_PORT, SCREEN_HOST, SCREEN_PORT
+from tfs.connectors.core.contract import to_utc_text
 from tfs.importer.raw_store import scan_raw
 from tfs.importer.session import process_pending
 from tfs.persistence.migrations import migrate
 from tfs.persistence.sqlite import connect
+from tfs.scheduling import jobs
 from tfs.web.push import make_push_handler
 from tfs.web.server import PushHandler, make_server
 
@@ -58,6 +61,7 @@ class Engine:
         self._jobs: queue.Queue[bool | None] = queue.Queue()
         self._stopping = threading.Event()
         self._worker: threading.Thread | None = None
+        self._delivery_worker: threading.Thread | None = None
 
     def start(self) -> None:
         """Claim the ports, prepare the data and start serving. On any failure, release the ports."""
@@ -91,19 +95,24 @@ class Engine:
         self._running = running
         self._worker = worker
         self._jobs.put(True)
+        self._delivery_worker = threading.Thread(target=self._deliver)
+        self._delivery_worker.start()
 
     def stop(self) -> None:
-        """Stop serving, release the ports, let the worker finish the file it is reading and join it."""
+        """Finish active workers before releasing the exclusive engine port."""
+        self._stopping.set()
         running, self._running = self._running, []
-        _stop(running)
         worker, self._worker = self._worker, None
         if worker is not None:
-            self._stopping.set()
             self._jobs.put(None)
             worker.join()
+        delivery, self._delivery_worker = self._delivery_worker, None
+        if delivery is not None:
+            delivery.join()
+        _stop(running)
 
     def drain(self) -> None:
-        """Block until the startup run, the queue and the job in progress have finished."""
+        """Block until the startup import and queued file reads have finished."""
         self._jobs.join()
 
     def _work(self) -> None:
@@ -120,11 +129,22 @@ class Engine:
             return
         logger.error("Reading new files failed. TFS tries again after the next push.")
 
+    def _deliver(self) -> None:
+        while not self._stopping.is_set():
+            try:
+                worked = jobs.run_one(self._data_dir / "tfs.db", to_utc_text(self._now_fn()))
+            except (OSError, ValueError, sqlite3.Error):
+                logger.error("Delivery processing failed. Interrupted sends need reconciliation.")
+                worked = False
+            if not worked:
+                self._stopping.wait(1)
+
     def _prepare_data(self, db_path: Path) -> None:
         (self._data_dir / "raw").mkdir(parents=True, exist_ok=True)
         with contextlib.closing(connect(db_path)) as conn:
             migrate(conn)
             scan_raw(conn, self._data_dir)
+            jobs.recover(conn)
         if not password_store.get("push_token"):
             password_store.set("push_token", secrets.token_urlsafe(32))
 

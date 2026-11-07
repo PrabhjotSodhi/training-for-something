@@ -104,3 +104,13 @@ SELECT id AS goal_id, type, local_date, target_json FROM main.goals;
 
 CREATE TEMP VIEW coach_v1_limits AS
 SELECT id AS limit_id, kind, values_json FROM main.limits;
+
+
+CREATE TEMP VIEW coach_v1_deliveries AS
+SELECT j.id AS op_id, j.item_id AS plan_item_id, j.plan_version, j.connector,
+  j.status, j.attempts, j.next_attempt_at, j.created_at,
+  json_extract(j.result_json, '$.message') AS message,
+  json_extract(j.result_json, '$.auth_failed') AS auth_failed,
+  r.remote_id, r.remote_version
+FROM main.jobs j LEFT JOIN main.remote_links r
+  ON r.item_id = j.item_id AND r.connector = j.connector;

@@ -6,9 +6,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from tests.test_proposals import ADD, NOW, proposal
 from tfs import config, password_store
 from tfs.cli import main
 from tfs.persistence import sqlite
+from tfs.proposals.apply import preview, save
+from tfs.scheduling import jobs
 
 MODULE = "tests.fake_connect_connector.connector"
 SECRET = "s3cret"
@@ -68,6 +71,30 @@ class ConnectTest(unittest.TestCase):
             conn.close()
         for text in (out, err, dump):
             self.assertNotIn(SECRET, text)
+
+    def test_reconnect_resumes_only_auth_blocked_jobs_through_reconciliation(self):
+        self.connect("fake_connector", "--module", MODULE)
+        manifest = {"label": "Invented app", "sends": ["strength"]}
+        with mock.patch.object(jobs, "load_manifests", return_value={"fake_connector": manifest}):
+            value = proposal(ADD, {**ADD, "item": "p2"}, {**ADD, "item": "p3"})
+            value["delivery_targets"] = preview(config.db_path(), value, now=NOW)[
+                "delivery_targets"
+            ]
+            save(config.db_path(), value, request_id="save-1", approved_by="chat", now=NOW)
+        with contextlib.closing(sqlite.connect(config.db_path())) as conn:
+            conn.execute("UPDATE jobs SET status='needs_you', result_json='{}'")
+            conn.execute("UPDATE jobs SET result_json='{\"auth_failed\":true}' WHERE item_id='p1'")
+            conn.execute("UPDATE jobs SET status='unknown' WHERE item_id='p3'")
+            ids = [row[0] for row in conn.execute("SELECT id FROM jobs ORDER BY item_id")]
+            code, _, err = self.connect("fake_connector", "--module", MODULE)
+            self.assertEqual((code, err), (0, ""))
+            self.assertEqual(
+                [row[0] for row in conn.execute("SELECT status FROM jobs ORDER BY item_id")],
+                ["in_doubt", "needs_you", "unknown"],
+            )
+            self.assertEqual(
+                [row[0] for row in conn.execute("SELECT id FROM jobs ORDER BY item_id")], ids
+            )
 
     def test_an_unknown_connector_is_refused(self):
         code, out, err = self.connect("unknown")
