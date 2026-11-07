@@ -48,26 +48,25 @@ class ToolAccessTest(unittest.TestCase):
         self.assertEqual(query(self.reader, cte)["rows"], [[600000.0]])
 
     def test_everything_else_is_refused(self) -> None:
-        refused = [
-            "SELECT * FROM day_facts",
-            "SELECT * FROM sqlite_master",
-            "WITH x AS (SELECT * FROM day_facts) SELECT * FROM x",
-            "INSERT INTO coach_v1_day_facts VALUES ('2025-01-01', 'a', 1, 'u', 's', 'full')",
-            "UPDATE day_facts SET value = 0",
-            "DELETE FROM day_facts",
-            "CREATE TABLE x (a)",
-            "DROP TABLE day_facts",
-            "ATTACH DATABASE ':memory:' AS other",
-            "PRAGMA table_info(day_facts)",
-            "SELECT 1; SELECT 2",
-        ]
-        for sql in refused:
+        views_only = {"error": "Only coach_v1 views can be read."}
+        refused = {
+            "SELECT * FROM day_facts": views_only,
+            "SELECT * FROM sqlite_master": views_only,
+            "WITH x AS (SELECT * FROM day_facts) SELECT * FROM x": views_only,
+            "INSERT INTO day_facts (local_date, metric, value, unit, source, coverage,"
+            " formula_version) VALUES ('2030-01-01', 'steps', 1, 'count', 'apple_health',"
+            " 'full', 'v1')": views_only,
+            "UPDATE day_facts SET value = 0": views_only,
+            "DELETE FROM day_facts": views_only,
+            "CREATE TABLE x (a)": views_only,
+            "DROP TABLE day_facts": views_only,
+            "ATTACH DATABASE ':memory:' AS other": views_only,
+            "PRAGMA table_info(day_facts)": views_only,
+            "SELECT 1; SELECT 2": {"error": "You can only execute one statement at a time."},
+        }
+        for sql, expected in refused.items():
             with self.subTest(sql=sql):
-                self.assertEqual(list(query(self.reader, sql)), ["error"])
-        self.assertEqual(
-            query(self.reader, "SELECT * FROM day_facts"),
-            {"error": "Only coach_v1 views can be read."},
-        )
+                self.assertEqual(query(self.reader, sql), expected)
 
     def test_rows_stop_at_500(self) -> None:
         result = query(self.reader, "SELECT local_date FROM coach_v1_day_facts")
@@ -75,11 +74,30 @@ class ToolAccessTest(unittest.TestCase):
         self.assertEqual(result["clipped"], "Stopped at 500 rows.")
 
     def test_bytes_stop_before_200000(self) -> None:
-        result = query(
-            self.reader, "SELECT replace(hex(zeroblob(1000)), '0', 'a') FROM coach_v1_day_facts"
+        # Row sizes step by one character so some size lands the count on the limit.
+        for length in range(1000, 1200):
+            with self.subTest(length=length):
+                sql = "SELECT substr(hex(zeroblob(2000)), 1, LENGTH) FROM coach_v1_day_facts"
+                result = query(self.reader, sql.replace("LENGTH", str(length)))
+                self.assertEqual(result["clipped"], "Stopped at 200,000 bytes.")
+                self.assertLessEqual(len(json.dumps(result)), 200_000)
+
+    def test_huge_rows_stop_at_the_byte_limit(self) -> None:
+        result = query(self.reader, "SELECT printf('%.*c', 10000000, 'a') FROM coach_v1_day_facts")
+        self.assertEqual(
+            result,
+            {
+                "columns": ["printf('%.*c', 10000000, 'a')"],
+                "rows": [],
+                "clipped": "Stopped at 200,000 bytes.",
+            },
         )
-        self.assertEqual(result["clipped"], "Stopped at 200,000 bytes.")
-        self.assertLess(len(json.dumps(result)), 200_000)
+
+    def test_binary_value_is_an_error(self) -> None:
+        self.assertEqual(
+            query(self.reader, "SELECT x'00'"),
+            {"error": "A result held binary data, which cannot be shown."},
+        )
 
     def test_long_query_is_stopped(self) -> None:
         sql = (

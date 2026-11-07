@@ -21,6 +21,10 @@ MAX_SECONDS = 2
 PROGRESS_STEPS = 1000
 
 
+# SQLite reports a view's own columns with no fifth argument, and a CTE's name also
+# arrives as the fifth argument. So a CTE named exactly like a view can read a base
+# table, and count(*) works on any table. Both only read, and the AI tool already
+# runs on the person's own computer (HLD section 12).
 def _authorize(
     action: int, arg1: str | None, arg2: str | None, db: str | None, source: str | None
 ) -> int:
@@ -37,10 +41,6 @@ def open_reader(db_path: Path) -> sqlite3.Connection:
     """Open a read-only connection that can read only the coach_v1 views."""
     conn = sqlite.connect(db_path, "read_only")
     conn.executescript(resources.files("tfs.mcp").joinpath("views.sql").read_text("utf-8"))
-    # SQLite reports a view's own columns with no fifth argument, and a CTE's name also
-    # arrives as the fifth argument. So a CTE named exactly like a view can read a base
-    # table, and count(*) works on any table. Both only read, and the AI tool already
-    # runs on the person's own computer (HLD section 12).
     conn.set_authorizer(_authorize)
     return conn
 
@@ -71,8 +71,12 @@ def query(conn: sqlite3.Connection, sql: str) -> dict[str, Any]:
         columns = [column[0] for column in cursor.description or []]
         rows: list[list[Any]] = []
         clipped = None
-        size = len(json.dumps({"columns": columns, "rows": [], "clipped": None}))
-        for values in cursor.fetchmany(MAX_ROWS + 1):
+        size = len(
+            json.dumps(
+                {"columns": columns, "rows": [], "clipped": f"Stopped at {MAX_BYTES:,} bytes."}
+            )
+        )
+        for values in cursor:
             row = list(values)
             if len(rows) == MAX_ROWS:
                 clipped = f"Stopped at {MAX_ROWS} rows."
@@ -83,6 +87,8 @@ def query(conn: sqlite3.Connection, sql: str) -> dict[str, Any]:
                 break
             rows.append(row)
         return {"columns": columns, "rows": rows, "clipped": clipped}
+    except TypeError:
+        return {"error": "A result held binary data, which cannot be shown."}
     except sqlite3.Error as error:
         code = getattr(error, "sqlite_errorcode", None)
         if code == sqlite3.SQLITE_AUTH:
