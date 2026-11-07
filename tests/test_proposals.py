@@ -9,7 +9,7 @@ from pathlib import Path
 from tests.test_schema import insert
 from tfs.persistence.migrations import migrate
 from tfs.persistence.sqlite import connect
-from tfs.proposals.apply import preview, save
+from tfs.proposals.apply import preview, save, undo
 
 NOW = datetime(2026, 11, 7, 12, tzinfo=timezone(timedelta(hours=13)))
 ADD = {
@@ -183,3 +183,114 @@ class ProposalsTest(unittest.TestCase):
             with self.subTest(route=route), self.assertRaises(ValueError):
                 save(self.path, proposal(ADD), request_id="s1", approved_by=route, now=now)
         self.assertEqual(self.counts(), (0, 0, 0))
+
+    def undo(self, version: int, request: str = "undo-1") -> dict:
+        return undo(self.path, version, request_id=request, approved_by="chat", now=NOW)
+
+    def test_undo_add_and_retry_preserve_history(self) -> None:
+        self.save(proposal(ADD))
+        original = tuple(self.conn.execute("SELECT * FROM journal").fetchone())
+        self.assertEqual(self.undo(1), {"request_id": "undo-1", "plan_version": 2})
+        self.assertEqual(self.undo(1), {"request_id": "undo-1", "plan_version": 2})
+        self.assertEqual(
+            tuple(
+                self.conn.execute("SELECT status, version, plan_version FROM plan_items").fetchone()
+            ),
+            ("removed", 2, 2),
+        )
+        self.assertEqual(
+            tuple(self.conn.execute("SELECT * FROM journal WHERE version=1").fetchone()), original
+        )
+        with self.assertRaisesRegex(ValueError, "different content"):
+            self.undo(2)
+        self.assertEqual(self.counts(), (2, 1, 1))
+        self.undo(2, "undo-2")
+        self.assertEqual(
+            tuple(
+                self.conn.execute("SELECT status, version, plan_version FROM plan_items").fetchone()
+            ),
+            ("saved", 3, 3),
+        )
+
+    def test_undo_restores_exact_prior_fields_and_parts(self) -> None:
+        insert(self.conn, "files")
+        insert(self.conn, "source_records")
+        insert(self.conn, "session_parts", reps=12)
+        initial = proposal(ADD)
+        initial["sources"] = [{"url": "https://example.org/study", "type": "trial"}]
+        self.save(initial)
+        original = dict(self.conn.execute("SELECT * FROM plan_items").fetchone())
+        original_parts = [
+            tuple(row)
+            for row in self.conn.execute("SELECT * FROM session_parts ORDER BY plan_item_id")
+        ]
+        value = proposal(
+            {"action": "move_session", "item": "p1", "to": "2026-11-12"},
+            {
+                "action": "change_session",
+                "item": "p1",
+                "label": "Changed",
+                "parts": [{"part_kind": "set", "reps": 5, "weight_kg": 40}],
+            },
+            version=1,
+        )
+        value["why"] = "New explanation"
+        self.save(value, "save-2")
+        self.undo(2)
+        restored = dict(self.conn.execute("SELECT * FROM plan_items").fetchone())
+        self.assertEqual(restored, {**original, "version": 3, "plan_version": 3})
+        self.assertEqual(
+            [
+                tuple(row)
+                for row in self.conn.execute("SELECT * FROM session_parts ORDER BY plan_item_id")
+            ],
+            original_parts,
+        )
+        inverse_before = json.loads(
+            self.conn.execute("SELECT before_json FROM journal WHERE version=3").fetchone()[0]
+        )
+        self.assertEqual(inverse_before["p1"]["label"], "Changed")
+        self.assertEqual(inverse_before["p1"]["parts"][0]["weight_kg"], 40)
+
+    def test_undo_completion_and_removal_and_refuse_stale(self) -> None:
+        self.save(proposal(ADD, {**ADD, "item": "p2"}))
+        self.save(
+            proposal(
+                {"action": "mark_done", "item": "p1"},
+                {"action": "remove_session", "item": "p2"},
+                version=1,
+            ),
+            "save-2",
+        )
+        with self.assertRaisesRegex(ValueError, "stale"):
+            self.undo(1)
+        self.undo(2)
+        self.assertEqual(
+            [row[0] for row in self.conn.execute("SELECT status FROM plan_items")],
+            ["saved", "saved"],
+        )
+        self.assertEqual(self.counts(), (3, 2, 2))
+
+    def test_undo_write_failure_rolls_back_and_delivery_state_is_refused(self) -> None:
+        self.save(proposal(ADD))
+        self.conn.executescript(
+            "CREATE TRIGGER refuse_restore BEFORE UPDATE ON plan_items BEGIN SELECT RAISE(ABORT, 'invented failure'); END;"
+        )
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "invented failure"):
+            self.undo(1)
+        self.assertEqual(self.counts(), (1, 1, 1))
+        self.assertEqual(self.conn.execute("SELECT status FROM plan_items").fetchone()[0], "saved")
+        self.conn.execute("DROP TRIGGER refuse_restore")
+        self.conn.execute("UPDATE plan_items SET status='sent'")
+        with self.assertRaisesRegex(ValueError, "reconciliation"):
+            self.undo(1)
+        self.assertEqual(self.counts(), (1, 1, 1))
+
+    def test_undo_refuses_unsupported_journal_operation(self) -> None:
+        self.conn.execute(
+            "INSERT INTO journal (request_id, proposal_json, before_json, approved_by, saved_at) VALUES ('future', ?, '{}', 'chat', '2026-11-07T00:00:00Z')",
+            (json.dumps({"actions": [{"action": "set_goal"}]}),),
+        )
+        with self.assertRaisesRegex(ValueError, "does not support"):
+            self.undo(1)
+        self.assertEqual(self.counts(), (1, 0, 0))

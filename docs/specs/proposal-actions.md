@@ -95,3 +95,22 @@ write transaction and stores the final item state once per affected item,
 together with its prior state in the journal. A stale proposal, invalid action
 or database failure saves nothing. Repeated matching requests return the
 original receipt. Edits of done, removed or replaced items are refused.
+
+
+## Local undo
+
+`undo(db_path, target_version, request_id=..., approved_by=..., now=...)`
+reverses the latest local session save. `target_version` must still be the
+current journal version. An intervening save makes it stale; selective undo of
+older history is not supported yet.
+
+Undo restores the recorded previous item and parts, or marks an added item
+removed. It increments each item's version and appends a journal entry with
+`{"undo_version": target_version}` as its operation and the state before undo
+as its before-state. Earlier journal rows remain unchanged. The same request
+ID and target returns the original receipt; a different target fails. The
+latest undo can itself be undone.
+
+This local API refuses sent or unknown items and unsupported journal operation
+formats. External delivery reversal and client permission prompts are separate
+work. No MCP undo tool is exposed yet.

@@ -60,15 +60,15 @@ def _write(conn: sqlite3.Connection, state: dict, version: int) -> None:
         )
 
 
-def save(
+def _save(
     db_path: Path,
     proposal: dict,
     *,
     request_id: str,
     approved_by: str,
     now: datetime,
+    restoring: bool = False,
 ) -> dict:
-    """Apply an approved batch once, or roll back every change on failure."""
     saved_at = to_utc_text(now)
     if not isinstance(request_id, str) or not request_id.strip():
         raise ValueError("A save needs a request ID.")
@@ -81,8 +81,42 @@ def save(
         previous = journal.receipt(conn, request_id, encoded)
         if previous is not None:
             return previous
-        before, items = actions.prepare(conn, proposal, now.date())
+        if restoring:
+            before, items = actions.prepare_undo(conn, proposal["undo_version"])
+        else:
+            before, items = actions.prepare(conn, proposal, now.date())
         version = journal.append(conn, request_id, encoded, before, approved_by, saved_at)
         for state in items.values():
             _write(conn, state, version)
     return {"request_id": request_id, "plan_version": version}
+
+
+def save(
+    db_path: Path,
+    proposal: dict,
+    *,
+    request_id: str,
+    approved_by: str,
+    now: datetime,
+) -> dict:
+    """Apply an approved batch once, or roll back every change on failure."""
+    return _save(db_path, proposal, request_id=request_id, approved_by=approved_by, now=now)
+
+
+def undo(
+    db_path: Path,
+    target_version: int,
+    *,
+    request_id: str,
+    approved_by: str,
+    now: datetime,
+) -> dict:
+    """Undo the latest local save in a new, retry-safe journal transaction."""
+    return _save(
+        db_path,
+        {"undo_version": target_version},
+        request_id=request_id,
+        approved_by=approved_by,
+        now=now,
+        restoring=True,
+    )

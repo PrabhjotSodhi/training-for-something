@@ -173,3 +173,31 @@ def prepare(conn: sqlite3.Connection, proposal: dict, today: date) -> tuple[dict
         state["version"] += 1
         state["plan_version"] = proposal["plan_version"] + 1
     return before, after
+
+
+def prepare_undo(conn: sqlite3.Connection, target: int) -> tuple[dict, dict]:
+    """Restore the latest local change without overwriting later saved choices."""
+    if type(target) is not int or target < 1 or target != journal.version(conn):
+        raise ValueError("The undo is stale. Read the current plan again.")
+    row = conn.execute("SELECT * FROM journal WHERE version = ?", (target,)).fetchone()
+    original = json.loads(row["proposal_json"])
+    supported = set(original) == {"undo_version"} or (
+        "actions" in original and all(action["action"] in FIELDS for action in original["actions"])
+    )
+    if row["format_version"] != 1 or not supported:
+        raise ValueError("This saved operation does not support local undo.")
+    before, after = {}, {}
+    for item, prior in json.loads(row["before_json"]).items():
+        current = _load(conn, item)
+        if current is None or current["status"] in ("sent", "unknown"):
+            raise ValueError("This item needs delivery reconciliation before undo.")
+        before[item] = current
+        restored = copy.deepcopy(prior if prior is not None else current)
+        if prior is None:
+            restored["status"] = "removed"
+        if restored["status"] in ("sent", "unknown"):
+            raise ValueError("This item needs delivery reconciliation before undo.")
+        restored["version"] = current["version"] + 1
+        restored["plan_version"] = target + 1
+        after[item] = restored
+    return before, after
