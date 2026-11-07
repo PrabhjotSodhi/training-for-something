@@ -1,8 +1,7 @@
-import json
-import tempfile
 import unittest
 from pathlib import Path
 
+from tests.helpers import read_records
 from tfs.connectors.health_auto_export.connector import read
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "health_auto_export" / "workouts.json"
@@ -11,12 +10,8 @@ RUN_ID = "A1B2C3D4-0000-4000-8000-000000000001"
 
 class HealthAutoExportWorkoutsTest(unittest.TestCase):
     def setUp(self) -> None:
-        folder = tempfile.TemporaryDirectory()
-        self.addCleanup(folder.cleanup)
-        out_path = Path(folder.name) / "records.jsonl"
-        self.result = read(str(FIXTURE_PATH), "rest_json", str(out_path))
-        lines = out_path.read_text(encoding="utf-8").splitlines()
-        self.sessions = {json.loads(line)["key"]: json.loads(line) for line in lines}
+        self.result, records = read_records(self, read, FIXTURE_PATH, "rest_json")
+        self.sessions = {record["key"]: record for record in records}
 
     def test_run_becomes_a_session_with_its_values(self) -> None:
         self.assertEqual(

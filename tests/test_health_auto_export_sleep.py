@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests.helpers import read_records
 from tfs.connectors.health_auto_export.connector import read
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "health_auto_export" / "metrics.json"
@@ -18,10 +19,7 @@ class HealthAutoExportSleepTest(unittest.TestCase):
     def _read_body(self, body: str) -> tuple[dict, list[dict]]:
         path = self.folder / "payload.json"
         path.write_text(body, encoding="utf-8")
-        out_path = self.folder / "records.jsonl"
-        result = read(str(path), "rest_json", str(out_path))
-        lines = out_path.read_text(encoding="utf-8").splitlines()
-        return result, [json.loads(line) for line in lines]
+        return read_records(self, read, path, "rest_json")
 
     def _read_sleep(self, sample: dict) -> tuple[dict, list[dict]]:
         body = {"data": {"metrics": [{"name": "sleep_analysis", "units": "hr", "data": [sample]}]}}

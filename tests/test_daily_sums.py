@@ -1,15 +1,10 @@
-import json
-import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta, timezone
-from pathlib import Path
 
+from tests.helpers import insert_file, insert_measurement, open_database
 from tfs.importer.session import rebuild_pending
-from tfs.persistence.migrations import migrate
-from tfs.persistence.sqlite import connect
 from tfs.source_priority.daily_totals import rebuild
 
-FILE_SHA256 = "0" * 64
 DAY = "2026-10-20"
 NZ = timezone(timedelta(hours=13))
 WATCH = "Watch"
@@ -18,16 +13,8 @@ PHONE = "Phone"
 
 class DailySumsTest(unittest.TestCase):
     def setUp(self) -> None:
-        folder = tempfile.TemporaryDirectory()
-        self.addCleanup(folder.cleanup)
-        self.conn = connect(Path(folder.name) / "tfs.db")
-        self.addCleanup(self.conn.close)
-        migrate(self.conn)
-        self.conn.execute(
-            "INSERT INTO files (sha256, arrival_seq, connector, format, ext, size_bytes,"
-            " received_at) VALUES (?, 1, 'hevy', 'json', 'json', 1, '2026-10-21T00:00:00Z')",
-            (FILE_SHA256,),
-        )
+        self.conn = open_database(self)
+        insert_file(self.conn, 1, "2026-10-21T00:00:00Z")
         self.count = 0
 
     def received(self, connector: str, last_received_at: str) -> None:
@@ -55,25 +42,17 @@ class DailySumsTest(unittest.TestCase):
         self.count += 1
         unit = {"steps": "count", "sleep_asleep": "h"}[metric]
         values = {"value": value, "unit": unit, **({"merged": True} if merged else {})}
-        self.conn.execute(
-            "INSERT INTO source_records (id, connector, stream, key, kind, revision_at,"
-            " arrival_seq, file_sha256, reader_version, start_utc, end_utc, local_date, metric,"
-            " values_json, origin_app, origin_device)"
-            " VALUES (?, ?, ?, ?, 'measurement', '2026-10-21T00:00:00.000Z', 1, ?, 'r1', ?, ?,"
-            " ?, ?, ?, 'Health', ?)",
-            (
-                f"r{self.count}",
-                connector,
-                metric,
-                f"r{self.count}",
-                FILE_SHA256,
-                utc(start),
-                end and utc(end),
-                day,
-                metric,
-                json.dumps(values),
-                device,
-            ),
+        insert_measurement(
+            self.conn,
+            f"r{self.count}",
+            connector,
+            metric,
+            utc(start),
+            values,
+            local_date=day,
+            end_utc=end and utc(end),
+            origin_app="Health",
+            origin_device=device,
         )
 
     def facts(self) -> list[tuple]:

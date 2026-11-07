@@ -1,11 +1,7 @@
-import tempfile
 import unittest
-from pathlib import Path
 
+from tests.helpers import open_database, store_file
 from tests.test_records import SESSION, changed
-from tfs.importer.records import store
-from tfs.persistence.migrations import migrate
-from tfs.persistence.sqlite import connect
 
 RECEIVED_AT = {seq: f"2026-10-01T{7 + seq:02d}:00:00.000Z" for seq in range(1, 7)}
 
@@ -14,32 +10,10 @@ DELETE = {"kind": "deleted", "stream": "workouts", "key": "w1"}
 
 class DeleteTest(unittest.TestCase):
     def setUp(self):
-        self.conn = self.open_database()
-
-    def open_database(self):
-        folder = tempfile.TemporaryDirectory()
-        self.addCleanup(folder.cleanup)
-        conn = connect(Path(folder.name) / "tfs.db", "import")
-        self.addCleanup(conn.close)
-        migrate(conn)
-        for seq, received_at in RECEIVED_AT.items():
-            conn.execute(
-                "INSERT INTO files (sha256, arrival_seq, connector, format, ext, size_bytes,"
-                " received_at) VALUES (?, ?, 'testapp', 'json', 'json', 1, ?)",
-                (f"{seq:064x}", seq, received_at),
-            )
-        return conn
+        self.conn = open_database(self, "import")
 
     def store(self, records, arrival, conn=None):
-        return store(
-            conn or self.conn,
-            connector="testapp",
-            file_sha256=f"{arrival:064x}",
-            arrival_seq=arrival,
-            received_at=RECEIVED_AT[arrival],
-            reader_version="r1",
-            records=records,
-        )
+        return store_file(conn or self.conn, records, arrival, RECEIVED_AT[arrival])
 
     def row(self, key="w1", conn=None):
         found = (conn or self.conn).execute("SELECT * FROM source_records WHERE key = ?", (key,))
@@ -90,7 +64,7 @@ class DeleteTest(unittest.TestCase):
             "delete last": [(first, 1), (second, 2), (delete, 3)],
         }
         for name, steps in orders.items():
-            conn = self.open_database()
+            conn = open_database(self, "import")
             for rec, arrival in steps:
                 self.store([rec], arrival=arrival, conn=conn)
             with self.subTest(name):

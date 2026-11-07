@@ -1,13 +1,9 @@
 import json
-import tempfile
 import unittest
-from pathlib import Path
 
+from tests.helpers import insert_file, insert_workout, open_database
 from tfs.duplicates.workouts import update
-from tfs.persistence.migrations import migrate
-from tfs.persistence.sqlite import connect
 
-FILE_SHA256 = "0" * 64
 MANIFESTS = {
     "hevy": {"app_ids": ["com.hevyapp.hevy", "Hevy"]},
     "apple_health": {"app_ids": ["com.apple.Health"]},
@@ -17,16 +13,8 @@ MANIFESTS = {
 
 class DuplicateValuesTest(unittest.TestCase):
     def setUp(self) -> None:
-        folder = tempfile.TemporaryDirectory()
-        self.addCleanup(folder.cleanup)
-        self.conn = connect(Path(folder.name) / "tfs.db")
-        self.addCleanup(self.conn.close)
-        migrate(self.conn)
-        self.conn.execute(
-            "INSERT INTO files (sha256, arrival_seq, connector, format, ext, size_bytes,"
-            " received_at) VALUES (?, 1, 'hevy', 'json', 'json', 1, '2026-10-01T00:00:00Z')",
-            (FILE_SHA256,),
-        )
+        self.conn = open_database(self)
+        insert_file(self.conn, 1, "2026-10-01T00:00:00Z")
 
     def add(
         self,
@@ -34,30 +22,11 @@ class DuplicateValuesTest(unittest.TestCase):
         connector: str,
         values: dict,
         *,
-        arrival_seq: int = 1,
-        label: str | None = None,
-        family: str | None = "running",
-        origin_app: str | None = None,
+        family: str | None = "run",
         parts: bool = False,
+        **fields,
     ) -> None:
-        self.conn.execute(
-            "INSERT INTO source_records (id, connector, stream, key, kind, revision_at,"
-            " arrival_seq, file_sha256, reader_version, start_utc, end_utc, local_date, label,"
-            " family, values_json, origin_app)"
-            " VALUES (?, ?, 'workouts', ?, 'session', '2026-10-01T00:00:00.000Z', ?, ?, 'r1',"
-            " '2026-10-01T06:00:00Z', '2026-10-01T07:00:00Z', '2026-10-01', ?, ?, ?, ?)",
-            (
-                record_id,
-                connector,
-                record_id,
-                arrival_seq,
-                FILE_SHA256,
-                label,
-                family,
-                json.dumps(values),
-                origin_app,
-            ),
-        )
+        insert_workout(self.conn, record_id, connector, values=values, family=family, **fields)
         if parts:
             self.conn.execute(
                 "INSERT INTO session_parts (record_id, seq, part_kind) VALUES (?, 1, 'set')",

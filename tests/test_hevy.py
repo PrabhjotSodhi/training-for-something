@@ -1,9 +1,9 @@
-import json
 import tempfile
 import unittest
 from pathlib import Path
 from typing import ClassVar
 
+from tests.helpers import read_records
 from tfs.connectors.hevy.connector import read
 from tfs.connectors.testing.contract_checks import ConnectorContract
 
@@ -15,14 +15,7 @@ EVENTS_UNKNOWN = (str(FIXTURES / "events_unknown.json"), "events_page")
 
 class HevyReadTest(unittest.TestCase):
     def _read(self, path: str, fmt: str) -> tuple[dict, list[dict]]:
-        folder = tempfile.TemporaryDirectory()
-        self.addCleanup(folder.cleanup)
-        out_path = Path(folder.name) / "records.jsonl"
-        result = read(path, fmt, str(out_path))
-        if not out_path.exists():
-            return result, []
-        lines = out_path.read_text(encoding="utf-8").splitlines()
-        return result, [json.loads(line) for line in lines]
+        return read_records(self, read, path, fmt)
 
     def test_workout_becomes_session_with_a_part_per_set(self) -> None:
         result, records = self._read(*WORKOUTS_PAGE)

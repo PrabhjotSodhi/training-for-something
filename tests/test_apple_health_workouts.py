@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests.helpers import read_records
 from tfs.connectors.apple_health.connector import read
 
 SAMPLE = Path(__file__).parent / "fixtures" / "apple_health" / "sample_export.xml"
@@ -11,12 +12,7 @@ RUNNING = "HKWorkoutActivityTypeRunning"
 
 class AppleHealthWorkoutsTest(unittest.TestCase):
     def setUp(self) -> None:
-        folder = tempfile.TemporaryDirectory()
-        self.addCleanup(folder.cleanup)
-        out_path = Path(folder.name) / "records.jsonl"
-        read(str(SAMPLE), "file", str(out_path))
-        lines = out_path.read_text(encoding="utf-8").splitlines()
-        records = [json.loads(line) for line in lines]
+        _, records = read_records(self, read, SAMPLE, "file")
         self.sessions = [record for record in records if record["kind"] == "session"]
 
     def _session(self, activity: str, start: str) -> dict:
