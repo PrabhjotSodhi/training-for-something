@@ -111,7 +111,7 @@ class ImportFileTest(ImportTest):
         again = import_file(self.conn, config.data_dir(), self.export, now=NOW)
 
         self.assertEqual((first.status, again.status, again.skipped), ("failed", "ok", False))
-        self.assertGreater(self.count("SELECT COUNT(*) FROM day_facts"), 0)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM day_facts"), 2)
 
 
 class RouteFileTest(unittest.TestCase):
