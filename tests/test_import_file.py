@@ -89,6 +89,18 @@ class ImportFileTest(ImportTest):
             (1, 3),
         )
 
+    def test_a_file_read_by_an_older_reader_is_read_again(self) -> None:
+        import_file(self.conn, config.data_dir(), self.export, now=NOW)
+        self.conn.execute("UPDATE files SET reader_version = 'older'")
+
+        again = import_file(self.conn, config.data_dir(), self.export, now=NOW)
+
+        self.assertEqual((again.status, again.skipped, again.inserted), ("ok", False, 3))
+        self.assertEqual(self.count("SELECT COUNT(*) FROM source_records"), 3)
+        self.assertNotEqual(
+            self.conn.execute("SELECT reader_version FROM files").fetchone()[0], "older"
+        )
+
 
 class RouteFileTest(unittest.TestCase):
     def test_a_name_with_no_matching_connector_is_refused(self) -> None:

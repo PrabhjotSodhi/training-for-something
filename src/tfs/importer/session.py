@@ -137,9 +137,10 @@ def import_file(
         fmt, ext = "file", path.suffix.lower().removeprefix(".")
     with path.open("rb") as source:
         saved = save_raw(conn, data_dir, connector, fmt, ext, source, now=now)
-    result = read_file(conn, data_dir, saved.sha256, tz=tz)
-    rebuild_pending(conn, tz=tz)
-    return result
+    results = process_pending(conn, data_dir, tz=tz)
+    return next((r for r in results if r.sha256 == saved.sha256), None) or read_file(
+        conn, data_dir, saved.sha256, tz=tz
+    )
 
 
 def sync(
