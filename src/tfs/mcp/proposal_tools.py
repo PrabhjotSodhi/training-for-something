@@ -81,7 +81,13 @@ PROPOSAL = _object(
             "items": _object({"url": {"type": "string", "format": "uri"}, "type": TEXT}),
         },
         "actions": {"type": "array", "minItems": 1, "items": {"oneOf": ACTIONS}},
-    }
+    },
+    {
+        "delivery_targets": {
+            "type": "object",
+            "additionalProperties": {"type": "array", "items": TEXT, "uniqueItems": True},
+        }
+    },
 )
 
 
@@ -102,12 +108,12 @@ def _tool(name: str, description: str, required: dict) -> dict:
 TOOLS = [
     _tool(
         "propose",
-        "Preview a local plan, goal or training-limit proposal without saving. Read coach_v1_plan_state first. Parts use seconds, metres, kg and beats/minute. Dates use the computer's local day. Goal dates must be future. Show the exact changes, reason and sources before requesting Save approval.",
+        "Preview a local plan, goal or training-limit proposal without saving. Read coach_v1_plan_state first. Parts use seconds, metres, kg and beats/minute. Dates use the computer's local day. Goal dates must be future. Show the exact changes, reason, sources and delivery apps before requesting Save approval. Copy the returned delivery_targets into the proposal.",
         {"proposal": PROPOSAL},
     ),
     _tool(
         "save",
-        "Save the exact reviewed proposal only through the AI client's user permission prompt. This changes local state and sends nothing to apps yet. Never treat an AI-generated approved flag as consent. Reuse request_id for retries of identical content; a changed proposal needs a new ID. Always-allow client permissions can skip the prompt.",
+        "Save the exact reviewed proposal only through the AI client's user permission prompt. This changes local state and queues the explicitly approved delivery targets. Provider sending is not enabled yet. Never treat an AI-generated approved flag as consent. Reuse request_id for retries of identical content; a changed proposal needs a new ID. Always-allow client permissions can skip the prompt.",
         {"proposal": PROPOSAL, "request_id": TEXT},
     ),
     _tool(

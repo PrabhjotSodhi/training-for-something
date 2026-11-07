@@ -85,7 +85,16 @@ def _load(conn: sqlite3.Connection, item: str) -> dict | None:
 
 
 def _proposal(conn: sqlite3.Connection, proposal: dict) -> None:
-    _fields(proposal, {"plan_version", "why", "sources", "actions"})
+    _fields(proposal, {"plan_version", "why", "sources", "actions"}, {"delivery_targets"})
+    delivery = proposal.get("delivery_targets", {})
+    if not isinstance(delivery, dict):
+        raise ValueError("Delivery targets must map item IDs to connector lists.")
+    for item, names in delivery.items():
+        _text(item)
+        if not isinstance(names, list) or not all(isinstance(name, str) and name for name in names):
+            raise ValueError("Delivery targets must be connector-ID lists.")
+        if names != sorted(set(names)):
+            raise ValueError("Delivery targets must be sorted without duplicates.")
     expected = proposal["plan_version"]
     if type(expected) is not int or expected < 0 or expected != journal.version(conn):
         raise ValueError("The proposal is stale. Read the current plan and propose again.")
@@ -222,7 +231,7 @@ def prepare_undo(conn: sqlite3.Connection, target: int) -> tuple[dict, dict]:
     supported = set(original) == {"undo_version"} or (
         "actions" in original and all(action["action"] in allowed for action in original["actions"])
     )
-    if row["format_version"] not in (1, 2) or not supported:
+    if row["format_version"] not in (1, 2, 3) or not supported:
         raise ValueError("This saved operation does not support local undo.")
     prior = json.loads(row["before_json"])
     if row["format_version"] == 1:
