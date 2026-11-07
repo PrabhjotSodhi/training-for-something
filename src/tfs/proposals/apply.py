@@ -8,6 +8,7 @@ from pathlib import Path
 from tfs.connectors.core.contract import to_utc_text
 from tfs.persistence.sqlite import connect, transaction
 from tfs.proposals import actions, journal, targets
+from tfs.scheduling import jobs
 
 
 def preview(db_path: Path, proposal: dict, *, now: datetime) -> dict:
@@ -17,8 +18,11 @@ def preview(db_path: Path, proposal: dict, *, now: datetime) -> dict:
     with closing(connect(db_path, "read_only")) as conn:
         conn.execute("BEGIN")
         _, items = actions.prepare(conn, proposal, now.date())
+        delivery, labels = jobs.destinations(conn, items["items"])
     return {
         "plan_version": proposal["plan_version"],
+        "delivery_targets": delivery,
+        "delivery_apps": labels,
         **{name: list(states.values()) for name, states in items.items()},
     }
 
@@ -88,10 +92,23 @@ def _save(
             before, items = actions.prepare_undo(conn, proposal["undo_version"])
         else:
             before, items = actions.prepare(conn, proposal, now.date())
+        if restoring:
+            prior_jobs = items.pop("jobs", {})
+            job_before, job_after = jobs.restore(conn, items["items"], prior_jobs)
+        else:
+            delivery, _ = jobs.destinations(conn, items["items"])
+            if proposal.get("delivery_targets", {}) != delivery:
+                raise ValueError(
+                    "Delivery targets changed or need approval. Preview again before Save."
+                )
+            job_before, job_after = jobs.prepare(conn, items["items"], delivery, saved_at)
+        if job_before:
+            before["jobs"] = job_before
         version = journal.append(conn, request_id, encoded, before, approved_by, saved_at)
         targets.write(conn, items)
         for state in items["items"].values():
             _write(conn, state, version)
+        jobs.write(conn, job_after, version, saved_at)
     return {"request_id": request_id, "plan_version": version}
 
 

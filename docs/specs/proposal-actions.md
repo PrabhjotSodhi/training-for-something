@@ -165,3 +165,29 @@ so it cannot save or undo. Tool annotations describe behavior to the client;
 they do not enforce approval. Always-allow client settings can skip prompts.
 These tools perform no provider delivery yet. Real installed-client approval
 and refusal remain a separate proof from synthetic protocol tests.
+
+
+## Queued delivery approval
+
+Preview returns `delivery_targets`, a map from item ID to sorted, unique connector
+IDs, and `delivery_apps`, their display labels. Targets come from enabled sources
+whose manifest accepts the final item's family. Copy that exact target map into
+the proposal shown for Save. Omission means no destinations; Save refuses if the
+current targets differ. A newly connected app cannot silently receive a plan.
+
+Save cancels superseded pending/not-sent jobs and queues the exact final item in
+the same transaction as its plan and journal. Removed or done items enqueue
+nothing. Jobs keep a stable operation ID and immutable approved payload; secrets
+never enter them. Provider sends are not enabled yet.
+
+Journal format 3 adds optional `jobs` before-state: job IDs mapped to their prior
+status and next-attempt time, or null for a newly created job. Entries without
+job changes still use format 2. Existing format 1/2 history stays readable and is
+never rewritten. Undo cancels the new jobs and restores previous pending jobs
+with their original IDs and payloads. Undo itself records the inverse, so redo
+works without inventing a second delivery.
+
+Until delivery reconciliation and compensation are implemented, Save and undo
+refuse affected items with sending, in-doubt, sent, unknown, conflict or
+needs-you jobs. This is a delivery limitation, not remote undo support. Local
+queued-work tests do not satisfy real-provider proof #29.

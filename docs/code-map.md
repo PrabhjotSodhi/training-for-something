@@ -61,7 +61,7 @@ training-for-something/
       journal.py              the append-only journal
     scheduling/
       scheduler.py            the 60 second loop, next_due
-      jobs.py                 the job table: claim, run, finish, recover after a crash
+      jobs.py                 atomic approved queue and unsent undo; worker/recovery follow
       triggers.py             the missed-session rule
     web/
       server.py               HTTP server on 127.0.0.1, sessions, request checks
@@ -115,7 +115,7 @@ Each milestone adds one numbered migration for the tables it needs. `0001_init.s
 | `remote_links` | Yours | Plan item, connector, remote id, remote version |
 | `source_order` | Yours | Your source list per data type |
 | `chat` | Yours | Visible chat turns |
-| `jobs` | Work | AI runs, trigger runs and sends, with status, next due, attempts, op id, result |
+| `jobs` | Work | Approved send payloads with stable op id, item/journal version, status, next due, attempts and result; AI/trigger jobs follow later |
 
 "Derived" tables can be dropped and rebuilt from `source_records` and the journal. "Yours" tables are kept by backups.
 
