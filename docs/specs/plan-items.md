@@ -67,3 +67,26 @@ references the journal entry that last changed it. Removed items use the status
 `plan_item_id` for a planned session. Sequence numbers are unique within each
 owner. Both owners use the same part fields and stored units. Deleting an imported
 record cannot delete planned parts.
+
+
+### Automatic completion in 0.3
+
+`plan_matches` is derived: each item and each workout group can appear once.
+`plan_items.status` remains user-owned. The coach view reports done when a match
+exists, with `matched_workout_id` and `match_reason` (`reference` or `date_family`).
+A manual done therefore survives a deleted or corrected import.
+
+Match active member references using both connector and remote ID before using
+date/family. Within either class, prefer known start hints, nearest local time,
+then workout start, workout ID and item ID. Reference matching can cross dates
+and families. The earliest active member supplies the time and UTC offset;
+UTC-only sources use the computer's zone. Each selected pair consumes both
+IDs. Manual-done items can still claim their matching workout; removed, skipped
+and replaced items cannot.
+
+Recompute after monthly regrouping, Save/undo and a confirmed remote link.
+Groups with member dates awaiting rebuild are excluded, and the coach view hides
+old matches during that window. Replaying or correcting imported data can change
+automatic completion without rewriting the journal. Move/change/remove refuses
+an automatically completed item; mark_done can preserve completion explicitly.
+Unlinking a wrong automatic match still needs its separate action implementation.

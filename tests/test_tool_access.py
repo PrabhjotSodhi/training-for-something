@@ -495,6 +495,8 @@ class ToolAccessTest(unittest.TestCase):
                 "why",
                 "sources_json",
                 "status",
+                "matched_workout_id",
+                "match_reason",
             ],
             "coach_v1_plan_parts": [
                 "plan_item_id",

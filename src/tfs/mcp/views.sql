@@ -84,9 +84,15 @@ FROM main.sources;
 
 
 CREATE TEMP VIEW coach_v1_plan_items AS
-SELECT id AS plan_item_id, version, plan_version, local_date, start_hint,
-  family, label, goal_ids_json, why, sources_json, status
-FROM main.plan_items;
+SELECT p.id AS plan_item_id, p.version, p.plan_version, p.local_date, p.start_hint,
+  p.family, p.label, p.goal_ids_json, p.why, p.sources_json,
+  CASE WHEN m.item_id IS NOT NULL THEN 'done' ELSE p.status END AS status,
+  m.group_id AS matched_workout_id, m.reason AS match_reason
+FROM main.plan_items p LEFT JOIN main.plan_matches m ON m.item_id=p.id
+AND EXISTS (SELECT 1 FROM main.session_group_members gm JOIN main.source_records r ON r.id=gm.record_id
+  WHERE gm.group_id=m.group_id AND r.deleted_at IS NULL)
+AND NOT EXISTS (SELECT 1 FROM main.session_group_members gm JOIN main.source_records r ON r.id=gm.record_id
+  JOIN main.rebuild_dates d ON d.local_date=r.local_date WHERE gm.group_id=m.group_id);
 
 CREATE TEMP VIEW coach_v1_plan_parts AS
 SELECT plan_item_id, seq, part_kind, label, reps, weight_kg,

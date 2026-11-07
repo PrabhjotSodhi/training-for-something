@@ -7,7 +7,7 @@ from pathlib import Path
 
 from tfs.connectors.core.contract import to_utc_text
 from tfs.persistence.sqlite import connect, save_intent, transaction
-from tfs.proposals import actions, journal, targets
+from tfs.proposals import actions, journal, matching, targets
 from tfs.scheduling import jobs
 
 
@@ -90,12 +90,10 @@ def _save(
             return previous
         if restoring:
             before, items = actions.prepare_undo(conn, proposal["undo_version"])
-        else:
-            before, items = actions.prepare(conn, proposal, now.date())
-        if restoring:
             prior_jobs = items.pop("jobs", {})
             job_before, job_after = jobs.restore(conn, items["items"], prior_jobs)
         else:
+            before, items = actions.prepare(conn, proposal, now.date())
             delivery, _ = jobs.destinations(conn, items["items"])
             if proposal.get("delivery_targets", {}) != delivery:
                 raise ValueError(
@@ -109,6 +107,8 @@ def _save(
         for state in items["items"].values():
             _write(conn, state, version)
         jobs.write(conn, job_after, version, saved_at)
+        if items["items"]:
+            matching.rebuild(conn)
     return {"request_id": request_id, "plan_version": version}
 
 

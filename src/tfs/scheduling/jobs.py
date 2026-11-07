@@ -10,6 +10,7 @@ from pathlib import Path
 from tfs.connectors.core import send
 from tfs.connectors.core.contract import load_manifests, parse_iso_time, to_utc_text
 from tfs.persistence.sqlite import connect, transaction
+from tfs.proposals import matching
 from tfs.proposals.journal import encode
 
 
@@ -183,6 +184,7 @@ def _finish(conn: sqlite3.Connection, job: dict, outcome: dict, now: str) -> Non
                 " AND NOT EXISTS (SELECT 1 FROM jobs WHERE item_id = ? AND status NOT IN ('sent', 'cancelled'))",
                 (job["item_id"], job["item_id"]),
             )
+            matching.rebuild(conn)
 
 
 def run_one(db_path: Path, now: str) -> bool:

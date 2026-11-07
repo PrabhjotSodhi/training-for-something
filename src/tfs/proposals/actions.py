@@ -9,7 +9,7 @@ from datetime import date
 from urllib.parse import urlsplit
 
 from tfs.connectors.core.contract import FAMILIES
-from tfs.proposals import journal, targets
+from tfs.proposals import journal, matching, targets
 
 FIELDS = {
     "add_session": (
@@ -187,6 +187,8 @@ def _session(
             raise ValueError("This plan item already exists.")
         after["items"][item] = _add(conn, action, today, after["goals"])
     else:
+        if action["action"] != "mark_done" and matching.completed(conn, item):
+            raise ValueError("This plan item is done according to an imported workout.")
         _edit(after["items"][item], action, today)
 
 

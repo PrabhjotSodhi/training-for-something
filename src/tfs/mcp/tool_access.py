@@ -39,6 +39,8 @@ VIEWS = {
         " version is the item's version; plan_version is the global version at its last"
         " change. goal_ids_json and sources_json hold JSON arrays; why explains the plan."
         " local_date is YYYY-MM-DD and start_hint is an optional local time."
+        " status includes automatic workout completion; matched_workout_id and match_reason"
+        " identify its evidence. Pending rebuilds hide automatic matches; manual done remains."
     ),
     "coach_v1_plan_parts": (
         "Planned targets in seq order, never imported workout parts. Duration is in minutes,"
