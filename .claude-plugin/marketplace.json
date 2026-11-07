@@ -1,0 +1,12 @@
+{
+  "name": "training-for-something",
+  "owner": {
+    "name": "Training For Something"
+  },
+  "plugins": [
+    {
+      "name": "tfs",
+      "source": "./plugins/claude-code"
+    }
+  ]
+}
