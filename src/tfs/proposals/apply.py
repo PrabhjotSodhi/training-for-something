@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from tfs.connectors.core.contract import to_utc_text
-from tfs.persistence.sqlite import connect, transaction
+from tfs.persistence.sqlite import connect, save_intent, transaction
 from tfs.proposals import actions, journal, targets
 from tfs.scheduling import jobs
 
@@ -84,7 +84,7 @@ def _save(
     if not db_path.exists():
         raise ValueError("TFS has no data yet. Run tfs import or tfs start first.")
     encoded = journal.encode(proposal)
-    with closing(connect(db_path, "save")) as conn, transaction(conn):
+    with save_intent(db_path), closing(connect(db_path, "save")) as conn, transaction(conn):
         previous = journal.receipt(conn, request_id, encoded)
         if previous is not None:
             return previous

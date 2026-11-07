@@ -134,9 +134,9 @@ scheduling/jobs.py  →  connectors/core/send.py  →  connector send() in runne
 
 ## 4. Rules every module follows
 
-1. Only `persistence/sqlite.py` opens the database. It sets WAL, `synchronous=FULL` and a busy timeout.
+1. Only `persistence/sqlite.py` opens the database. It sets WAL, `synchronous=FULL` and a busy timeout for `tfs.db`. It also opens the empty `tfs.db.save-priority` coordination file in rollback mode; this file holds locks only and must not be unlinked during operation.
 2. The Save path's connection never runs a checkpoint. Imports run checkpoints.
-3. Imports commit about 500 rows per transaction and pause before each batch while a Save is waiting.
+3. Imports commit about 500 rows per transaction and pause before each batch and monthly rebuild while a Save or undo holds its intent lock.
 4. No module branches on an app's name. App knowledge lives in `connectors/<name>/`.
 5. Connectors run only through `connectors/core/runner.py`, never imported by the engine.
 6. The AI reads only through `mcp/tool_access.py`.
