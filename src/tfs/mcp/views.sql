@@ -10,7 +10,7 @@ SELECT g.id AS workout_id, g.local_date, g.start_utc,
     JOIN main.source_records r ON r.id = m.record_id
     WHERE m.group_id = g.id AND r.deleted_at IS NULL AND r.start_utc = g.start_utc
     ORDER BY r.id LIMIT 1) AS utc_offset_min,
-  g.family,
+  json_extract(g.chosen_json, '$.family.value') AS family,
   json_extract(g.chosen_json, '$.label.value') AS label,
   round(json_extract(g.chosen_json, '$.duration_s.value') / 60.0, 1) AS duration_min,
   round(json_extract(g.chosen_json, '$.distance_m.value') / 1000.0, 2) AS distance_km,
@@ -48,7 +48,14 @@ SELECT g.id AS workout_id, g.local_date, g.start_utc,
       WHERE m.group_id = g.id AND r.deleted_at IS NULL),
     0
   ) AS conflict
-FROM main.session_groups g
+FROM (
+  SELECT original.id, original.local_date, original.start_utc,
+    (SELECT json_group_object(field.key, json(field.value))
+      FROM json_each(original.chosen_json) field
+      JOIN main.source_records r ON r.id = json_extract(field.value, '$.record_id')
+      WHERE r.deleted_at IS NULL) AS chosen_json
+  FROM main.session_groups original
+) g
 WHERE EXISTS (
   SELECT 1 FROM main.session_group_members m JOIN main.source_records r ON r.id = m.record_id
   WHERE m.group_id = g.id AND r.deleted_at IS NULL

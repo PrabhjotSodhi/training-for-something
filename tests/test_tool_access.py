@@ -329,6 +329,14 @@ class ToolAccessTest(unittest.TestCase):
             ],
             [["a", "strava", 0]],
         )
+        chosen_query = (
+            "SELECT family, label, duration_min, distance_km, active_energy_kcal, avg_hr, max_hr,"
+            " source, active_energy_source, avg_hr_source, max_hr_source FROM coach_v1_workouts"
+        )
+        self.assertEqual(
+            query(self.reader, chosen_query)["rows"],
+            [[None, None, None, None, 612, None, 171, None, "strava", None, "strava"]],
+        )
         self.assertEqual(
             query(self.reader, "SELECT workout_id, seq, source FROM coach_v1_workout_parts")[
                 "rows"
@@ -340,6 +348,17 @@ class ToolAccessTest(unittest.TestCase):
                 "rows"
             ],
             [[None]],
+        )
+
+        writer = connect(self.path)
+        writer.execute("UPDATE source_records SET deleted_at = NULL WHERE id = 'b'")
+        writer.execute(
+            "UPDATE source_records SET deleted_at = '2025-03-04T00:00:00Z' WHERE id = 'a'"
+        )
+        writer.close()
+        self.assertEqual(
+            query(self.reader, chosen_query)["rows"],
+            [["run", "Run", 50.8, 10.24, None, 148.5, None, "garmin", None, "garmin", None]],
         )
 
     def test_select_over_the_view(self) -> None:
