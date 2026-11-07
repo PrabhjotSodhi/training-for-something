@@ -37,6 +37,7 @@ def fixture(name: str) -> bytes:
 
 class EngineWorkerTest(unittest.TestCase):
     def setUp(self) -> None:
+        self.addCleanup(os.umask, os.umask(0o022))
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.data_dir = Path(folder.name)

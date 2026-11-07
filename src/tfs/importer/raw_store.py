@@ -159,7 +159,8 @@ def scan_raw(conn: sqlite3.Connection, data_dir: Path) -> ScanResult:
             )
             conn.execute(
                 "INSERT INTO sources (connector, last_received_at) VALUES (?, ?)"
-                " ON CONFLICT (connector) DO NOTHING",
+                " ON CONFLICT (connector) DO UPDATE SET"
+                " last_received_at = MAX(COALESCE(last_received_at, ''), excluded.last_received_at)",
                 (path.parent.parent.name, received_at),
             )
             registered.append(match["sha256"])

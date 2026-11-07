@@ -21,6 +21,7 @@ SECRET = "s3cret"
 
 class SyncTest(unittest.TestCase):
     def setUp(self) -> None:
+        self.addCleanup(os.umask, os.umask(0o022))
         home = tempfile.TemporaryDirectory()
         self.addCleanup(home.cleanup)
         environment = mock.patch.dict(

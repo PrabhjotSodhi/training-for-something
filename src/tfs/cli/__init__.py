@@ -2,6 +2,7 @@
 
 import argparse
 import importlib
+import os
 import pkgutil
 from types import ModuleType
 
@@ -10,6 +11,7 @@ from tfs import __version__
 
 def main(argv: list[str] | None = None, *, modules: list[ModuleType] | None = None) -> int:
     """Run the command named in argv and return its exit code."""
+    os.umask(0o077)
     parser = argparse.ArgumentParser(prog="tfs")
     parser.add_argument("--version", action="version", version=f"tfs {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)

@@ -1,5 +1,6 @@
 import contextlib
 import io
+import os
 import subprocess
 import sys
 import tempfile
@@ -11,6 +12,7 @@ from unittest import mock
 import tfs
 import tfs.cli
 from tests import fake_cli_command
+from tests.test_import_file import EXPORT
 from tfs.cli import main
 
 
@@ -28,6 +30,9 @@ def add_parser(subparsers):
 
 
 class CliTest(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(os.umask, os.umask(0o022))
+
     def test_version_constant(self):
         self.assertEqual(tfs.__version__, "0.1.0.dev0")
 
@@ -43,6 +48,23 @@ class CliTest(unittest.TestCase):
         result = run_tfs()
         self.assertEqual(result.returncode, 2)
         self.assertTrue(result.stderr.startswith("usage: tfs"))
+
+    @unittest.skipIf(sys.platform == "win32", "Windows has no file modes")
+    def test_files_and_folders_the_command_creates_are_private(self):
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        export = Path(home.name, "export.xml")
+        export.write_text(EXPORT, encoding="utf-8")
+        data = Path(home.name, "data")
+        with mock.patch.dict(os.environ, {"TFS_HOME": str(data), "TFS_PASSWORD_STORE": "file"}):
+            result = run_tfs("import", str(export))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        modes = {
+            path.relative_to(data).as_posix(): path.stat().st_mode & 0o777
+            for path in [data, data / "tfs.db", *(data / "raw").rglob("*")]
+        }
+        for name, mode in modes.items():
+            self.assertEqual(mode, 0o700 if (data / name).is_dir() else 0o600, name)
 
     def test_main_runs_a_command_from_the_given_modules(self):
         self.assertEqual(main(["hello"], modules=[fake_cli_command]), 7)

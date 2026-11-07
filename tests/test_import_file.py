@@ -32,6 +32,7 @@ EXPORT = """<?xml version="1.0" encoding="UTF-8"?>
 
 class ImportTest(unittest.TestCase):
     def setUp(self) -> None:
+        self.addCleanup(os.umask, os.umask(0o022))
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         patch = mock.patch.dict(os.environ, {"TFS_HOME": folder.name})
@@ -127,6 +128,17 @@ class RouteFileTest(unittest.TestCase):
 
         with self.assertRaisesRegex(AmbiguousRouteError, "first_app.*second_app"):
             route_file("export.zip", manifests)
+
+    def test_a_renamed_second_download_routes_like_the_first(self) -> None:
+        for name in (
+            "export.zip",
+            "export.xml",
+            "export (1).zip",
+            "export 2.zip",
+            "export (1).xml",
+        ):
+            with self.subTest(name=name):
+                self.assertEqual(route_file(name, load_manifests())[0], "apple_health")
 
     def test_the_match_ignores_case(self) -> None:
         self.assertEqual(
