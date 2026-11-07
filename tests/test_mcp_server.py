@@ -90,7 +90,16 @@ class McpServerTest(unittest.TestCase):
             {"columns": ["metric", "value"], "rows": [["steps", 1000.0]], "clipped": None},
         )
         described = json.loads(self.call("describe")["content"][0]["text"])
-        self.assertEqual(list(described), ["coach_v1_day_facts"])
+        self.assertEqual(
+            described["coach_v1_day_facts"],
+            {
+                "meaning": (
+                    "One row per day and metric: the day's value, unit and source."
+                    " Coverage is full, partial or importing."
+                ),
+                "columns": ["local_date", "metric", "value", "unit", "source", "coverage"],
+            },
+        )
 
     def test_a_reader_error_sets_is_error(self) -> None:
         make_database(self.folder)
