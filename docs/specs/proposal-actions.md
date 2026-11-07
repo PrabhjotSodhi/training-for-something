@@ -11,7 +11,7 @@ The closed list of changes the AI may propose for v1.0. Save refuses anything no
   "sources": [{"url": "https://...", "type": "meta-analysis"}],
   "actions": [
     {"action": "move_session", "item": "p-118", "to": "2026-10-31"},
-    {"action": "change_session", "item": "p-120", "parts": [{"distance_km": 6, "zone": 2}]}
+    {"action": "change_session", "item": "p-120", "parts": [{"part_kind": "interval", "distance_m": 6000}]}
   ]
 }
 ```
@@ -65,3 +65,33 @@ record the client's approval route; they do not independently prove consent.
 Goals store a type, target date and target JSON; limits store a kind and values
 JSON. Their action handlers validate the allowed fields and units. Storage alone
 does not make a Save tool available.
+
+## Local session proposal API
+
+The local application API currently supports `add_session`, `move_session`,
+`change_session`, `remove_session` and `mark_done`. Other actions are refused
+until their handlers arrive. This API does not expose an MCP Save tool yet.
+
+Every proposal supplies `plan_version`, `why`, `sources` and a non-empty
+`actions` list. Each source has `url` and `type`. Every action has `action`
+and a stable `item` ID. Unknown fields are errors.
+
+| Action | Additional fields |
+|---|---|
+| add_session | date, family, label, parts; optional goal_ids naming existing goals |
+| move_session | to |
+| change_session | label and/or parts |
+| remove_session, mark_done | none |
+
+Dates are local YYYY-MM-DD dates, today or later. The caller passes an aware
+`now` in the person's local zone; journal time is stored in UTC. Parts are an
+ordered list with `part_kind` and optional `label`, `duration_s`,
+`distance_m`, `reps`, `weight_kg` and `avg_hr`. Numbers are finite and
+non-negative; reps is a whole number. Array order becomes the stored sequence.
+
+Preview calculates the batch in action order without writes, so adding then
+changing an item in the same proposal works. Saving validates again inside the
+write transaction and stores the final item state once per affected item,
+together with its prior state in the journal. A stale proposal, invalid action
+or database failure saves nothing. Repeated matching requests return the
+original receipt. Edits of done, removed or replaced items are refused.
