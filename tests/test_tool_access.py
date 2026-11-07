@@ -7,7 +7,7 @@ from pathlib import Path
 from tfs.mcp.tool_access import VIEWS, describe, open_reader, query
 from tfs.persistence.migrations import migrate
 from tfs.persistence.sqlite import connect
-from tfs.proposals.apply import save
+from tfs.proposals.apply import save, undo
 
 
 class ToolAccessTest(unittest.TestCase):
@@ -172,6 +172,8 @@ class ToolAccessTest(unittest.TestCase):
                 "coach_v1_plan_items",
                 "coach_v1_plan_parts",
                 "coach_v1_plan_state",
+                "coach_v1_goals",
+                "coach_v1_limits",
             ],
         )
         meaning = result["coach_v1_workouts"]["meaning"]
@@ -570,6 +572,58 @@ class ToolAccessTest(unittest.TestCase):
         self.assertEqual(
             query(self.reader, "SELECT count(*) FROM coach_v1_workout_parts")["rows"], [[6]]
         )
+
+    def test_goal_and_limit_views_follow_save_and_undo(self) -> None:
+        meanings = describe(self.reader)
+        self.assertEqual(
+            meanings["coach_v1_goals"]["columns"], ["goal_id", "type", "local_date", "target_json"]
+        )
+        self.assertEqual(
+            meanings["coach_v1_limits"]["columns"], ["limit_id", "kind", "values_json"]
+        )
+        self.assertEqual(query(self.reader, "SELECT * FROM coach_v1_goals")["rows"], [])
+        self.assertEqual(query(self.reader, "SELECT * FROM coach_v1_limits")["rows"], [])
+        now = datetime(2026, 11, 7, tzinfo=UTC)
+        proposal = {
+            "plan_version": 0,
+            "why": "Prepare steadily",
+            "sources": [],
+            "actions": [
+                {
+                    "action": "set_goal",
+                    "item": "g1",
+                    "type": "custom",
+                    "date": "2027-04-01",
+                    "target": {"description": "Complete the course", "value": 42.195, "unit": "km"},
+                },
+                {
+                    "action": "set_limit",
+                    "item": "l1",
+                    "kind": "max_session_length",
+                    "values": {"minutes": 60},
+                },
+            ],
+        }
+        save(self.path, proposal, request_id="goals", approved_by="chat", now=now)
+        self.assertEqual(
+            query(self.reader, "SELECT * FROM coach_v1_goals")["rows"],
+            [
+                [
+                    "g1",
+                    "custom",
+                    "2027-04-01",
+                    '{"description":"Complete the course","unit":"km","value":42.195}',
+                ]
+            ],
+        )
+        self.assertEqual(
+            query(self.reader, "SELECT * FROM coach_v1_limits")["rows"],
+            [["l1", "max_session_length", '{"minutes":60}']],
+        )
+        undo(self.path, 1, request_id="undo-goals", approved_by="chat", now=now)
+        self.assertEqual(query(self.reader, "SELECT * FROM coach_v1_goals")["rows"], [])
+        self.assertEqual(query(self.reader, "SELECT * FROM coach_v1_limits")["rows"], [])
+        self.assertEqual(query(self.reader, "SELECT * FROM coach_v1_plan_state")["rows"], [[2]])
 
 
 if __name__ == "__main__":

@@ -97,3 +97,10 @@ WHERE plan_item_id IS NOT NULL;
 
 CREATE TEMP VIEW coach_v1_plan_state AS
 SELECT coalesce(max(version), 0) AS plan_version FROM main.journal;
+
+
+CREATE TEMP VIEW coach_v1_goals AS
+SELECT id AS goal_id, type, local_date, target_json FROM main.goals;
+
+CREATE TEMP VIEW coach_v1_limits AS
+SELECT id AS limit_id, kind, values_json FROM main.limits;
