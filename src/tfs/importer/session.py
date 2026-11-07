@@ -126,7 +126,7 @@ def import_file(
     connector: str | None = None,
     tz: tzinfo | None = None,
 ) -> ImportResult:
-    """Save one file under the connector that reads it, read it and rebuild the dates it changed."""
+    """Save one file under the connector that reads it, read every pending file and return the result for this one."""
     path = path.resolve()
     if connector is None:
         connector, fmt, ext = route_file(path.name, load_manifests())
@@ -137,7 +137,7 @@ def import_file(
         fmt, ext = "file", path.suffix.lower().removeprefix(".")
     with path.open("rb") as source:
         saved = save_raw(conn, data_dir, connector, fmt, ext, source, now=now)
-    results = process_pending(conn, data_dir, tz=tz)
+    results = process_pending(conn, data_dir, tz=tz, retry_failed=True)
     return next((r for r in results if r.sha256 == saved.sha256), None) or read_file(
         conn, data_dir, saved.sha256, tz=tz
     )

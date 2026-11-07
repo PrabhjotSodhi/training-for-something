@@ -8,6 +8,7 @@ from unittest import mock
 
 from tfs import config
 from tfs.cli import main
+from tfs.connectors.core import runner
 from tfs.connectors.core.contract import load_manifests
 from tfs.importer.session import (
     AmbiguousRouteError,
@@ -97,9 +98,20 @@ class ImportFileTest(ImportTest):
 
         self.assertEqual((again.status, again.skipped, again.inserted), ("ok", False, 3))
         self.assertEqual(self.count("SELECT COUNT(*) FROM source_records"), 3)
-        self.assertNotEqual(
-            self.conn.execute("SELECT reader_version FROM files").fetchone()[0], "older"
+        self.assertEqual(
+            self.conn.execute("SELECT reader_version FROM files").fetchone()[0],
+            runner.reader_version("apple_health"),
         )
+
+    def test_a_file_whose_first_read_failed_is_read_and_rebuilt_by_the_next_import(self) -> None:
+        failure = runner.RunnerTimeoutError("apple_health read did not finish within 3600 seconds")
+        with mock.patch.object(runner, "run", side_effect=failure):
+            first = import_file(self.conn, config.data_dir(), self.export, now=NOW)
+
+        again = import_file(self.conn, config.data_dir(), self.export, now=NOW)
+
+        self.assertEqual((first.status, again.status, again.skipped), ("failed", "ok", False))
+        self.assertGreater(self.count("SELECT COUNT(*) FROM day_facts"), 0)
 
 
 class RouteFileTest(unittest.TestCase):
