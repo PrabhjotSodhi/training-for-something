@@ -15,7 +15,13 @@ functions.
 `connect(answers: dict) -> dict`
     Turns what the user typed into `{"secrets": {...}}` for the engine to store.
 
-`send` arrives in 0.3.
+`send(..., http) -> dict`
+    Receives `http(method, url, headers, body=None, timeout_s=30)` for GET, POST and
+    PUT over HTTPS. Body is bytes; the result is `(status, headers, bytes)`, including
+    HTTP errors and redirects. It never follows redirects or retries. A transport
+    error may mean the app received the request; reconcile before another write.
+    Provider payloads/outcomes are defined by the delivery slice. Hevy sends remain
+    disabled until their provider proof passes.
 """
 
 import hashlib
