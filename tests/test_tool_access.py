@@ -165,6 +165,7 @@ class ToolAccessTest(unittest.TestCase):
         self.assertEqual(
             list(result),
             [
+                "coach_v1_deliveries",
                 "coach_v1_day_facts",
                 "coach_v1_workouts",
                 "coach_v1_workout_parts",

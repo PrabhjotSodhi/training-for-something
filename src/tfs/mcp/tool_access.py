@@ -11,6 +11,11 @@ from typing import Any
 from tfs.persistence import sqlite
 
 VIEWS = {
+    "coach_v1_deliveries": (
+        "One row per approved delivery job, including cancelled history. op_id is stable."
+        " Times are UTC; unknown/conflict/needs_you require user action. Remote fields are"
+        " the latest successful link for that item and app. Sending never means training done."
+    ),
     "coach_v1_day_facts": (
         "One row per day and metric: the day's value, unit and source."
         " Coverage is full, partial or importing."

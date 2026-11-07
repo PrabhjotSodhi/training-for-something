@@ -15,13 +15,15 @@ functions.
 `connect(answers: dict) -> dict`
     Turns what the user typed into `{"secrets": {...}}` for the engine to store.
 
-`send(..., http) -> dict`
+`send(item, op_id, remote_id, remote_version, in_doubt, secrets, now, http) -> dict`
     Receives `http(method, url, headers, body=None, timeout_s=30)` for GET, POST and
     PUT over HTTPS. Body is bytes; the result is `(status, headers, bytes)`, including
     HTTP errors and redirects. It never follows redirects or retries. A transport
     error may mean the app received the request; reconcile before another write.
-    Provider payloads/outcomes are defined by the delivery slice. Hevy sends remain
-    disabled until their provider proof passes.
+    Returns status sent/not_sent/unknown/conflict/needs_you, optional message and
+    auth_failed. sent requires remote_id and remote_version; not_sent means definite
+    non-delivery. in_doubt requires reconciliation before any write. Hevy sends
+    remain disabled until their provider proof passes.
 """
 
 import hashlib

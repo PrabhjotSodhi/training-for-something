@@ -1,9 +1,15 @@
 """Queue exact approved deliveries in the caller's Save or undo transaction."""
 
+import json
 import sqlite3
 import uuid
+from contextlib import closing
+from datetime import timedelta
+from pathlib import Path
 
-from tfs.connectors.core.contract import load_manifests
+from tfs.connectors.core import send
+from tfs.connectors.core.contract import load_manifests, parse_iso_time, to_utc_text
+from tfs.persistence.sqlite import connect, transaction
 from tfs.proposals.journal import encode
 
 
@@ -98,3 +104,85 @@ def write(conn: sqlite3.Connection, changes: dict, version: int, saved_at: str) 
                 "UPDATE jobs SET status = ?, next_attempt_at = ? WHERE id = ?",
                 (state["status"], state["next_attempt_at"], key),
             )
+
+
+def recover(conn: sqlite3.Connection) -> None:
+    """After exclusive engine startup, require reconciliation of interrupted sends."""
+    conn.execute("UPDATE jobs SET status = 'in_doubt' WHERE status = 'sending'")
+
+
+def _claim(conn: sqlite3.Connection, now: str, manifests: dict) -> dict | None:
+    with transaction(conn):
+        for row in conn.execute(
+            "SELECT j.*, r.remote_id, r.remote_version FROM jobs j"
+            " JOIN sources s ON s.connector = j.connector AND s.enabled = 1"
+            " LEFT JOIN remote_links r ON r.item_id = j.item_id AND r.connector = j.connector"
+            " WHERE j.status IN ('pending', 'not_sent', 'in_doubt') AND j.next_attempt_at <= ?"
+            " ORDER BY j.created_at, j.id",
+            (now,),
+        ):
+            item = json.loads(row["payload_json"])
+            manifest = manifests.get(row["connector"])
+            if manifest is None or item["family"] not in manifest["sends"]:
+                continue
+            job = {**dict(row), "item": item, "in_doubt": row["status"] == "in_doubt"}
+            conn.execute(
+                "UPDATE jobs SET status = 'sending', attempts = attempts + 1 WHERE id = ?",
+                (row["id"],),
+            )
+            return job
+    return None
+
+
+def _finish(conn: sqlite3.Connection, job: dict, outcome: dict, now: str) -> None:
+    status = outcome["status"]
+    due = to_utc_text(parse_iso_time(now) + timedelta(minutes=5)) if status == "not_sent" else now
+    with transaction(conn):
+        changed = conn.execute(
+            "UPDATE jobs SET status = ?, next_attempt_at = ?, result_json = ?"
+            " WHERE id = ? AND status = 'sending'",
+            (status, due, encode(outcome), job["id"]),
+        ).rowcount
+        if changed != 1:
+            raise ValueError("The delivery job is no longer sending.")
+        if status == "sent":
+            conn.execute(
+                "INSERT INTO remote_links(item_id, connector, remote_id, remote_version, last_job_id)"
+                " VALUES (?, ?, ?, ?, ?) ON CONFLICT(item_id, connector) DO UPDATE SET"
+                " remote_id=excluded.remote_id, remote_version=excluded.remote_version, last_job_id=excluded.last_job_id",
+                (
+                    job["item_id"],
+                    job["connector"],
+                    outcome["remote_id"],
+                    outcome["remote_version"],
+                    job["id"],
+                ),
+            )
+            conn.execute(
+                "UPDATE plan_items SET status = 'sent' WHERE id = ? AND status = 'saved'"
+                " AND NOT EXISTS (SELECT 1 FROM jobs WHERE item_id = ? AND status NOT IN ('sent', 'cancelled'))",
+                (job["item_id"], job["item_id"]),
+            )
+
+
+def run_one(db_path: Path, now: str) -> bool:
+    """Claim and finish one due delivery; return false when no eligible work is due."""
+    manifests = load_manifests()
+    with closing(connect(db_path, "save")) as conn:
+        job = _claim(conn, now, manifests)
+    if job is None:
+        return False
+    outcome = send.deliver(job, manifests[job["connector"]], now)
+    with closing(connect(db_path, "save")) as conn:
+        _finish(conn, job, outcome, now)
+    return True
+
+
+def resume_auth(conn: sqlite3.Connection, connector: str, now: str) -> None:
+    """Resume authentication-blocked work through reconciliation after reconnecting."""
+    conn.execute(
+        "UPDATE jobs SET status = 'in_doubt', next_attempt_at = ?"
+        " WHERE connector = ? AND status = 'needs_you'"
+        " AND json_extract(result_json, '$.auth_failed') = 1",
+        (now, connector),
+    )
