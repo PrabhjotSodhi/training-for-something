@@ -1,4 +1,4 @@
-"""Preview and atomically save local session proposals."""
+"""Preview and atomically save local plan, goal and limit proposals."""
 
 import sqlite3
 from contextlib import closing
@@ -7,7 +7,7 @@ from pathlib import Path
 
 from tfs.connectors.core.contract import to_utc_text
 from tfs.persistence.sqlite import connect, transaction
-from tfs.proposals import actions, journal
+from tfs.proposals import actions, journal, targets
 
 
 def preview(db_path: Path, proposal: dict, *, now: datetime) -> dict:
@@ -17,7 +17,10 @@ def preview(db_path: Path, proposal: dict, *, now: datetime) -> dict:
     with closing(connect(db_path, "read_only")) as conn:
         conn.execute("BEGIN")
         _, items = actions.prepare(conn, proposal, now.date())
-    return {"plan_version": proposal["plan_version"], "items": list(items.values())}
+    return {
+        "plan_version": proposal["plan_version"],
+        **{name: list(states.values()) for name, states in items.items()},
+    }
 
 
 def _write(conn: sqlite3.Connection, state: dict, version: int) -> None:
@@ -86,7 +89,8 @@ def _save(
         else:
             before, items = actions.prepare(conn, proposal, now.date())
         version = journal.append(conn, request_id, encoded, before, approved_by, saved_at)
-        for state in items.values():
+        targets.write(conn, items)
+        for state in items["items"].values():
             _write(conn, state, version)
     return {"request_id": request_id, "plan_version": version}
 

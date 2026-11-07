@@ -39,7 +39,7 @@ def append(
 ) -> int:
     """Append a receipt inside the caller's transaction and return its version."""
     return conn.execute(
-        "INSERT INTO journal (request_id, proposal_json, before_json, approved_by, saved_at)"
-        " VALUES (?, ?, ?, ?, ?) RETURNING version",
+        "INSERT INTO journal (request_id, proposal_json, before_json, approved_by, saved_at, format_version)"
+        " VALUES (?, ?, ?, ?, ?, 2) RETURNING version",
         (request_id, proposal_json, encode(before), approved_by, saved_at),
     ).fetchone()[0]

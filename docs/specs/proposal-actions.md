@@ -68,8 +68,8 @@ does not make a Save tool available.
 
 ## Local session proposal API
 
-The local application API currently supports `add_session`, `move_session`,
-`change_session`, `remove_session` and `mark_done`. Other actions are refused
+The local application API currently supports `set_goal`, `set_limit`,
+`add_session`, `move_session`, `change_session`, `remove_session` and `mark_done`. Other actions are refused
 until their handlers arrive. This API does not expose an MCP Save tool yet.
 
 Every proposal supplies `plan_version`, `why`, `sources` and a non-empty
@@ -100,7 +100,7 @@ original receipt. Edits of done, removed or replaced items are refused.
 ## Local undo
 
 `undo(db_path, target_version, request_id=..., approved_by=..., now=...)`
-reverses the latest local session save. `target_version` must still be the
+reverses the latest local plan, goal or limit save. `target_version` must still be the
 current journal version. An intervening save makes it stale; selective undo of
 older history is not supported yet.
 
@@ -114,3 +114,35 @@ latest undo can itself be undone.
 This local API refuses sent or unknown items and unsupported journal operation
 formats. External delivery reversal and client permission prompts are separate
 work. No MCP undo tool is exposed yet.
+
+
+## Goals, limits and combined history
+
+`set_goal` requires `action`, `item`, `type`, `date` and `target`. The date is
+strictly future. Types are `marathon`, `ironman`, `hyrox`, `powerlifting`,
+`lean_physique`, `longevity` and `custom`. Use custom for another goal; the
+engine does not need sport-specific code. A target has a non-empty
+`description` and optionally a finite, non-negative `value` together with a
+non-empty `unit`. Units are preserved as supplied, not converted or used for
+forecasts here. These fields do not authorize diagnosis or clinician-target changes.
+
+`set_limit` requires `action`, `item`, `kind` and `values`. Supported kinds:
+
+| Kind | Exact values fields |
+|---|---|
+| injury | description: non-empty user-recorded text |
+| unavailable_day | date: YYYY-MM-DD, today or later |
+| max_session_length | minutes: finite, positive number |
+
+Goal, limit and session IDs have separate namespaces. Reusing a goal/limit ID
+edits it. A session can reference a goal established earlier in the same
+proposal. Preview returns `items`, `goals` and `limits` without writes. Saving
+any of them advances the global version, so a changed limit invalidates an old
+proposal even when no session changed.
+
+New journal rows use format 2: before-state has separate `items`, `goals` and
+`limits` maps, each keyed by ID. An absent prior row is null. Undo reads old
+format-1 session rows without changing them. It restores edited goals/limits,
+deletes newly created goals/limits, and marks newly created sessions removed.
+All states and the new journal receipt commit or roll back together. The latest
+undo can be undone, including restoring a goal or limit removed by undo.
