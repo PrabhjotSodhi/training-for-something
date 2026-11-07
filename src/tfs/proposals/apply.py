@@ -1,0 +1,88 @@
+"""Preview and atomically save local session proposals."""
+
+import sqlite3
+from contextlib import closing
+from datetime import datetime
+from pathlib import Path
+
+from tfs.connectors.core.contract import to_utc_text
+from tfs.persistence.sqlite import connect, transaction
+from tfs.proposals import actions, journal
+
+
+def preview(db_path: Path, proposal: dict, *, now: datetime) -> dict:
+    """Return validated resulting items without changing stored state."""
+    to_utc_text(now)
+    journal.encode(proposal)
+    with closing(connect(db_path, "read_only")) as conn:
+        conn.execute("BEGIN")
+        _, items = actions.prepare(conn, proposal, now.date())
+    return {"plan_version": proposal["plan_version"], "items": list(items.values())}
+
+
+def _write(conn: sqlite3.Connection, state: dict, version: int) -> None:
+    row = {
+        **state,
+        "plan_version": version,
+        "goal_ids_json": journal.encode(state["goal_ids"]),
+        "sources_json": journal.encode(state["sources"]),
+    }
+    conn.execute(
+        "INSERT INTO plan_items"
+        " (id, version, plan_version, local_date, start_hint, family, label,"
+        " goal_ids_json, why, sources_json, status)"
+        " VALUES (:id, :version, :plan_version, :local_date, :start_hint, :family, :label,"
+        " :goal_ids_json, :why, :sources_json, :status)"
+        " ON CONFLICT(id) DO UPDATE SET version=excluded.version,"
+        " plan_version=excluded.plan_version, local_date=excluded.local_date,"
+        " label=excluded.label, why=excluded.why, sources_json=excluded.sources_json,"
+        " status=excluded.status",
+        row,
+    )
+    conn.execute("DELETE FROM session_parts WHERE plan_item_id = ?", (state["id"],))
+    for seq, part in enumerate(state["parts"], 1):
+        conn.execute(
+            "INSERT INTO session_parts (plan_item_id, seq, part_kind, label,"
+            " duration_s, distance_m, reps, weight_kg, avg_hr, extras_json)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                state["id"],
+                seq,
+                part["part_kind"],
+                part.get("label"),
+                part.get("duration_s"),
+                part.get("distance_m"),
+                part.get("reps"),
+                part.get("weight_kg"),
+                part.get("avg_hr"),
+                part.get("extras_json"),
+            ),
+        )
+
+
+def save(
+    db_path: Path,
+    proposal: dict,
+    *,
+    request_id: str,
+    approved_by: str,
+    now: datetime,
+) -> dict:
+    """Apply an approved batch once, or roll back every change on failure."""
+    saved_at = to_utc_text(now)
+    if not isinstance(request_id, str) or not request_id.strip():
+        raise ValueError("A save needs a request ID.")
+    if approved_by not in ("chat", "screen"):
+        raise ValueError("Unknown approval route.")
+    if not db_path.exists():
+        raise ValueError("TFS has no data yet. Run tfs import or tfs start first.")
+    encoded = journal.encode(proposal)
+    with closing(connect(db_path, "save")) as conn, transaction(conn):
+        previous = journal.receipt(conn, request_id, encoded)
+        if previous is not None:
+            return previous
+        before, items = actions.prepare(conn, proposal, now.date())
+        version = journal.append(conn, request_id, encoded, before, approved_by, saved_at)
+        for state in items.values():
+            _write(conn, state, version)
+    return {"request_id": request_id, "plan_version": version}
