@@ -28,6 +28,21 @@ VIEWS = {
         "One row per connected app: whether it is enabled, when its last file arrived, its"
         " last error, and the latest time its data covers."
     ),
+    "coach_v1_plan_items": (
+        "One row per saved plan item, including removed items; filter status as needed."
+        " version is the item's version; plan_version is the global version at its last"
+        " change. goal_ids_json and sources_json hold JSON arrays; why explains the plan."
+        " local_date is YYYY-MM-DD and start_hint is an optional local time."
+    ),
+    "coach_v1_plan_parts": (
+        "Planned targets in seq order, never imported workout parts. Duration is in minutes,"
+        " distance in km, weight in kg and avg_hr in beats/minute; missing values stay null."
+        " extras_json holds any additional stored part details."
+    ),
+    "coach_v1_plan_state": (
+        "Exactly one row: the current global plan_version to use for a proposal,"
+        " or zero before the first Save. This can exceed an unchanged item's plan_version."
+    ),
 }
 MAX_ROWS = 500
 MAX_BYTES = 200_000

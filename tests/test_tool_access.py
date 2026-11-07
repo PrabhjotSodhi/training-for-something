@@ -1,12 +1,13 @@
 import json
 import tempfile
 import unittest
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from tfs.mcp.tool_access import VIEWS, describe, open_reader, query
 from tfs.persistence.migrations import migrate
 from tfs.persistence.sqlite import connect
+from tfs.proposals.apply import save
 
 
 class ToolAccessTest(unittest.TestCase):
@@ -159,7 +160,7 @@ class ToolAccessTest(unittest.TestCase):
         )
         self.assertIn("importing", result["coach_v1_day_facts"]["meaning"])
 
-    def test_describe_lists_the_four_views(self) -> None:
+    def test_describe_lists_the_coach_views(self) -> None:
         result = describe(self.reader)
         self.assertEqual(
             list(result),
@@ -168,6 +169,9 @@ class ToolAccessTest(unittest.TestCase):
                 "coach_v1_workouts",
                 "coach_v1_workout_parts",
                 "coach_v1_sources",
+                "coach_v1_plan_items",
+                "coach_v1_plan_parts",
+                "coach_v1_plan_state",
             ],
         )
         meaning = result["coach_v1_workouts"]["meaning"]
@@ -441,6 +445,131 @@ class ToolAccessTest(unittest.TestCase):
             " ORDER BY local_date",
         )
         self.assertEqual(result["rows"], [["2025-01-01", "importing"], ["2025-01-02", "full"]])
+
+    def test_empty_plan_views_and_described_columns(self) -> None:
+        expected = {
+            "coach_v1_plan_items": [
+                "plan_item_id",
+                "version",
+                "plan_version",
+                "local_date",
+                "start_hint",
+                "family",
+                "label",
+                "goal_ids_json",
+                "why",
+                "sources_json",
+                "status",
+            ],
+            "coach_v1_plan_parts": [
+                "plan_item_id",
+                "seq",
+                "part_kind",
+                "label",
+                "reps",
+                "weight_kg",
+                "duration_min",
+                "distance_km",
+                "avg_hr",
+                "extras_json",
+            ],
+            "coach_v1_plan_state": ["plan_version"],
+        }
+        meanings = describe(self.reader)
+        for view, columns in expected.items():
+            with self.subTest(view=view):
+                self.assertEqual(meanings[view]["columns"], columns)
+        self.assertEqual(query(self.reader, "SELECT * FROM coach_v1_plan_items")["rows"], [])
+        self.assertEqual(query(self.reader, "SELECT * FROM coach_v1_plan_parts")["rows"], [])
+        self.assertEqual(query(self.reader, "SELECT * FROM coach_v1_plan_state")["rows"], [[0]])
+
+    def test_saved_plan_targets_and_global_version(self) -> None:
+        now = datetime(2026, 11, 7, 12, tzinfo=UTC)
+        first = {
+            "plan_version": 0,
+            "why": "Build endurance",
+            "sources": [{"url": "https://example.org/study", "type": "trial"}],
+            "actions": [
+                {
+                    "action": "add_session",
+                    "item": item,
+                    "date": "2026-11-08",
+                    "family": "run",
+                    "label": "Easy run",
+                    "parts": [
+                        {"part_kind": "interval", "duration_s": 61, "distance_m": 6001},
+                        {"part_kind": "interval", "label": "Cool down"},
+                    ],
+                }
+                for item in ("p1", "p2")
+            ],
+        }
+        save(self.path, first, request_id="first", approved_by="chat", now=now)
+        save(
+            self.path,
+            {
+                "plan_version": 1,
+                "why": "Rest instead",
+                "sources": [],
+                "actions": [{"action": "remove_session", "item": "p2"}],
+            },
+            request_id="second",
+            approved_by="chat",
+            now=now,
+        )
+        result = query(
+            self.reader,
+            "SELECT plan_item_id, version, plan_version, local_date, family, label, goal_ids_json, why, sources_json, status FROM coach_v1_plan_items ORDER BY plan_item_id",
+        )
+        self.assertEqual(
+            result["rows"],
+            [
+                [
+                    "p1",
+                    1,
+                    1,
+                    "2026-11-08",
+                    "run",
+                    "Easy run",
+                    "[]",
+                    "Build endurance",
+                    '[{"type":"trial","url":"https://example.org/study"}]',
+                    "saved",
+                ],
+                [
+                    "p2",
+                    2,
+                    2,
+                    "2026-11-08",
+                    "run",
+                    "Easy run",
+                    "[]",
+                    "Rest instead",
+                    "[]",
+                    "removed",
+                ],
+            ],
+        )
+        self.assertEqual(query(self.reader, "SELECT * FROM coach_v1_plan_state")["rows"], [[2]])
+        self.assertEqual(
+            query(
+                self.reader,
+                "SELECT * FROM coach_v1_plan_parts WHERE plan_item_id='p1' ORDER BY seq",
+            )["rows"],
+            [
+                ["p1", 1, "interval", None, None, None, 61 / 60, 6.001, None, None],
+                ["p1", 2, "interval", "Cool down", None, None, None, None, None, None],
+            ],
+        )
+        self.assertEqual(
+            query(self.reader, "SELECT count(*) FROM coach_v1_plan_parts")["rows"], [[4]]
+        )
+        self.assertEqual(
+            query(self.reader, "SELECT count(*) FROM coach_v1_workouts")["rows"], [[2]]
+        )
+        self.assertEqual(
+            query(self.reader, "SELECT count(*) FROM coach_v1_workout_parts")["rows"], [[6]]
+        )
 
 
 if __name__ == "__main__":

@@ -81,3 +81,19 @@ SELECT connector, enabled, last_received_at, last_error,
   (SELECT MAX(COALESCE(end_utc, start_utc)) FROM main.source_records
     WHERE connector = sources.connector AND deleted_at IS NULL) AS covered_until
 FROM main.sources;
+
+
+CREATE TEMP VIEW coach_v1_plan_items AS
+SELECT id AS plan_item_id, version, plan_version, local_date, start_hint,
+  family, label, goal_ids_json, why, sources_json, status
+FROM main.plan_items;
+
+CREATE TEMP VIEW coach_v1_plan_parts AS
+SELECT plan_item_id, seq, part_kind, label, reps, weight_kg,
+  duration_s / 60.0 AS duration_min, distance_m / 1000.0 AS distance_km,
+  avg_hr, extras_json
+FROM main.session_parts
+WHERE plan_item_id IS NOT NULL;
+
+CREATE TEMP VIEW coach_v1_plan_state AS
+SELECT coalesce(max(version), 0) AS plan_version FROM main.journal;
