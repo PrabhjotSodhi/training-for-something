@@ -156,6 +156,8 @@ def _edit(state: dict | None, action: dict, today: date) -> None:
     if state is None or state["status"] in ("done", "removed", "replaced"):
         raise ValueError("The plan item is missing or can no longer be changed.")
     name = action["action"]
+    if name in ("move_session", "change_session"):
+        state["status"] = "saved"
     if "start_hint" in action:
         state["start_hint"] = _start_hint(action["start_hint"])
     if name == "move_session":

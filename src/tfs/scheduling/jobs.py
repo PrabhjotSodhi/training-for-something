@@ -26,16 +26,36 @@ def destinations(conn: sqlite3.Connection, items: dict) -> tuple[dict, dict]:
             and state["family"] in manifests[name]["sends"]
             and state["status"] in ("saved", "sent")
         )
+        if state["status"] in ("saved", "sent"):
+            linked = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT connector FROM remote_links WHERE item_id = ?", (item,)
+                )
+            }
+            if linked - set(names):
+                raise ValueError("Reconnect the previously linked app before changing this plan.")
         if names:
             targets[item] = names
     labels = {name: manifests[name]["label"] for names in targets.values() for name in names}
     return targets, labels
 
 
-def _pending(conn: sqlite3.Connection, items: dict) -> dict:
+def _pending(conn: sqlite3.Connection, items: dict, *, allow_sent: bool = False) -> dict:
     rows = {}
     for item in items:
         for row in conn.execute("SELECT * FROM jobs WHERE item_id = ?", (item,)):
+            if (
+                allow_sent
+                and row["status"] == "sent"
+                and items[item]["status"] in ("saved", "sent", "done")
+            ):
+                linked = conn.execute(
+                    "SELECT 1 FROM remote_links WHERE item_id = ? AND connector = ?",
+                    (item, row["connector"]),
+                ).fetchone()
+                if linked:
+                    continue
             if row["status"] not in ("pending", "not_sent", "cancelled"):
                 raise ValueError("This item needs delivery reconciliation before changing it.")
             if row["status"] != "cancelled":
@@ -51,7 +71,7 @@ def prepare(
     conn: sqlite3.Connection, items: dict, targets: dict, saved_at: str
 ) -> tuple[dict, dict]:
     """Prepare cancellation and new jobs, retaining prior states for undo."""
-    pending = _pending(conn, items)
+    pending = _pending(conn, items, allow_sent=True)
     before = {key: _state(row) for key, row in pending.items()}
     after = {key: {**_state(row), "status": "cancelled"} for key, row in pending.items()}
     for item, names in targets.items():

@@ -191,7 +191,17 @@ never rewritten. Undo cancels the new jobs and restores previous pending jobs
 with their original IDs and payloads. Undo itself records the inverse, so redo
 works without inventing a second delivery.
 
-Until delivery reconciliation and compensation are implemented, Save and undo
-refuse affected items with sending, in-doubt, sent, unknown, conflict or
-needs-you jobs. This is a delivery limitation, not remote undo support. Local
-queued-work tests do not satisfy real-provider proof #29.
+A move or change after confirmed delivery retains the acknowledged job and
+remote link, and creates a new approved job with a new operation ID. The item
+returns to saved while the update waits. Preview and Save require previously
+linked apps to be enabled and capable of receiving the plan; otherwise reconnect
+first. Approval covers the desired item and destination apps. A delivery confirmed
+between preview and Save can turn the next dispatch into an update of the known
+remote object without changing that approved content or those destinations.
+Manual mark_done retains confirmed history and cancels pending replacements.
+
+Sending, in-doubt, unknown, conflict and needs-you jobs still block overlapping
+changes. Removing a delivered item and undo involving delivered state remain
+refused until compensation and manual-action handling are implemented. This is
+not remote undo support. Invented delivery tests do not satisfy real-provider
+proof #29.
