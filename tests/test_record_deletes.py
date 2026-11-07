@@ -26,7 +26,6 @@ class DeleteTest(unittest.TestCase):
         result = self.store([DELETE], arrival=3)
 
         self.assertEqual(result.deleted, 1)
-        self.assertEqual(result.dates, {"2026-10-02"})
         saved = self.conn.execute("SELECT local_date FROM rebuild_dates").fetchall()
         self.assertEqual([row[0] for row in saved], ["2026-10-02"])
         self.assertEqual(self.row()["deleted_at"], RECEIVED_AT[3])

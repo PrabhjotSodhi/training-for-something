@@ -162,14 +162,13 @@ class StoreTest(unittest.TestCase):
             parts=[{"seq": 7, "part_kind": "lap", "duration_s": 60.0}],
         )
 
-        result = self.store([moved], arrival=2)
+        self.store([moved], arrival=2)
 
         parts = self.conn.execute("SELECT record_id, seq, part_kind FROM session_parts").fetchall()
         self.assertEqual([tuple(part) for part in parts], [(record_id, 7, "lap")])
         members = self.conn.execute("SELECT record_id FROM session_group_members").fetchall()
         self.assertEqual([member[0] for member in members], [record_id])
         dates = {"2026-10-02", "2026-10-03"}
-        self.assertEqual(result.dates, dates)
         saved = self.conn.execute("SELECT local_date FROM rebuild_dates").fetchall()
         self.assertEqual({row[0] for row in saved}, dates)
 

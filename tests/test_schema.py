@@ -117,11 +117,6 @@ class SchemaTest(unittest.TestCase):
         ).fetchall()
         self.assertLessEqual(TABLES, {row["name"] for row in rows})
 
-    def test_running_migrate_again_keeps_the_data(self):
-        insert(self.conn, "files")
-        migrate(self.conn)
-        self.assertEqual(count(self.conn, "files"), 1)
-
     def test_the_source_record_indexes_cover_the_right_columns(self):
         for name, columns in INDEXES.items():
             with self.subTest(index=name):

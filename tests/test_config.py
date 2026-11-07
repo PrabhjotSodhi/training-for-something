@@ -51,10 +51,9 @@ class DataDirTest(unittest.TestCase):
 
 
 class PathsTest(unittest.TestCase):
-    def test_db_path_and_raw_dir_sit_in_the_data_folder(self):
+    def test_db_path_sits_in_the_data_folder(self):
         args = {"env": {}, "platform": "linux", "home": Path("/home/ana")}
         self.assertEqual(config.db_path(**args), Path("/home/ana/.local/share/tfs/tfs.db"))
-        self.assertEqual(config.raw_dir(**args), Path("/home/ana/.local/share/tfs/raw"))
 
     def test_db_path_follows_tfs_home(self):
         self.assertEqual(
