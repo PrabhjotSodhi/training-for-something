@@ -37,12 +37,3 @@ def db_path(
 ) -> Path:
     """Return the path of the SQLite file inside the data folder."""
     return data_dir(env, platform, home) / "tfs.db"
-
-
-def raw_dir(
-    env: Mapping[str, str] | None = None,
-    platform: str | None = None,
-    home: Path | None = None,
-) -> Path:
-    """Return the folder that holds raw files inside the data folder."""
-    return data_dir(env, platform, home) / "raw"

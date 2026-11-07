@@ -40,9 +40,7 @@ _NOT_AGGREGATED = "Turn on Aggregate Sleep Data in Health Auto Export."
 
 
 class _SkipError(Exception):
-    def __init__(self, reason: str) -> None:
-        super().__init__(reason)
-        self.reason = reason
+    """A record that cannot be imported."""
 
 
 def read(path: str, fmt: str, out_path: str) -> dict:
@@ -102,7 +100,7 @@ def _measurements(metrics: list[dict], skipped: Counter) -> Iterator[dict]:
             try:
                 yield _measurement(name, entry.get("units"), sample)
             except _SkipError as skip:
-                skipped["sample", skip.reason] += 1
+                skipped["sample", str(skip)] += 1
 
 
 def _sessions(workouts: list, skipped: Counter) -> Iterator[dict]:
@@ -110,7 +108,7 @@ def _sessions(workouts: list, skipped: Counter) -> Iterator[dict]:
         try:
             yield _session(workout)
         except _SkipError as skip:
-            skipped["workout", skip.reason] += 1
+            skipped["workout", str(skip)] += 1
 
 
 def _session(workout: object) -> dict:

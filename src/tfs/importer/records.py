@@ -72,14 +72,13 @@ VALUES (:record_id, :seq, :part_kind, :label, :duration_s, :distance_m, :reps, :
 
 @dataclass
 class StoreResult:
-    """What one call to store did, with the reasons for rejected records and every local date touched."""
+    """What one call to store did, with the reasons for rejected records."""
 
     inserted: int = 0
     replaced: int = 0
     unchanged: int = 0
     deleted: int = 0
     rejected: Counter[str] = field(default_factory=Counter)
-    dates: set[str] = field(default_factory=set)
 
 
 def store(
@@ -142,7 +141,6 @@ def store(
                 "INSERT OR IGNORE INTO rebuild_dates (local_date) VALUES (?)",
                 [(date,) for date in sorted(changed_dates)],
             )
-            result.dates |= changed_dates
     return result
 
 

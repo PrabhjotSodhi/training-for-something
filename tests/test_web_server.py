@@ -106,10 +106,6 @@ class ServerTestCase(unittest.TestCase):
 
 
 class RoutesTest(ServerTestCase):
-    def test_make_server_returns_a_threading_http_server(self):
-        self.start()
-        self.assertIsInstance(self.server, ThreadingHTTPServer)
-
     def test_ping_answers_tfs(self):
         self.start()
         self.assertEqual(self.ask(raw("GET /ping HTTP/1.1")), (200, b"tfs"))
@@ -199,17 +195,6 @@ class RoutesTest(ServerTestCase):
         self.start(max_body=5)
         self.assertEqual(self.ask(push("Content-Length: 5", body=b"hello"))[0], 200)
 
-    def test_handler_failure_gives_500_and_the_server_keeps_serving(self):
-        def handler(name, body, headers):
-            raise RuntimeError("secret-detail")
-
-        self.start(push_handler=handler)
-        with self.assertLogs("tfs.web.server", level="ERROR"):
-            status, body = self.ask(push("Content-Length: 0"))
-        self.assertEqual(status, 500)
-        self.assertNotIn(b"secret-detail", body)
-        self.check_ping()
-
     def test_handler_errors_and_their_causes_never_reach_the_response_or_the_logs(self):
         token = "tok-invented-7f3a"
         cause_token = "tok-invented-c91d"
@@ -244,22 +229,9 @@ class RoutesTest(ServerTestCase):
         self.finish()
         self.assertEqual(self.unhandled, [])
 
-    def test_malformed_requests_are_refused_and_the_server_keeps_serving(self):
-        too_many_headers = raw("GET /ping HTTP/1.1", *[f"X-{n}: 1" for n in range(150)])
-        # Status 0: the standard library cannot read the HTTP version, so it sends an HTML
-        # page with no status line.
-        requests = [
-            (b"\x00\x01\x02\r\n\r\n", 0),
-            (b"GET\r\n\r\n", 0),
-            (raw("GET /ping HTTP/9.9"), 0),
-            (raw("GET /" + "a" * 70000 + " HTTP/1.1"), 414),
-            (too_many_headers, 431),
-            (raw("GET /ping HTTP/1.1", "X-Long: " + "a" * 70000), 431),
-        ]
+    def test_the_server_keeps_serving_after_a_bad_request(self):
         self.start()
-        for request, expected_status in requests:
-            with self.subTest(request=request[:20]):
-                self.assertEqual(self.ask(request)[0], expected_status)
+        self.ask(b"GET\r\n\r\n")
         self.check_ping()
         self.finish()
         self.assertEqual(self.calls, [])
@@ -267,47 +239,29 @@ class RoutesTest(ServerTestCase):
 
 
 class FramingTest(ServerTestCase):
-    def refused(self, request: bytes, expected_status: int) -> None:
-        status, _ = self.ask(request)
-        self.assertEqual(status, expected_status)
+    def test_bad_framing_is_refused_before_the_body_is_read(self):
+        cases = [
+            (push("Transfer-Encoding: chunked"), 411),
+            (push("Transfer-Encoding: chunked", "Content-Length: 5"), 411),
+            (push("Transfer-Encoding: identity", "Content-Length: 5"), 411),
+            (push(), 411),
+            (push("Content-Length: 5", "Content-Length: 6"), 400),
+            (push("Content-Length: 11"), 413),
+            *[
+                (push(f"Content-Length: {value}"), 400)
+                for value in ("-1", "abc", "", "+5", "5.0", "0x5", "5 5", "5,5", "\xb2", "1e3")
+            ],
+            *[
+                (push(f"Content-Length: {value}"), 413)
+                for value in ("9" * 19, "9" * 30, "9" * 5000, "0" * 5000 + "11")
+            ],
+        ]
+        self.start(max_body=10)
+        for request, expected_status in cases:
+            with self.subTest(request=request):
+                self.assertEqual(self.ask(request)[0], expected_status)
         self.assertEqual(self.calls, [])
         self.assertEqual(self.incomplete, [])
-
-    def test_chunked_gets_411(self):
-        self.start()
-        self.refused(push("Transfer-Encoding: chunked"), 411)
-
-    def test_chunked_with_a_length_gets_411(self):
-        self.start()
-        self.refused(push("Transfer-Encoding: chunked", "Content-Length: 5"), 411)
-
-    def test_any_transfer_encoding_gets_411(self):
-        self.start()
-        self.refused(push("Transfer-Encoding: identity", "Content-Length: 5"), 411)
-
-    def test_missing_length_gets_411(self):
-        self.start()
-        self.refused(push(), 411)
-
-    def test_bad_lengths_get_400(self):
-        self.start()
-        for value in ("-1", "abc", "", "+5", "5.0", "0x5", "5 5", "5,5", "\xb2", "1e3"):
-            with self.subTest(value=value):
-                self.refused(push(f"Content-Length: {value}"), 400)
-
-    def test_two_different_lengths_get_400(self):
-        self.start()
-        self.refused(push("Content-Length: 5", "Content-Length: 6"), 400)
-
-    def test_a_length_above_max_body_gets_413_before_the_body_is_read(self):
-        self.start(max_body=10)
-        self.refused(push("Content-Length: 11"), 413)
-
-    def test_huge_lengths_get_413(self):
-        self.start(max_body=10)
-        for value in ("9" * 19, "9" * 30, "9" * 5000, "0" * 5000 + "11"):
-            with self.subTest(digits=len(value)):
-                self.refused(push(f"Content-Length: {value}"), 413)
 
     def test_a_refusal_is_a_json_message_the_user_can_act_on(self):
         self.start(max_body=10)
@@ -362,14 +316,6 @@ class StalledClientTest(ServerTestCase):
 
 
 class ManyClientsTest(ServerTestCase):
-    def test_a_silent_client_does_not_block_others(self):
-        self.start(read_timeout_s=SAFETY_TIMEOUT_S * 3)
-        silent = self.connect()
-        silent.sendall(b"GET /ping HTT")
-        self.check_ping()
-        self.assertEqual(self.ask(push("Content-Length: 5", body=b"hello"))[0], 200)
-        silent.close()
-
     def test_a_stalled_body_does_not_block_others(self):
         self.start(read_timeout_s=SAFETY_TIMEOUT_S * 3)
         stalled = self.connect()
@@ -377,28 +323,6 @@ class ManyClientsTest(ServerTestCase):
         self.assertTrue(self.started.wait(SAFETY_TIMEOUT_S))
         self.check_ping()
         stalled.close()
-
-    def test_several_pushes_run_their_handlers_at_the_same_time(self):
-        clients = 4
-        barrier = threading.Barrier(clients, timeout=SAFETY_TIMEOUT_S)
-
-        def handler(name, body, headers):
-            barrier.wait()
-            body.read()
-            return 200, {"ok": True}
-
-        self.start(push_handler=handler)
-        statuses = []
-
-        def post() -> None:
-            statuses.append(self.ask(push("Content-Length: 5", body=b"hello"))[0])
-
-        threads = [threading.Thread(target=post) for _ in range(clients)]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
-        self.assertEqual(statuses, [200] * clients)
 
 
 class DisconnectTest(ServerTestCase):

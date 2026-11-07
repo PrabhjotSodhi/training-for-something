@@ -64,9 +64,7 @@ _DAMAGED = (zipfile.BadZipFile, zlib.error, EOFError, ElementTree.ParseError)
 
 
 class _SkipError(Exception):
-    def __init__(self, reason: str) -> None:
-        super().__init__(reason)
-        self.reason = reason
+    """A record that cannot be imported."""
 
 
 def read(path: str, fmt: str, out_path: str) -> dict:
@@ -129,7 +127,7 @@ def _records(export: BinaryIO, skipped: Counter) -> Iterator[dict]:
             try:
                 record = _measurement(element) if element.tag == "Record" else _session(element)
             except _SkipError as skip:
-                skipped[skip.reason] += 1
+                skipped[str(skip)] += 1
             else:
                 if record is not None:
                     yield record
