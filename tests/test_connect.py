@@ -16,6 +16,7 @@ SECRET = "s3cret"
 
 class ConnectTest(unittest.TestCase):
     def setUp(self):
+        self.addCleanup(os.umask, os.umask(0o022))
         home = tempfile.TemporaryDirectory()
         self.addCleanup(home.cleanup)
         environment = mock.patch.dict(

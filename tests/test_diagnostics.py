@@ -20,6 +20,7 @@ MANIFESTS = {
 
 class DiagnosticsTest(unittest.TestCase):
     def setUp(self):
+        self.addCleanup(os.umask, os.umask(0o022))
         home = tempfile.TemporaryDirectory()
         self.addCleanup(home.cleanup)
         environment = mock.patch.dict(os.environ, {"TFS_HOME": home.name})

@@ -124,6 +124,35 @@ class ScanRawTest(unittest.TestCase):
         self.assertEqual(result.registered, [])
         self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 1)
 
+    def source_received_at(self):
+        return self.conn.execute(
+            "SELECT last_received_at FROM sources WHERE connector = 'hevy'"
+        ).fetchone()[0]
+
+    def test_a_source_with_no_receipt_time_takes_the_recovered_files_time(self):
+        self.conn.execute("INSERT INTO sources (connector) VALUES ('hevy')")
+        self.drop_file(b"orphan", OLDER_MTIME)
+
+        scan_raw(self.conn, self.data_dir)
+
+        self.assertEqual(self.source_received_at(), "2026-09-21T14:13:20Z")
+
+    def test_a_source_keeps_the_later_of_its_time_and_the_recovered_files_time(self):
+        self.conn.execute(
+            "INSERT INTO sources (connector, cursor_json, last_contact_at, last_received_at)"
+            " VALUES ('hevy', '{\"page\": 3}', '2026-10-01T00:00:00Z', '2026-09-01T00:00:00Z')"
+        )
+        self.drop_file(b"newer", NEWER_MTIME)
+
+        scan_raw(self.conn, self.data_dir)
+
+        self.assertEqual(self.source_received_at(), "2026-09-21T14:23:20Z")
+        row = self.conn.execute("SELECT * FROM sources WHERE connector = 'hevy'").fetchone()
+        self.assertEqual(
+            (row["cursor_json"], row["last_contact_at"]),
+            ('{"page": 3}', "2026-10-01T00:00:00Z"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
