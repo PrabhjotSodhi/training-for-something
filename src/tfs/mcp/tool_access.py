@@ -14,6 +14,20 @@ VIEWS = {
         "One row per day and metric: the day's value, unit and source."
         " Coverage is full, partial or importing."
     ),
+    "coach_v1_workouts": (
+        "One row per workout, shown once even when several apps recorded it."
+        " start_utc is UTC and utc_offset_min gives local time. source names the app whose"
+        " duration and distance were chosen, and each *_source column names the app of that"
+        " value. sources lists every app that recorded it. conflict is 1 when the apps"
+        " disagree on duration or distance by more than 10%."
+    ),
+    "coach_v1_workout_parts": (
+        "The sets, laps or intervals of a workout, in order by seq, from one app."
+    ),
+    "coach_v1_sources": (
+        "One row per connected app: whether it is enabled, when its last file arrived, its"
+        " last error, and the latest time its data covers."
+    ),
 }
 MAX_ROWS = 500
 MAX_BYTES = 200_000

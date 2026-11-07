@@ -21,6 +21,130 @@ class ToolAccessTest(unittest.TestCase):
             " formula_version) VALUES (?, 'steps', 1000, 'count', 'apple_health', 'full', 'v1')",
             [((date(2025, 1, 1) + timedelta(days=n)).isoformat(),) for n in range(600)],
         )
+        writer.executemany(
+            "INSERT INTO files (sha256, arrival_seq, connector, format, ext, size_bytes,"
+            " received_at) VALUES (?, ?, ?, 'json', 'json', 1, '2025-03-03T00:00:00Z')",
+            [("f1", 1, "strava"), ("f2", 2, "garmin"), ("f3", 3, "hevy"), ("f4", 4, "strongapp")],
+        )
+        writer.executemany(
+            "INSERT INTO sources (connector, enabled, last_received_at, last_error)"
+            " VALUES (?, ?, ?, ?)",
+            [
+                ("strava", 1, "2025-03-03T08:00:00Z", "Token expired"),
+                ("garmin", 1, "2025-03-03T09:00:00Z", None),
+                ("hevy", 1, None, None),
+                ("polar", 0, None, None),
+            ],
+        )
+        writer.executemany(
+            "INSERT INTO source_records (id, connector, stream, key, kind, revision_at,"
+            " arrival_seq, file_sha256, reader_version, start_utc, end_utc, utc_offset_min,"
+            " local_date, label, family, values_json) VALUES (?, ?, 's', ?, 'session',"
+            " '2025-03-03T00:00:00Z', 1, ?, '1', ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    "a",
+                    "strava",
+                    "a",
+                    "f1",
+                    "2025-03-01T07:00:00Z",
+                    "2025-03-01T07:50:00Z",
+                    60,
+                    "2025-03-01",
+                    "Morning run",
+                    "run",
+                    '{"duration_s": 3000, "distance_m": 12000}',
+                ),
+                (
+                    "b",
+                    "garmin",
+                    "b",
+                    "f2",
+                    "2025-03-01T07:00:30Z",
+                    "2025-03-01T07:51:20Z",
+                    60,
+                    "2025-03-01",
+                    "Run",
+                    "run",
+                    '{"duration_s": 3050, "distance_m": 10236}',
+                ),
+                (
+                    "c",
+                    "hevy",
+                    "c",
+                    "f3",
+                    "2025-03-02T17:00:00Z",
+                    "2025-03-02T18:00:00Z",
+                    -300,
+                    "2025-03-02",
+                    "Push day",
+                    "strength",
+                    '{"duration_s": 3600}',
+                ),
+                (
+                    "d",
+                    "strongapp",
+                    "d",
+                    "f4",
+                    "2025-03-02T17:00:10Z",
+                    "2025-03-02T18:00:10Z",
+                    -300,
+                    "2025-03-02",
+                    "Push",
+                    "strength",
+                    '{"duration_s": 3600}',
+                ),
+            ],
+        )
+        writer.executemany(
+            "INSERT INTO session_parts (record_id, seq, part_kind, label, duration_s, distance_m,"
+            " reps, weight_kg, avg_hr) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                ("a", 1, "lap", "Lap 1", 1500, 6000, None, None, 150),
+                ("a", 2, "lap", "Lap 2", 1500, 6000, None, None, 152),
+                ("b", 1, "lap", "Km 1-3", 900, 3000.5, None, None, 147),
+                ("b", 2, "lap", "Km 4-6", 900, 3000, None, None, 148),
+                ("b", 3, "lap", "Km 7-10", 1250, 4235.5, None, None, 149),
+                ("c", 1, "set", "Bench press", None, None, 8, 60, None),
+                ("c", 2, "set", "Bench press", None, None, 8, 62.5, None),
+                ("c", 3, "set", "Row", None, None, 10, 50, None),
+                ("d", 1, "set", "Bench", None, None, 5, 40, None),
+                ("d", 2, "set", "Bench", None, None, 5, 40, None),
+                ("d", 3, "set", "Row", None, None, 5, 40, None),
+            ],
+        )
+        chosen_run = {
+            "label": {"value": "Run", "record_id": "b"},
+            "family": {"value": "run", "record_id": "b"},
+            "duration_s": {"value": 3050, "record_id": "b"},
+            "distance_m": {"value": 10236, "record_id": "b"},
+            "active_energy_kcal": {"value": 612, "record_id": "a"},
+            "avg_hr": {"value": 148.5, "record_id": "b"},
+            "max_hr": {"value": 171, "record_id": "a"},
+        }
+        chosen_strength = {
+            "label": {"value": "Push day", "record_id": "c"},
+            "family": {"value": "strength", "record_id": "c"},
+            "duration_s": {"value": 3600, "record_id": "c"},
+        }
+        writer.executemany(
+            "INSERT INTO session_groups (id, local_date, family, start_utc, chosen_json)"
+            " VALUES (?, ?, ?, ?, ?)",
+            [
+                ("a", "2025-03-01", "run", "2025-03-01T07:00:00Z", json.dumps(chosen_run)),
+                (
+                    "c",
+                    "2025-03-02",
+                    "strength",
+                    "2025-03-02T17:00:00Z",
+                    json.dumps(chosen_strength),
+                ),
+            ],
+        )
+        writer.executemany(
+            "INSERT INTO session_group_members (group_id, record_id) VALUES (?, ?)",
+            [("a", "a"), ("a", "b"), ("c", "c"), ("c", "d")],
+        )
         writer.close()
         self.path = path
         self.reader = open_reader(path)
@@ -34,6 +158,208 @@ class ToolAccessTest(unittest.TestCase):
             ["local_date", "metric", "value", "unit", "source", "coverage"],
         )
         self.assertIn("importing", result["coach_v1_day_facts"]["meaning"])
+
+    def test_describe_lists_the_four_views(self) -> None:
+        result = describe(self.reader)
+        self.assertEqual(
+            list(result),
+            [
+                "coach_v1_day_facts",
+                "coach_v1_workouts",
+                "coach_v1_workout_parts",
+                "coach_v1_sources",
+            ],
+        )
+        meaning = result["coach_v1_workouts"]["meaning"]
+        self.assertIn("start_utc is UTC and utc_offset_min gives local time", meaning)
+
+    def test_workouts_have_one_row_per_session_group(self) -> None:
+        result = query(self.reader, "SELECT * FROM coach_v1_workouts ORDER BY workout_id")
+        self.assertEqual(
+            result["columns"],
+            [
+                "workout_id",
+                "local_date",
+                "start_utc",
+                "utc_offset_min",
+                "family",
+                "label",
+                "duration_min",
+                "distance_km",
+                "active_energy_kcal",
+                "avg_hr",
+                "max_hr",
+                "source",
+                "active_energy_source",
+                "avg_hr_source",
+                "max_hr_source",
+                "sources",
+                "conflict",
+            ],
+        )
+        self.assertEqual(
+            result["rows"][1],
+            [
+                "c",
+                "2025-03-02",
+                "2025-03-02T17:00:00Z",
+                -300,
+                "strength",
+                "Push day",
+                60.0,
+                None,
+                None,
+                None,
+                None,
+                "hevy",
+                None,
+                None,
+                None,
+                "hevy, strongapp",
+                0,
+            ],
+        )
+        self.assertEqual(len(result["rows"]), 2)
+
+    def test_run_from_two_apps_is_one_row(self) -> None:
+        result = query(self.reader, "SELECT * FROM coach_v1_workouts WHERE family = 'run'")
+        self.assertEqual(
+            result["rows"],
+            [
+                [
+                    "a",
+                    "2025-03-01",
+                    "2025-03-01T07:00:00Z",
+                    60,
+                    "run",
+                    "Run",
+                    50.8,
+                    10.24,
+                    612,
+                    148.5,
+                    171,
+                    "garmin",
+                    "strava",
+                    "garmin",
+                    "strava",
+                    "garmin, strava",
+                    1,
+                ]
+            ],
+        )
+
+    def test_conflict_needs_more_than_ten_percent_and_a_chosen_value(self) -> None:
+        writer = connect(self.path)
+        writer.execute(
+            "UPDATE source_records SET values_json = ? WHERE id = 'a'",
+            ('{"duration_s": 3000, "distance_m": 9500}',),
+        )
+        writer.execute("UPDATE source_records SET values_json = '{}' WHERE id = 'd'")
+        writer.execute(
+            "UPDATE session_groups SET chosen_json = json_remove(chosen_json, '$.duration_s')"
+            " WHERE id = 'c'"
+        )
+        writer.close()
+        result = query(self.reader, "SELECT workout_id, conflict FROM coach_v1_workouts")
+        self.assertEqual(result["rows"], [["a", 0], ["c", 0]])
+        writer = connect(self.path)
+        writer.execute(
+            "UPDATE source_records SET values_json = ? WHERE id = 'a'",
+            ('{"duration_s": 3000, "distance_m": 9200}',),
+        )
+        writer.close()
+        result = query(self.reader, "SELECT workout_id, conflict FROM coach_v1_workouts")
+        self.assertEqual(result["rows"], [["a", 1], ["c", 0]])
+
+    def test_parts_come_from_the_member_with_most_parts_then_lowest_id(self) -> None:
+        result = query(self.reader, "SELECT * FROM coach_v1_workout_parts ORDER BY workout_id, seq")
+        self.assertEqual(
+            result["columns"],
+            [
+                "workout_id",
+                "seq",
+                "part_kind",
+                "label",
+                "reps",
+                "weight_kg",
+                "duration_min",
+                "distance_km",
+                "avg_hr",
+                "source",
+            ],
+        )
+        self.assertEqual(
+            result["rows"],
+            [
+                ["a", 1, "lap", "Km 1-3", None, None, 15.0, 3.0, 147.0, "garmin"],
+                ["a", 2, "lap", "Km 4-6", None, None, 15.0, 3.0, 148.0, "garmin"],
+                ["a", 3, "lap", "Km 7-10", None, None, 20.8, 4.24, 149.0, "garmin"],
+                ["c", 1, "set", "Bench press", 8, 60.0, None, None, None, "hevy"],
+                ["c", 2, "set", "Bench press", 8, 62.5, None, None, None, "hevy"],
+                ["c", 3, "set", "Row", 10, 50.0, None, None, None, "hevy"],
+            ],
+        )
+
+    def test_sources_show_status_and_coverage(self) -> None:
+        result = query(self.reader, "SELECT * FROM coach_v1_sources ORDER BY connector")
+        self.assertEqual(
+            result["columns"],
+            ["connector", "enabled", "last_received_at", "last_error", "covered_until"],
+        )
+        self.assertEqual(
+            result["rows"],
+            [
+                ["garmin", 1, "2025-03-03T09:00:00Z", None, "2025-03-01T07:51:20Z"],
+                ["hevy", 1, None, None, "2025-03-02T18:00:00Z"],
+                ["polar", 0, None, None, None],
+                ["strava", 1, "2025-03-03T08:00:00Z", "Token expired", "2025-03-01T07:50:00Z"],
+            ],
+        )
+
+    def test_deleted_records_count_for_nothing(self) -> None:
+        writer = connect(self.path)
+        writer.execute(
+            "UPDATE source_records SET deleted_at = '2025-03-04T00:00:00Z'"
+            " WHERE id IN ('b', 'c', 'd')"
+        )
+        writer.close()
+        self.assertEqual(
+            query(self.reader, "SELECT workout_id, sources, conflict FROM coach_v1_workouts")[
+                "rows"
+            ],
+            [["a", "strava", 0]],
+        )
+        chosen_query = (
+            "SELECT family, label, duration_min, distance_km, active_energy_kcal, avg_hr, max_hr,"
+            " source, active_energy_source, avg_hr_source, max_hr_source FROM coach_v1_workouts"
+        )
+        self.assertEqual(
+            query(self.reader, chosen_query)["rows"],
+            [[None, None, None, None, 612, None, 171, None, "strava", None, "strava"]],
+        )
+        self.assertEqual(
+            query(self.reader, "SELECT workout_id, seq, source FROM coach_v1_workout_parts")[
+                "rows"
+            ],
+            [["a", 1, "strava"], ["a", 2, "strava"]],
+        )
+        self.assertEqual(
+            query(self.reader, "SELECT covered_until FROM coach_v1_sources WHERE connector='hevy'")[
+                "rows"
+            ],
+            [[None]],
+        )
+
+        writer = connect(self.path)
+        writer.execute("UPDATE source_records SET deleted_at = NULL WHERE id = 'b'")
+        writer.execute(
+            "UPDATE source_records SET deleted_at = '2025-03-04T00:00:00Z' WHERE id = 'a'"
+        )
+        writer.close()
+        self.assertEqual(
+            query(self.reader, chosen_query)["rows"],
+            [["run", "Run", 50.8, 10.24, None, 148.5, None, "garmin", None, "garmin", None]],
+        )
 
     def test_select_over_the_view(self) -> None:
         result = query(self.reader, "SELECT metric, value FROM coach_v1_day_facts LIMIT 2")
