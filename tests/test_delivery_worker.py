@@ -81,6 +81,129 @@ class DeliveryWorkerTest(unittest.TestCase):
             )
             self.assertNotIn("payload_json", describe(reader)["coach_v1_deliveries"]["columns"])
 
+    def test_edit_delivered_plan_updates_same_remote_and_keeps_receipts(self) -> None:
+        with mock.patch.object(send.runner, "run", return_value=SENT):
+            jobs.run_one(self.path, STAMP)
+        first = self.row()
+        self.save(
+            proposal({"action": "change_session", "item": "p1", "label": "Lighter"}, version=1),
+            "edit",
+        )
+        second = dict(self.conn.execute("SELECT * FROM jobs WHERE status='pending'").fetchone())
+        self.assertEqual(self.conn.execute("SELECT status FROM plan_items").fetchone()[0], "saved")
+        self.assertNotEqual(first["id"], second["id"])
+        self.save(
+            proposal({"action": "move_session", "item": "p1", "to": "2026-11-10"}, version=2),
+            "move",
+        )
+        third = dict(self.conn.execute("SELECT * FROM jobs WHERE status='pending'").fetchone())
+        self.assertEqual(
+            self.conn.execute("SELECT status FROM jobs WHERE id=?", (second["id"],)).fetchone()[0],
+            "cancelled",
+        )
+        with mock.patch.object(
+            send.runner, "run", return_value={**SENT, "remote_version": "version-2"}
+        ) as call:
+            self.assertTrue(jobs.run_one(self.path, STAMP))
+            payload = call.call_args.args[2]
+            self.assertEqual(
+                (payload["op_id"], payload["remote_id"], payload["remote_version"]),
+                (third["id"], "routine-1", "version-1"),
+            )
+            self.assertEqual(
+                (payload["item"]["label"], payload["item"]["local_date"]), ("Lighter", "2026-11-10")
+            )
+        self.assertEqual(
+            dict(self.conn.execute("SELECT * FROM jobs WHERE id=?", (first["id"],)).fetchone()),
+            first,
+        )
+        self.assertEqual(
+            tuple(
+                self.conn.execute(
+                    "SELECT remote_id, remote_version, last_job_id FROM remote_links"
+                ).fetchone()
+            ),
+            ("routine-1", "version-2", third["id"]),
+        )
+        self.assertEqual(self.conn.execute("SELECT status FROM plan_items").fetchone()[0], "sent")
+
+    def test_delivered_edit_refuses_disconnected_app_and_uncertain_replacement(self) -> None:
+        with mock.patch.object(send.runner, "run", return_value=SENT):
+            jobs.run_one(self.path, STAMP)
+        value = proposal({"action": "change_session", "item": "p1", "label": "Lighter"}, version=1)
+        value["delivery_targets"] = preview(self.path, value, now=NOW)["delivery_targets"]
+        self.conn.execute("UPDATE sources SET enabled=0")
+        with self.assertRaisesRegex(ValueError, "Reconnect"):
+            save(self.path, value, request_id="disabled", approved_by="chat", now=NOW)
+        with self.assertRaisesRegex(ValueError, "Reconnect"):
+            preview(self.path, value, now=NOW)
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM journal").fetchone()[0], 1)
+        self.conn.execute("UPDATE sources SET enabled=1")
+        self.save(value, "edit")
+        with mock.patch.object(send.runner, "run", return_value={"status": "unknown"}):
+            jobs.run_one(self.path, STAMP)
+        with self.assertRaisesRegex(ValueError, "reconciliation"):
+            self.save(
+                proposal({"action": "change_session", "item": "p1", "label": "Again"}, version=2),
+                "uncertain",
+            )
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM journal").fetchone()[0], 2)
+        self.assertEqual(self.conn.execute("SELECT label FROM plan_items").fetchone()[0], "Lighter")
+
+    def test_undo_partial_delivery_preserves_acknowledged_receipt(self) -> None:
+        with mock.patch.object(send.runner, "run", return_value=SENT):
+            jobs.run_one(self.path, STAMP)
+            self.conn.execute("INSERT INTO sources(connector) VALUES ('invented_b')")
+            with mock.patch.object(
+                jobs, "load_manifests", return_value={"invented": MANIFEST, "invented_b": MANIFEST}
+            ):
+                for version in (1, 2, 3):
+                    self.save(
+                        proposal(
+                            {"action": "change_session", "item": "p1", "label": f"Edit {version}"},
+                            version=version,
+                        ),
+                        f"edit-{version}",
+                    )
+                    if version == 1:
+                        self.assertTrue(jobs.run_one(self.path, STAMP))
+                        self.assertTrue(jobs.run_one(self.path, STAMP))
+                self.assertTrue(jobs.run_one(self.path, STAMP))
+                self.assertEqual(
+                    self.conn.execute("SELECT status FROM plan_items").fetchone()[0], "saved"
+                )
+                queries = (
+                    "SELECT * FROM jobs ORDER BY id",
+                    "SELECT * FROM remote_links ORDER BY connector",
+                    "SELECT * FROM journal",
+                    "SELECT * FROM plan_items",
+                )
+                before = [[tuple(r) for r in self.conn.execute(q)] for q in queries]
+                with self.assertRaisesRegex(ValueError, "reconciliation"):
+                    undo(self.path, 4, request_id="undo-partial", approved_by="chat", now=NOW)
+                self.assertEqual(
+                    [[tuple(r) for r in self.conn.execute(q)] for q in queries], before
+                )
+
+    def test_manual_done_after_delivery_cancels_only_pending_replacement(self) -> None:
+        with mock.patch.object(send.runner, "run", return_value=SENT):
+            jobs.run_one(self.path, STAMP)
+        first = self.row()
+        self.save(
+            proposal({"action": "change_session", "item": "p1", "label": "Lighter"}, version=1),
+            "edit",
+        )
+        self.save(proposal({"action": "mark_done", "item": "p1"}, version=2), "done")
+        self.assertEqual(
+            dict(self.conn.execute("SELECT * FROM jobs WHERE id=?", (first["id"],)).fetchone()),
+            first,
+        )
+        self.assertEqual(self.conn.execute("SELECT status FROM plan_items").fetchone()[0], "done")
+        self.assertFalse(jobs.run_one(self.path, STAMP))
+        self.assertEqual(
+            self.conn.execute("SELECT count(*) FROM jobs WHERE status='cancelled'").fetchone()[0], 1
+        )
+
     def test_definite_failure_waits_five_minutes_but_uncertainty_never_retries(self) -> None:
         with mock.patch.object(send.runner, "run", return_value={"status": "not_sent"}) as call:
             self.assertTrue(jobs.run_one(self.path, STAMP))
