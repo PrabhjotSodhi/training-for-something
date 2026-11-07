@@ -70,7 +70,7 @@ does not make a Save tool available.
 
 The local application API currently supports `set_goal`, `set_limit`,
 `add_session`, `move_session`, `change_session`, `remove_session` and `mark_done`. Other actions are refused
-until their handlers arrive. This API does not expose an MCP Save tool yet.
+until their handlers arrive. The MCP tools below expose this same API.
 
 Every proposal supplies `plan_version`, `why`, `sources` and a non-empty
 `actions` list. Each source has `url` and `type`. Every action has `action`
@@ -113,7 +113,7 @@ latest undo can itself be undone.
 
 This local API refuses sent or unknown items and unsupported journal operation
 formats. External delivery reversal and client permission prompts are separate
-work. No MCP undo tool is exposed yet.
+work. The MCP undo tool uses this same latest-only rule.
 
 
 ## Goals, limits and combined history
@@ -146,3 +146,22 @@ format-1 session rows without changing them. It restores edited goals/limits,
 deletes newly created goals/limits, and marks newly created sessions removed.
 All states and the new journal receipt commit or roll back together. The latest
 undo can be undone, including restoring a goal or limit removed by undo.
+
+
+## Chat MCP tools
+
+- `propose(proposal)` validates and returns the predicted items, goals and
+  limits without writing.
+- `save(proposal, request_id)` submits the full reviewed proposal through the
+  client permission prompt. The server records the route as chat and uses the
+  computer's aware local time; there is no AI-supplied approval boolean.
+- `undo(target_version, request_id)` reverses the latest local change through
+  the same client approval boundary.
+
+The tools advertise explicit input schemas. Unknown arguments and invalid
+proposals fail without a write. Reuse a request ID only for an identical retry.
+A JSON-RPC notification has no reply ID and is ignored before tool dispatch,
+so it cannot save or undo. Tool annotations describe behavior to the client;
+they do not enforce approval. Always-allow client settings can skip prompts.
+These tools perform no provider delivery yet. Real installed-client approval
+and refusal remain a separate proof from synthetic protocol tests.

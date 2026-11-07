@@ -2,7 +2,7 @@
 
 A free, open source coach for one person's goal. A small engine runs on your computer, reads your health and training apps, and builds numbers you can trust. The AI tool you already use reads those numbers and answers questions.
 
-**Status:** in development. Data imports and read-only questions are available. Plans, approvals and saves are still being built.
+**Status:** in development. Data imports, questions and local plan/goal/limit preview, save and undo tools are available. Sending plans to connected apps is still being built.
 
 ## Not medical advice
 
@@ -56,6 +56,25 @@ codex mcp add tfs -- tfs mcp
 ```
 
 Restart Codex, select the TFS skill with `$tfs`, and ask about your data. If the skill is missing, check the skills folder for your Codex version. If the server cannot start, check that `tfs` is on PATH in the terminal that launches Codex.
+
+## Plan changes in chat
+
+Ask for a plan or a change. The coach reads your current plan version, calls
+`propose` and shows the exact changes with their reason and sources. Preview
+saves nothing. Approve `save` through your AI client's permission prompt to
+store the proposal. `undo` reverses the latest local change after approval.
+
+Keep `save` and `undo` configured to ask for permission. An always-allow setting
+can skip the prompt. TFS records the calling route but does not independently
+prove consent; check the approval/refusal behavior in your installed client.
+The installed AI CLI has your operating-system rights, and the SQL reader is
+not an OS sandbox. A refused change must not be written through another route.
+
+For example, ask: "Set a marathon goal for a future date, limit sessions to
+60 minutes, and propose an easy 6 km run tomorrow." The tools can save that
+local goal, limit and session together. They do not send it to a connected app
+yet. Goal units are explicit; planned targets use metres and seconds when
+writing, while the read views show km and minutes.
 
 ## Contributing
 
