@@ -1,29 +1,16 @@
-import json
-import tempfile
 import unittest
-from pathlib import Path
 
+from tests.helpers import insert_file, insert_measurement, open_database
 from tfs.importer.session import rebuild_pending
-from tfs.persistence.migrations import migrate
-from tfs.persistence.sqlite import connect
 from tfs.source_priority.daily_totals import rebuild
 
-FILE_SHA256 = "0" * 64
 DAY = "2026-10-01"
 
 
 class DailyLatestTest(unittest.TestCase):
     def setUp(self) -> None:
-        folder = tempfile.TemporaryDirectory()
-        self.addCleanup(folder.cleanup)
-        self.conn = connect(Path(folder.name) / "tfs.db")
-        self.addCleanup(self.conn.close)
-        migrate(self.conn)
-        self.conn.execute(
-            "INSERT INTO files (sha256, arrival_seq, connector, format, ext, size_bytes,"
-            " received_at) VALUES (?, 1, 'hevy', 'json', 'json', 1, '2026-10-01T00:00:00Z')",
-            (FILE_SHA256,),
-        )
+        self.conn = open_database(self)
+        insert_file(self.conn, 1, "2026-10-01T00:00:00Z")
 
     def add(
         self,
@@ -33,32 +20,13 @@ class DailyLatestTest(unittest.TestCase):
         value: float,
         *,
         connector: str = "apple_health",
-        origin_app: str | None = None,
-        origin_device: str | None = None,
         local_date: str = DAY,
-        deleted_at: str | None = None,
+        **fields,
     ) -> None:
         unit = {"weight": "kg", "resting_hr": "bpm"}[metric]
-        self.conn.execute(
-            "INSERT INTO source_records (id, connector, stream, key, kind, revision_at,"
-            " arrival_seq, file_sha256, reader_version, start_utc, local_date, metric,"
-            " values_json, origin_app, origin_device, deleted_at)"
-            " VALUES (?, ?, ?, ?, 'measurement', '2026-10-01T00:00:00.000Z', 1, ?, 'r1', ?, ?, ?,"
-            " ?, ?, ?, ?)",
-            (
-                key,
-                connector,
-                metric,
-                key,
-                FILE_SHA256,
-                start_utc,
-                local_date,
-                metric,
-                json.dumps({"value": value, "unit": unit}),
-                origin_app,
-                origin_device,
-                deleted_at,
-            ),
+        values = {"value": value, "unit": unit}
+        insert_measurement(
+            self.conn, key, connector, metric, start_utc, values, local_date=local_date, **fields
         )
 
     def facts(self) -> list[tuple]:

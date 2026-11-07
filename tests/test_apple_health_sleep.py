@@ -1,8 +1,7 @@
-import json
-import tempfile
 import unittest
 from pathlib import Path
 
+from tests.helpers import read_records
 from tfs.connectors.apple_health.connector import read
 
 SAMPLE = Path(__file__).parent / "fixtures" / "apple_health" / "sample_export.xml"
@@ -11,12 +10,7 @@ SLEEP_TYPE = "HKCategoryTypeIdentifierSleepAnalysis"
 
 class AppleHealthSleepTest(unittest.TestCase):
     def setUp(self) -> None:
-        folder = tempfile.TemporaryDirectory()
-        self.addCleanup(folder.cleanup)
-        out_path = Path(folder.name) / "records.jsonl"
-        read(str(SAMPLE), "file", str(out_path))
-        lines = out_path.read_text(encoding="utf-8").splitlines()
-        records = [json.loads(line) for line in lines]
+        _, records = read_records(self, read, SAMPLE, "file")
         self.sleep = [record for record in records if record.get("metric") == "sleep_asleep"]
 
     def _segment(self, start: str) -> dict:

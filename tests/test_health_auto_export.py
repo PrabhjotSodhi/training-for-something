@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from typing import ClassVar
 
+from tests.helpers import read_records
 from tfs.connectors.health_auto_export.connector import read
 from tfs.connectors.testing.contract_checks import ConnectorContract
 
@@ -24,10 +25,7 @@ class HealthAutoExportReadTest(unittest.TestCase):
     def _read_body(self, body: str) -> tuple[dict, list[dict]]:
         path = self.folder / "payload.json"
         path.write_text(body, encoding="utf-8")
-        out_path = self.folder / "records.jsonl"
-        result = read(str(path), "rest_json", str(out_path))
-        lines = out_path.read_text(encoding="utf-8").splitlines()
-        return result, [json.loads(line) for line in lines]
+        return read_records(self, read, path, "rest_json")
 
     def _read_fixture(self) -> tuple[dict, dict[str, dict]]:
         result, records = self._read_body(FIXTURE_PATH.read_text(encoding="utf-8"))

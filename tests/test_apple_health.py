@@ -1,10 +1,10 @@
-import json
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
 from typing import ClassVar
 
+from tests.helpers import read_records
 from tfs.connectors.apple_health.connector import read
 from tfs.connectors.testing.contract_checks import ConnectorContract
 
@@ -32,10 +32,7 @@ class AppleHealthReadTest(unittest.TestCase):
         self.folder = Path(folder.name)
 
     def _read(self, path: Path) -> tuple[dict, list[dict]]:
-        out_path = self.folder / "records.jsonl"
-        result = read(str(path), "file", str(out_path))
-        lines = out_path.read_text(encoding="utf-8").splitlines()
-        return result, [json.loads(line) for line in lines]
+        return read_records(self, read, path, "file")
 
     def _export_with(self, extra_records: str) -> Path:
         text = SAMPLE.read_text(encoding="utf-8").replace(

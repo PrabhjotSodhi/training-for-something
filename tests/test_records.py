@@ -1,12 +1,8 @@
 import json
-import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta, tzinfo
-from pathlib import Path
 
-from tfs.importer.records import store
-from tfs.persistence.migrations import migrate
-from tfs.persistence.sqlite import connect
+from tests.helpers import open_database, store_file
 
 RECEIVED_AT = {
     1: "2026-10-01T08:00:00Z",
@@ -74,32 +70,11 @@ def changed(rec, **fields):
 
 class StoreTest(unittest.TestCase):
     def setUp(self):
-        self.conn = self.open_database()
-
-    def open_database(self):
-        folder = tempfile.TemporaryDirectory()
-        self.addCleanup(folder.cleanup)
-        conn = connect(Path(folder.name) / "tfs.db", "import")
-        self.addCleanup(conn.close)
-        migrate(conn)
-        for seq, received_at in RECEIVED_AT.items():
-            conn.execute(
-                "INSERT INTO files (sha256, arrival_seq, connector, format, ext, size_bytes,"
-                " received_at) VALUES (?, ?, 'testapp', 'json', 'json', 1, ?)",
-                (f"{seq:064x}", seq, received_at),
-            )
-        return conn
+        self.conn = open_database(self, "import")
 
     def store(self, records, arrival=1, conn=None, reader_version="r1", **options):
-        return store(
-            conn or self.conn,
-            connector="testapp",
-            file_sha256=f"{arrival:064x}",
-            arrival_seq=arrival,
-            received_at=RECEIVED_AT[arrival],
-            reader_version=reader_version,
-            records=records,
-            **options,
+        return store_file(
+            conn or self.conn, records, arrival, RECEIVED_AT[arrival], reader_version, **options
         )
 
     def rows(self, conn=None):
@@ -134,7 +109,7 @@ class StoreTest(unittest.TestCase):
             (changed(SESSION, label="C"), 3),
         ]
         for order in (versions, versions[::-1]):
-            conn = self.open_database()
+            conn = open_database(self, "import")
             for rec, arrival in order:
                 self.store([rec], arrival=arrival, conn=conn)
             (row,) = self.rows(conn)
@@ -144,7 +119,7 @@ class StoreTest(unittest.TestCase):
                     ("C", "2026-10-02T11:00:00.000Z", 3),
                 )
 
-        conn = self.open_database()
+        conn = open_database(self, "import")
         self.store([versions[0][0]], arrival=1, conn=conn)
         lower = self.store([versions[1][0]], arrival=2, conn=conn)
         self.assertEqual(lower.unchanged, 1)
