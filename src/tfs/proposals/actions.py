@@ -1,4 +1,4 @@
-"""Validate the supported session actions and calculate their resulting plan."""
+"""Validate supported proposal actions and calculate their resulting user state."""
 
 import copy
 import json
@@ -8,7 +8,7 @@ from datetime import date
 from urllib.parse import urlsplit
 
 from tfs.connectors.core.contract import FAMILIES
-from tfs.proposals import journal
+from tfs.proposals import journal, targets
 
 FIELDS = {
     "add_session": ({"action", "item", "date", "family", "label", "parts"}, {"goal_ids"}),
@@ -16,6 +16,8 @@ FIELDS = {
     "change_session": ({"action", "item"}, {"label", "parts"}),
     "remove_session": ({"action", "item"}, set()),
     "mark_done": ({"action", "item"}, set()),
+    "set_goal": ({"action", "item", "type", "date", "target"}, set()),
+    "set_limit": ({"action", "item", "kind", "values"}, set()),
 }
 PART_FIELDS = {"part_kind", "label", "duration_s", "distance_m", "reps", "weight_kg", "avg_hr"}
 
@@ -101,7 +103,7 @@ def _proposal(conn: sqlite3.Connection, proposal: dict) -> None:
         raise ValueError("A proposal needs at least one action.")
 
 
-def _add(conn: sqlite3.Connection, action: dict, today: date) -> dict:
+def _add(conn: sqlite3.Connection, action: dict, today: date, pending_goals: dict) -> dict:
     if action["family"] not in FAMILIES:
         raise ValueError("Unknown sport family.")
     _text(action["label"])
@@ -111,7 +113,10 @@ def _add(conn: sqlite3.Connection, action: dict, today: date) -> dict:
         raise ValueError("goal_ids must be a list.")
     for goal in goals:
         _text(goal)
-        if conn.execute("SELECT 1 FROM goals WHERE id = ?", (goal,)).fetchone() is None:
+        if (
+            goal not in pending_goals
+            and conn.execute("SELECT 1 FROM goals WHERE id = ?", (goal,)).fetchone() is None
+        ):
             raise ValueError("Unknown goal.")
     return {
         "id": action["item"],
@@ -145,10 +150,26 @@ def _edit(state: dict | None, action: dict, today: date) -> None:
         state["status"] = "removed" if name == "remove_session" else "done"
 
 
+def _session(
+    conn: sqlite3.Connection, action: dict, today: date, before: dict, after: dict
+) -> None:
+    item = action["item"]
+    if item not in before["items"]:
+        before["items"][item] = _load(conn, item)
+        after["items"][item] = copy.deepcopy(before["items"][item])
+    if action["action"] == "add_session":
+        if after["items"][item] is not None:
+            raise ValueError("This plan item already exists.")
+        after["items"][item] = _add(conn, action, today, after["goals"])
+    else:
+        _edit(after["items"][item], action, today)
+
+
 def prepare(conn: sqlite3.Connection, proposal: dict, today: date) -> tuple[dict, dict]:
-    """Validate a batch in order, returning original and resulting item states."""
+    """Validate a batch in order, returning original and resulting user states."""
     _proposal(conn, proposal)
-    before, after = {}, {}
+    before = {"items": {}, "goals": {}, "limits": {}}
+    after = copy.deepcopy(before)
     for action in proposal["actions"]:
         if not isinstance(action, dict) or not isinstance(action.get("action"), str):
             raise ValueError("Each action needs a known action name.")
@@ -158,36 +179,24 @@ def prepare(conn: sqlite3.Connection, proposal: dict, today: date) -> tuple[dict
         _fields(action, *FIELDS[name])
         item = action["item"]
         _text(item)
-        if item not in before:
-            before[item] = _load(conn, item)
-            after[item] = copy.deepcopy(before[item])
-        if name == "add_session":
-            if after[item] is not None:
-                raise ValueError("This plan item already exists.")
-            after[item] = _add(conn, action, today)
+        if name in ("set_goal", "set_limit"):
+            table = "goals" if name == "set_goal" else "limits"
+            if item not in before[table]:
+                before[table][item] = targets.load(conn, table, item)
+            after[table][item] = targets.validate(action, today)
         else:
-            _edit(after[item], action, today)
-        after[item]["why"] = proposal["why"]
-        after[item]["sources"] = copy.deepcopy(proposal["sources"])
-    for state in after.values():
+            _session(conn, action, today, before, after)
+            after["items"][item]["why"] = proposal["why"]
+            after["items"][item]["sources"] = copy.deepcopy(proposal["sources"])
+    for state in after["items"].values():
         state["version"] += 1
         state["plan_version"] = proposal["plan_version"] + 1
     return before, after
 
 
-def prepare_undo(conn: sqlite3.Connection, target: int) -> tuple[dict, dict]:
-    """Restore the latest local change without overwriting later saved choices."""
-    if type(target) is not int or target < 1 or target != journal.version(conn):
-        raise ValueError("The undo is stale. Read the current plan again.")
-    row = conn.execute("SELECT * FROM journal WHERE version = ?", (target,)).fetchone()
-    original = json.loads(row["proposal_json"])
-    supported = set(original) == {"undo_version"} or (
-        "actions" in original and all(action["action"] in FIELDS for action in original["actions"])
-    )
-    if row["format_version"] != 1 or not supported:
-        raise ValueError("This saved operation does not support local undo.")
+def _undo_items(conn: sqlite3.Connection, prior_items: dict, target: int) -> tuple[dict, dict]:
     before, after = {}, {}
-    for item, prior in json.loads(row["before_json"]).items():
+    for item, prior in prior_items.items():
         current = _load(conn, item)
         if current is None or current["status"] in ("sent", "unknown"):
             raise ValueError("This item needs delivery reconciliation before undo.")
@@ -200,4 +209,26 @@ def prepare_undo(conn: sqlite3.Connection, target: int) -> tuple[dict, dict]:
         restored["version"] = current["version"] + 1
         restored["plan_version"] = target + 1
         after[item] = restored
+    return before, after
+
+
+def prepare_undo(conn: sqlite3.Connection, target: int) -> tuple[dict, dict]:
+    """Restore the latest local change without overwriting later saved choices."""
+    if type(target) is not int or target < 1 or target != journal.version(conn):
+        raise ValueError("The undo is stale. Read the current plan again.")
+    row = conn.execute("SELECT * FROM journal WHERE version = ?", (target,)).fetchone()
+    original = json.loads(row["proposal_json"])
+    allowed = FIELDS.keys() - ({"set_goal", "set_limit"} if row["format_version"] == 1 else set())
+    supported = set(original) == {"undo_version"} or (
+        "actions" in original and all(action["action"] in allowed for action in original["actions"])
+    )
+    if row["format_version"] not in (1, 2) or not supported:
+        raise ValueError("This saved operation does not support local undo.")
+    prior = json.loads(row["before_json"])
+    if row["format_version"] == 1:
+        prior = {"items": prior, "goals": {}, "limits": {}}
+    before, after = {}, copy.deepcopy(prior)
+    before["items"], after["items"] = _undo_items(conn, prior["items"], target)
+    for table in ("goals", "limits"):
+        before[table] = {item: targets.load(conn, table, item) for item in prior[table]}
     return before, after

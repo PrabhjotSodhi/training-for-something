@@ -74,7 +74,9 @@ class ProposalsTest(unittest.TestCase):
             ("2026-11-09", "Easy push", 1, 1, "saved"),
         )
         row = self.conn.execute("SELECT * FROM journal").fetchone()
-        self.assertEqual(json.loads(row["before_json"]), {"p1": None})
+        self.assertEqual(
+            json.loads(row["before_json"]), {"items": {"p1": None}, "goals": {}, "limits": {}}
+        )
         self.assertEqual(row["saved_at"], "2026-11-06T23:00:00Z")
 
     def test_invalid_later_action_and_unknown_fields_save_nothing(self) -> None:
@@ -176,7 +178,7 @@ class ProposalsTest(unittest.TestCase):
             [("r1", None, 12, None, None), (None, "p1", 8, 30.0, '{"zone":2}')],
         )
         row = self.conn.execute("SELECT before_json FROM journal WHERE version=2").fetchone()
-        self.assertEqual(json.loads(row[0])["p1"]["local_date"], "2026-11-08")
+        self.assertEqual(json.loads(row[0])["items"]["p1"]["local_date"], "2026-11-08")
 
     def test_approval_route_and_aware_time_are_required(self) -> None:
         for route, now in [("automatic", NOW), ("chat", NOW.replace(tzinfo=None))]:
@@ -249,8 +251,8 @@ class ProposalsTest(unittest.TestCase):
         inverse_before = json.loads(
             self.conn.execute("SELECT before_json FROM journal WHERE version=3").fetchone()[0]
         )
-        self.assertEqual(inverse_before["p1"]["label"], "Changed")
-        self.assertEqual(inverse_before["p1"]["parts"][0]["weight_kg"], 40)
+        self.assertEqual(inverse_before["items"]["p1"]["label"], "Changed")
+        self.assertEqual(inverse_before["items"]["p1"]["parts"][0]["weight_kg"], 40)
 
     def test_undo_completion_and_removal_and_refuse_stale(self) -> None:
         self.save(proposal(ADD, {**ADD, "item": "p2"}))
@@ -294,3 +296,184 @@ class ProposalsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "does not support"):
             self.undo(1)
         self.assertEqual(self.counts(), (1, 0, 0))
+
+    def test_goal_limit_and_session_save_and_undo_together(self) -> None:
+        goal = {
+            "action": "set_goal",
+            "item": "p1",
+            "type": "marathon",
+            "date": "2027-04-01",
+            "target": {"description": "Finish comfortably", "value": 14400, "unit": "s"},
+        }
+        limit = {
+            "action": "set_limit",
+            "item": "p1",
+            "kind": "max_session_length",
+            "values": {"minutes": 60},
+        }
+        value = proposal(goal, limit, {**ADD, "goal_ids": ["p1"]})
+        planned = preview(self.path, value, now=NOW)
+        self.assertEqual(planned["goals"][0]["target"], goal["target"])
+        self.assertEqual(planned["limits"][0]["values"], {"minutes": 60})
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM goals").fetchone()[0], 0)
+        self.assertEqual(self.save(value)["plan_version"], 1)
+        self.assertEqual(self.save(value)["plan_version"], 1)
+        self.assertEqual(
+            json.loads(self.conn.execute("SELECT goal_ids_json FROM plan_items").fetchone()[0]),
+            ["p1"],
+        )
+        self.assertEqual(
+            tuple(self.conn.execute("SELECT type, local_date, target_json FROM goals").fetchone()),
+            (
+                "marathon",
+                "2027-04-01",
+                '{"description":"Finish comfortably","unit":"s","value":14400}',
+            ),
+        )
+        self.assertEqual(self.conn.execute("SELECT format_version FROM journal").fetchone()[0], 2)
+        self.undo(1)
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM goals").fetchone()[0], 0)
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM limits").fetchone()[0], 0)
+        self.assertEqual(
+            self.conn.execute("SELECT status FROM plan_items").fetchone()[0], "removed"
+        )
+        self.undo(2, "redo")
+        self.assertEqual(
+            json.loads(self.conn.execute("SELECT target_json FROM goals").fetchone()[0]),
+            goal["target"],
+        )
+        self.assertEqual(
+            json.loads(self.conn.execute("SELECT values_json FROM limits").fetchone()[0]),
+            {"minutes": 60},
+        )
+        self.assertEqual(self.conn.execute("SELECT status FROM plan_items").fetchone()[0], "saved")
+
+    def test_edit_goal_and_limit_then_restore_exact_previous_values(self) -> None:
+        goal = {
+            "action": "set_goal",
+            "item": "g1",
+            "type": "custom",
+            "date": "2027-04-01",
+            "target": {"description": "Complete a trail event"},
+        }
+        limit = {
+            "action": "set_limit",
+            "item": "l1",
+            "kind": "injury",
+            "values": {"description": "User reports sore ankle"},
+        }
+        self.save(proposal(goal, limit))
+        self.save(
+            proposal(
+                {**goal, "date": "2027-05-01", "target": {"description": "Walk the event"}},
+                {**limit, "kind": "unavailable_day", "values": {"date": "2026-11-10"}},
+                version=1,
+            ),
+            "edit",
+        )
+        self.undo(2)
+        self.assertEqual(
+            tuple(self.conn.execute("SELECT type, local_date, target_json FROM goals").fetchone()),
+            ("custom", "2027-04-01", '{"description":"Complete a trail event"}'),
+        )
+        self.assertEqual(
+            tuple(self.conn.execute("SELECT kind, values_json FROM limits").fetchone()),
+            ("injury", '{"description":"User reports sore ankle"}'),
+        )
+
+    def test_malformed_goals_limits_and_forward_reference_save_nothing(self) -> None:
+        goal = {
+            "action": "set_goal",
+            "item": "g1",
+            "type": "custom",
+            "date": "2027-04-01",
+            "target": {"description": "A goal"},
+        }
+        limit = {
+            "action": "set_limit",
+            "item": "l1",
+            "kind": "max_session_length",
+            "values": {"minutes": 60},
+        }
+        bad = [
+            {**goal, "type": "unknown"},
+            {**goal, "date": "2026-11-07"},
+            {**goal, "target": {"description": "Goal", "value": 5}},
+            {**goal, "target": {"description": "Goal", "value": True, "unit": "s"}},
+            {**goal, "target": {"description": "Goal", "dose": 5}},
+            {**limit, "kind": "unknown"},
+            {**limit, "values": {"minutes": 0}},
+            {**limit, "values": {"minutes": float("inf")}},
+            {**limit, "kind": "injury", "values": {"description": 0}},
+            {**limit, "kind": "unavailable_day", "values": {"date": "2026-11-06"}},
+        ]
+        for action in bad:
+            with self.subTest(action=action), self.assertRaises(ValueError):
+                self.save(proposal(goal, action))
+            self.assertEqual(self.counts(), (0, 0, 0))
+            self.assertEqual(self.conn.execute("SELECT count(*) FROM goals").fetchone()[0], 0)
+            self.assertEqual(self.conn.execute("SELECT count(*) FROM limits").fetchone()[0], 0)
+        with self.assertRaisesRegex(ValueError, "Unknown goal"):
+            self.save(proposal({**ADD, "goal_ids": ["g1"]}, goal))
+
+    def test_limit_only_save_invalidates_proposal_and_mixed_failure_rolls_back(self) -> None:
+        self.save(proposal(ADD))
+        old = proposal({"action": "move_session", "item": "p1", "to": "2026-11-10"}, version=1)
+        preview(self.path, old, now=NOW)
+        self.save(
+            proposal(
+                {
+                    "action": "set_limit",
+                    "item": "l1",
+                    "kind": "max_session_length",
+                    "values": {"minutes": 30},
+                },
+                version=1,
+            ),
+            "limit",
+        )
+        with self.assertRaisesRegex(ValueError, "stale"):
+            self.save(old, "old")
+        self.conn.executescript(
+            "CREATE TRIGGER fail_plan BEFORE UPDATE ON plan_items BEGIN SELECT RAISE(ABORT, 'invented failure'); END;"
+        )
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "invented failure"):
+            self.save(
+                proposal(
+                    {
+                        "action": "set_goal",
+                        "item": "g1",
+                        "type": "custom",
+                        "date": "2027-01-01",
+                        "target": {"description": "Goal"},
+                    },
+                    {"action": "move_session", "item": "p1", "to": "2026-11-10"},
+                    version=2,
+                ),
+                "failure",
+            )
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM goals").fetchone()[0], 0)
+        self.assertEqual(self.counts(), (2, 1, 1))
+        self.assertEqual(
+            self.conn.execute("SELECT local_date FROM plan_items").fetchone()[0], "2026-11-08"
+        )
+
+    def test_old_format_one_journal_remains_undoable_and_unchanged(self) -> None:
+        self.conn.execute(
+            "INSERT INTO journal(request_id, proposal_json, before_json, approved_by, saved_at) VALUES ('old', ?, ?, 'chat', '2026-11-07T00:00:00Z')",
+            (json.dumps(proposal(ADD)), '{"p1":null}'),
+        )
+        self.conn.execute(
+            "INSERT INTO plan_items(id, version, plan_version, local_date, family, label, why) VALUES ('p1', 1, 1, '2026-11-08', 'strength', 'Push', 'Goal')"
+        )
+        old = tuple(self.conn.execute("SELECT * FROM journal").fetchone())
+        self.undo(1)
+        self.assertEqual(
+            tuple(self.conn.execute("SELECT * FROM journal WHERE version=1").fetchone()), old
+        )
+        self.assertEqual(
+            self.conn.execute("SELECT status FROM plan_items").fetchone()[0], "removed"
+        )
+        self.assertEqual(
+            self.conn.execute("SELECT format_version FROM journal WHERE version=2").fetchone()[0], 2
+        )

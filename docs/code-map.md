@@ -54,7 +54,8 @@ training-for-something/
       claude_code.py          one file per AI tool
       codex.py
     proposals/
-      actions.py              the 14 proposal actions, one function each
+      actions.py              validates proposals and calculates resulting state
+      targets.py              validates and stores goals and training limits
       apply.py                validates a proposal, applies it, undoes it
       journal.py              the append-only journal
     scheduling/
