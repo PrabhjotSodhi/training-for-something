@@ -3,7 +3,7 @@
 import sqlite3
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 
 ROLES = ("default", "import", "save", "read_only")
@@ -65,3 +65,33 @@ def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
         if conn.in_transaction:
             conn.execute("ROLLBACK")
         raise
+
+
+@contextmanager
+def save_intent(path: Path) -> Iterator[None]:
+    """Keep imports between batches until this Save finishes or its process exits."""
+    control = Path(str(path.resolve()) + ".save-priority")
+    # An empty rollback-mode file holds locks only, never user data. Do not unlink it:
+    # other processes may still hold its inode open.
+    with closing(sqlite3.connect(control, isolation_level=None, timeout=5)) as conn:
+        conn.execute("BEGIN")
+        conn.execute("SELECT name FROM sqlite_schema").fetchall()
+        yield
+
+
+def wait_for_saves(conn: sqlite3.Connection) -> None:
+    """Yield before an import transaction while another process announces a Save."""
+    path = next(row[2] for row in conn.execute("PRAGMA database_list") if row[1] == "main")
+    if not path:
+        return
+    control = Path(str(Path(path).resolve()) + ".save-priority")
+    with closing(sqlite3.connect(control, isolation_level=None, timeout=0)) as probe:
+        while True:
+            try:
+                probe.execute("BEGIN EXCLUSIVE")
+                probe.rollback()
+                return
+            except sqlite3.OperationalError as error:
+                if error.sqlite_errorcode != sqlite3.SQLITE_BUSY:
+                    raise
+                time.sleep(0.005)

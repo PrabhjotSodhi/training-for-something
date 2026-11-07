@@ -20,7 +20,7 @@ from tfs.connectors.core.contract import load_manifest, load_manifests
 from tfs.duplicates import workouts
 from tfs.importer import records
 from tfs.importer.raw_store import FileConflictError, SavedFile, save_raw
-from tfs.persistence.sqlite import transaction
+from tfs.persistence.sqlite import transaction, wait_for_saves
 from tfs.source_priority import daily_totals
 
 logger = logging.getLogger(__name__)
@@ -316,6 +316,7 @@ def rebuild_pending(conn: sqlite3.Connection, *, tz: tzinfo | None = None) -> in
     ).fetchall()
     rebuilt = 0
     for (month,) in months:
+        wait_for_saves(conn)
         with transaction(conn):
             dates = conn.execute(
                 "SELECT local_date FROM rebuild_dates WHERE substr(local_date, 1, 7) = ?", (month,)

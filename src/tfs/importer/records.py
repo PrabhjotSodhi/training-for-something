@@ -15,7 +15,7 @@ from tfs.connectors.core.contract import (
     to_revision_text,
     validate_record,
 )
-from tfs.persistence.sqlite import transaction
+from tfs.persistence.sqlite import transaction, wait_for_saves
 
 REASON_LENGTH = 60
 
@@ -105,6 +105,7 @@ def store(
     for batch in batched(records, batch_size):
         if before_batch is not None:
             before_batch()
+        wait_for_saves(conn)
         with transaction(conn):
             changed_dates: set[str] = set()
             for rec in batch:
