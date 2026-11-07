@@ -3,6 +3,7 @@
 import json
 import sqlite3
 import time
+from contextlib import closing
 from importlib import resources
 from pathlib import Path
 from typing import Any
@@ -58,10 +59,8 @@ MAX_SECONDS = 2
 PROGRESS_STEPS = 1000
 
 
-# SQLite reports a view's own columns with no fifth argument, and a CTE's name also
-# arrives as the fifth argument. So a CTE named exactly like a view can read a base
-# table, and count(*) works on any table. Both only read, and the AI tool already
-# runs on the person's own computer (HLD section 12).
+# The source authorizer permits view dependencies. query() first prepares the
+# exact SQL against a coach-only schema, so a same-name CTE cannot name raw tables.
 def _authorize(
     action: int, arg1: str | None, arg2: str | None, db: str | None, source: str | None
 ) -> int:
@@ -99,11 +98,50 @@ def describe(conn: sqlite3.Connection) -> dict[str, Any]:
         conn.set_authorizer(_authorize)
 
 
+def _preflight(conn: sqlite3.Connection, sql: str, deadline: float) -> None:
+    """Let SQLite resolve user SQL without any raw tables in its namespace."""
+    columns = {name: info["columns"] for name, info in describe(conn).items()}
+    with closing(sqlite.connect(Path(":memory:"))) as check:
+        for name, fields in columns.items():
+            names = ", ".join('"' + field.replace('"', '""') + '"' for field in fields)
+            check.execute(f'CREATE TEMP TABLE "{name}" ({names})')
+
+        def authorize(action, table, column, db, source):
+            if action in (sqlite3.SQLITE_SELECT, sqlite3.SQLITE_RECURSIVE):
+                return sqlite3.SQLITE_OK
+            if action == sqlite3.SQLITE_FUNCTION and (column or "").lower() != "load_extension":
+                return sqlite3.SQLITE_OK
+            # An empty-schema CTE count has no database name or column. Raw
+            # tables cannot resolve here; SQLite's own schema remains forbidden.
+            if (
+                action == sqlite3.SQLITE_READ
+                and db is None
+                and not column
+                and not table.lower().startswith("sqlite_")
+            ):
+                return sqlite3.SQLITE_OK
+            if (
+                action == sqlite3.SQLITE_READ
+                and table in columns
+                and db in ("temp", None)
+                and (not column or column in columns[table])
+            ):
+                return sqlite3.SQLITE_OK
+            return sqlite3.SQLITE_DENY
+
+        check.set_authorizer(authorize)
+        check.set_progress_handler(lambda: time.monotonic() > deadline, PROGRESS_STEPS)
+        check.execute("EXPLAIN " + sql)
+
+
 def query(conn: sqlite3.Connection, sql: str) -> dict[str, Any]:
     """Run one SELECT within the row, byte and time limits, or return an error."""
     deadline = time.monotonic() + MAX_SECONDS
     conn.set_progress_handler(lambda: time.monotonic() > deadline, PROGRESS_STEPS)
     try:
+        _preflight(conn, sql, deadline)
+        if time.monotonic() > deadline:
+            return {"error": f"The query ran longer than {MAX_SECONDS} seconds."}
         cursor = conn.execute(sql)
         columns = [column[0] for column in cursor.description or []]
         rows: list[list[Any]] = []
@@ -128,7 +166,9 @@ def query(conn: sqlite3.Connection, sql: str) -> dict[str, Any]:
         return {"error": "A result held binary data, which cannot be shown."}
     except sqlite3.Error as error:
         code = getattr(error, "sqlite_errorcode", None)
-        if code == sqlite3.SQLITE_AUTH:
+        if code == sqlite3.SQLITE_AUTH or str(error).startswith(
+            ("no such table:", "not authorized")
+        ):
             return {"error": "Only coach_v1 views can be read."}
         if code == sqlite3.SQLITE_INTERRUPT:
             return {"error": f"The query ran longer than {MAX_SECONDS} seconds."}

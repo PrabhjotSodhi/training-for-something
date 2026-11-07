@@ -378,11 +378,43 @@ class ToolAccessTest(unittest.TestCase):
         )
         cte = "WITH t AS (SELECT sum(value) AS total FROM coach_v1_day_facts) SELECT total FROM t"
         self.assertEqual(query(self.reader, cte)["rows"], [[600000.0]])
+        self.assertEqual(
+            query(self.reader, "SELECT count(*) FROM temp.coach_v1_day_facts")["rows"], [[600]]
+        )
+        self.assertEqual(
+            query(self.reader, "SELECT 'training with friends'")["rows"],
+            [["training with friends"]],
+        )
+        self.assertEqual(
+            query(
+                self.reader,
+                "WITH coach_v1_day_facts AS (SELECT metric FROM temp.coach_v1_day_facts) SELECT count(*) FROM coach_v1_day_facts",
+            )["rows"],
+            [[600]],
+        )
+        self.assertEqual(
+            query(
+                self.reader,
+                "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<3) SELECT sum(x) FROM n",
+            )["rows"],
+            [[6]],
+        )
 
     def test_everything_else_is_refused(self) -> None:
         views_only = {"error": "Only coach_v1 views can be read."}
         refused = {
             "SELECT * FROM day_facts": views_only,
+            "SELECT count(*) FROM day_facts": views_only,
+            "SELECT count(*) FROM main.journal": views_only,
+            "SELECT * FROM main.source_records": views_only,
+            "SELECT count(*) FROM sqlite_temp_master": views_only,
+            "SELECT count(*) FROM SQLITE_MASTER": views_only,
+            "SELECT * FROM pragma_table_info('source_records')": views_only,
+            "SELECT rowid FROM coach_v1_workouts": views_only,
+            "SELECT load_extension('unavailable')": views_only,
+            "WITH coach_v1_day_facts AS (SELECT * FROM day_facts) SELECT * FROM coach_v1_day_facts": views_only,
+            "WITH coach_v1_workouts AS (SELECT values_json, deleted_at FROM source_records) SELECT values_json FROM coach_v1_workouts WHERE deleted_at IS NOT NULL": views_only,
+            "WITH outer_cte AS (WITH coach_v1_sources AS (SELECT proposal_json FROM journal) SELECT * FROM coach_v1_sources) SELECT * FROM outer_cte": views_only,
             "SELECT * FROM sqlite_master": views_only,
             "WITH x AS (SELECT * FROM day_facts) SELECT * FROM x": views_only,
             "INSERT INTO day_facts (local_date, metric, value, unit, source, coverage,"
