@@ -47,3 +47,21 @@ Building a whole plan is a proposal made of many `add_session` actions and a `se
 5. **The missed-session rule** may only propose `move_session`, `change_session`, `remove_session` and `add_session`, within the current week.
 
 Later candidates, added only when a need appears: `log_note` (a free note on a day) and `set_preference` (such as "I prefer morning runs").
+
+## Stored journal and versions
+
+The journal's increasing integer `version` is the shared saved-state version.
+Before the first save it is zero. A change to goals or limits advances it too,
+so a proposal cannot use an outdated constraint. Each save records its proposal,
+before-state, approval route (`chat` or `screen`), UTC time and format version.
+Journal rows cannot be updated or deleted.
+
+A save has a unique `request_id`. Retrying the same request and content returns
+its original receipt; reusing the ID for different content is an error. The
+application performs this comparison and validates the proposal again inside
+the write transaction. The database enforces request uniqueness. These fields
+record the client's approval route; they do not independently prove consent.
+
+Goals store a type, target date and target JSON; limits store a kind and values
+JSON. Their action handlers validate the allowed fields and units. Storage alone
+does not make a Save tool available.

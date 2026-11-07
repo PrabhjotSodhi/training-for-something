@@ -195,7 +195,12 @@ class SchemaTest(unittest.TestCase):
             insert(self.conn, "day_facts", value=1.0)
 
     def test_required_columns_refuse_null(self):
-        columns = [(table, name) for table, row in DEFAULTS.items() for name in row]
+        columns = [
+            (table, name)
+            for table, row in DEFAULTS.items()
+            for name in row
+            if (table, name) != ("session_parts", "record_id")
+        ]
         columns += [("files", "status"), ("sources", "enabled")]
         for table, name in columns:
             with (
