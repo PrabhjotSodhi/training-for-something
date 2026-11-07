@@ -42,7 +42,7 @@ def _write(conn: sqlite3.Connection, state: dict, version: int) -> None:
         " :goal_ids_json, :why, :sources_json, :status)"
         " ON CONFLICT(id) DO UPDATE SET version=excluded.version,"
         " plan_version=excluded.plan_version, local_date=excluded.local_date,"
-        " label=excluded.label, why=excluded.why, sources_json=excluded.sources_json,"
+        " start_hint=excluded.start_hint, label=excluded.label, why=excluded.why, sources_json=excluded.sources_json,"
         " status=excluded.status",
         row,
     )

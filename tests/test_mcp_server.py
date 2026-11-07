@@ -216,8 +216,10 @@ class McpServerTest(unittest.TestCase):
     def test_preview_save_retry_query_and_undo(self) -> None:
         make_database(self.folder)
         proposal = self.plan()
+        proposal["actions"][0]["start_hint"] = "07:30"
         preview = self.tool_data("propose", {"proposal": proposal})
         self.assertEqual(preview["items"][0]["label"], "café ✓")
+        self.assertEqual(preview["items"][0]["start_hint"], "07:30")
         self.assertEqual(
             self.tool_data("query", {"sql": "SELECT count(*) FROM coach_v1_plan_items"})["rows"],
             [[0]],
@@ -230,6 +232,10 @@ class McpServerTest(unittest.TestCase):
         self.assertEqual(
             self.tool_data("query", {"sql": "SELECT distance_km FROM coach_v1_plan_parts"})["rows"],
             [[6.001]],
+        )
+        self.assertEqual(
+            self.tool_data("query", {"sql": "SELECT start_hint FROM coach_v1_plan_items"})["rows"],
+            [["07:30"]],
         )
         stale = self.call("save", {"proposal": proposal, "request_id": "s2"})
         self.assertTrue(stale["isError"])

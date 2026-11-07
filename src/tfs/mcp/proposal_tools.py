@@ -10,6 +10,11 @@ from tfs.proposals.targets import GOAL_TYPES
 TEXT = {"type": "string", "minLength": 1}
 NUMBER = {"type": "number", "minimum": 0}
 DAY = {"type": "string", "format": "date"}
+START_HINT = {
+    "type": ["string", "null"],
+    "maxLength": 5,
+    "pattern": r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+}
 
 
 def _object(required: dict, optional: dict | None = None) -> dict:
@@ -41,12 +46,12 @@ ACTIONS = [
     _action(
         "add_session",
         {"date": DAY, "family": {"enum": list(FAMILIES)}, "label": TEXT, "parts": PARTS},
-        {"goal_ids": {"type": "array", "items": TEXT}},
+        {"goal_ids": {"type": "array", "items": TEXT}, "start_hint": START_HINT},
     ),
-    _action("move_session", {"to": DAY}),
+    _action("move_session", {"to": DAY}, {"start_hint": START_HINT}),
     {
-        **_action("change_session", {}, {"label": TEXT, "parts": PARTS}),
-        "anyOf": [{"required": ["label"]}, {"required": ["parts"]}],
+        **_action("change_session", {}, {"label": TEXT, "parts": PARTS, "start_hint": START_HINT}),
+        "anyOf": [{"required": [name]} for name in ("label", "parts", "start_hint")],
     },
     _action("remove_session", {}),
     _action("mark_done", {}),
@@ -108,7 +113,7 @@ def _tool(name: str, description: str, required: dict) -> dict:
 TOOLS = [
     _tool(
         "propose",
-        "Preview a local plan, goal or training-limit proposal without saving. Read coach_v1_plan_state first. Parts use seconds, metres, kg and beats/minute. Dates use the computer's local day. Goal dates must be future. Show the exact changes, reason, sources and delivery apps before requesting Save approval. Copy the returned delivery_targets into the proposal.",
+        "Preview a local plan, goal or training-limit proposal without saving. Read coach_v1_plan_state first. Parts use seconds, metres, kg and beats/minute. Dates use the computer's local day; start_hint is an optional local HH:MM time, or null to clear it. Goal dates must be future. Show the exact changes, reason, sources and delivery apps before requesting Save approval. Copy the returned delivery_targets into the proposal.",
         {"proposal": PROPOSAL},
     ),
     _tool(
