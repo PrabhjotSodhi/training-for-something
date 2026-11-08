@@ -47,7 +47,7 @@ def _run_tool(name: str, arguments: dict[str, Any], db_path: Path) -> dict[str, 
     """Run one tool with a fresh reader so a database made after start is found."""
     if not db_path.exists():
         return {"error": NO_DATA}
-    if name in ("propose", "save", "undo"):
+    if name in ("propose", "save", "preview_undo", "undo"):
         try:
             return proposal_tools.run(name, arguments, db_path)
         except ValueError as error:
@@ -65,7 +65,9 @@ def _call_tool(params: Any, db_path: Path) -> dict[str, Any]:
         or not isinstance(params.get("name"), str)
         or params["name"] not in names
     ):
-        raise _RpcError(-32602, "Unknown tool. Use describe, query, propose, save or undo.")
+        raise _RpcError(
+            -32602, "Unknown tool. Use describe, query, propose, save, preview_undo or undo."
+        )
     name = params["name"]
     arguments = params.get("arguments", {})
     schema = names[name]

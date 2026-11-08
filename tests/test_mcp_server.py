@@ -69,7 +69,7 @@ class McpServerTest(unittest.TestCase):
 
     def test_tools_list_describes_read_and_proposal_tools(self) -> None:
         [reply] = self.talk(request(1, "tools/list"))
-        describe, query, propose, save, undo = reply["result"]["tools"]
+        describe, query, propose, save, preview_undo, undo = reply["result"]["tools"]
         self.assertEqual([propose["name"], save["name"], undo["name"]], ["propose", "save", "undo"])
         actions = propose["inputSchema"]["properties"]["proposal"]["properties"]["actions"][
             "items"
@@ -83,6 +83,9 @@ class McpServerTest(unittest.TestCase):
         self.assertTrue(unlink["properties"]["record_ids"]["uniqueItems"])
 
         self.assertTrue(propose["annotations"]["readOnlyHint"])
+        self.assertEqual(preview_undo["name"], "preview_undo")
+        self.assertTrue(preview_undo["annotations"]["readOnlyHint"])
+        self.assertFalse(preview_undo["annotations"]["destructiveHint"])
         for tool in (save, undo):
             self.assertFalse(tool["annotations"]["readOnlyHint"])
             self.assertTrue(tool["annotations"]["destructiveHint"])
@@ -197,7 +200,7 @@ class McpServerTest(unittest.TestCase):
         self.assertEqual(replies[0]["result"]["serverInfo"]["name"], "tfs")
         self.assertEqual(
             [tool["name"] for tool in replies[1]["result"]["tools"]],
-            ["describe", "query", "propose", "save", "undo"],
+            ["describe", "query", "propose", "save", "preview_undo", "undo"],
         )
         rows = json.loads(replies[2]["result"]["content"][0]["text"])["rows"]
         self.assertEqual(rows, [["café ✓"]])
@@ -247,6 +250,13 @@ class McpServerTest(unittest.TestCase):
         self.assertEqual(
             self.tool_data("query", {"sql": "SELECT start_hint FROM coach_v1_plan_items"})["rows"],
             [["07:30"]],
+        )
+        undone = self.tool_data("preview_undo", {"target_version": 1})
+        self.assertEqual(undone["items"][0]["status"], "removed")
+        self.assertEqual(undone["delivery_targets"], {})
+        self.assertEqual(
+            self.tool_data("query", {"sql": "SELECT status FROM coach_v1_plan_items"})["rows"],
+            [["saved"]],
         )
         stale = self.call("save", {"proposal": proposal, "request_id": "s2"})
         self.assertTrue(stale["isError"])
