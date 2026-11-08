@@ -62,7 +62,11 @@ Restart Codex, select the TFS skill with `$tfs`, and ask about your data. If the
 Ask for a plan or a change. The coach reads your current plan version, calls
 `propose` and shows the exact changes with their reason and sources. Preview
 saves nothing. Approve `save` through your AI client's permission prompt to
-store the proposal. `undo` reverses the latest local change after approval.
+store the proposal. `preview_undo` shows the restored content and affected apps;
+`undo` applies that exact reversal after approval. Existing delivered edits use
+new queued updates, preserving their original receipts. Delivered removal and
+new external copies still need manual reconciliation; provider writes remain
+disabled pending verification.
 
 Keep `save` and `undo` configured to ask for permission. An always-allow setting
 can skip the prompt. TFS records the calling route but does not independently

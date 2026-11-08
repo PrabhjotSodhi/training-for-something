@@ -100,14 +100,14 @@ PROPOSAL = _object(
 )
 
 
-def _tool(name: str, description: str, required: dict) -> dict:
+def _tool(name: str, description: str, required: dict, optional: dict | None = None) -> dict:
     return {
         "name": name,
         "description": description,
-        "inputSchema": _object(required),
+        "inputSchema": _object(required, optional),
         "annotations": {
-            "readOnlyHint": name == "propose",
-            "destructiveHint": name != "propose",
+            "readOnlyHint": name in ("propose", "preview_undo"),
+            "destructiveHint": name not in ("propose", "preview_undo"),
             "idempotentHint": True,
             "openWorldHint": False,
         },
@@ -126,9 +126,15 @@ TOOLS = [
         {"proposal": PROPOSAL, "request_id": TEXT},
     ),
     _tool(
+        "preview_undo",
+        "Preview undo of the latest change without writing. Show restored content and delivery apps before approval. Copy delivery_targets into undo; new or changed remote copies require reconciliation. Delivered removal/completion undo is not supported.",
+        {"target_version": {"type": "integer", "minimum": 1}},
+    ),
+    _tool(
         "undo",
-        "Undo the latest local change at target_version after user approval through the client's permission prompt. Read the current global version first. Later saves make this stale. Reuse request_id for identical retries. This does not reverse provider deliveries.",
+        "Undo the latest local change at target_version after user approval through the client's permission prompt. Read the current global version first. Later saves make this stale. Reuse request_id for identical retries. Existing delivered edits queue new updates only to the previewed apps. Delivered add/remove/completion undo remains unsupported.",
         {"target_version": {"type": "integer", "minimum": 1}, "request_id": TEXT},
+        {"delivery_targets": PROPOSAL["properties"]["delivery_targets"]},
     ),
 ]
 
@@ -138,7 +144,14 @@ def run(name: str, arguments: dict, db_path: Path) -> dict:
     now = datetime.now(UTC).astimezone()
     if name == "propose":
         return apply.preview(db_path, arguments["proposal"], now=now)
+    if name == "preview_undo":
+        return apply.preview_undo(db_path, arguments["target_version"], now=now)
     options = {"request_id": arguments["request_id"], "approved_by": "chat", "now": now}
     if name == "save":
         return apply.save(db_path, arguments["proposal"], **options)
-    return apply.undo(db_path, arguments["target_version"], **options)
+    return apply.undo(
+        db_path,
+        arguments["target_version"],
+        delivery_targets=arguments.get("delivery_targets"),
+        **options,
+    )

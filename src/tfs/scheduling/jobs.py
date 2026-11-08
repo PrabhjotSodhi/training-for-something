@@ -42,6 +42,33 @@ def destinations(conn: sqlite3.Connection, items: dict) -> tuple[dict, dict]:
     return targets, labels
 
 
+def link_snapshot(conn: sqlite3.Connection, items: dict) -> dict:
+    """Record which remote copies exist at the instant a change is saved."""
+    result = {}
+    for item in items:
+        links = dict(
+            conn.execute("SELECT connector,remote_id FROM remote_links WHERE item_id=?", (item,))
+        )
+        if links:
+            result[item] = links
+    return result
+
+
+def undo_destinations(
+    conn: sqlite3.Connection, items: dict, prior_links: dict
+) -> tuple[dict, dict]:
+    """Require the same previously acknowledged copies before approving compensation."""
+    linked = link_snapshot(conn, items)
+    if linked != prior_links:
+        raise ValueError(
+            "This undo needs delivery reconciliation: prior remote copies are not established."
+        )
+    remote_items = {item: items[item] for item in linked}
+    _, labels = destinations(conn, remote_items)
+    targets = {item: sorted(names) for item, names in linked.items()}
+    return targets, {name: labels[name] for names in targets.values() for name in names}
+
+
 def _pending(conn: sqlite3.Connection, items: dict, *, allow_sent: bool = False) -> dict:
     rows = {}
     for item in items:
@@ -89,17 +116,23 @@ def prepare(
     return before, after
 
 
-def restore(conn: sqlite3.Connection, items: dict, prior: dict) -> tuple[dict, dict]:
-    """Undo queue changes using original operation IDs and immutable payloads."""
-    _pending(conn, items)
+def restore(
+    conn: sqlite3.Connection, items: dict, prior: dict, targets: dict, saved_at: str
+) -> tuple[dict, dict]:
+    """Restore unsent jobs locally, or queue fresh updates to existing remote copies."""
+    _pending(conn, {item: state for item, state in items.items() if item not in targets})
     before, after = {}, {}
     for key, state in prior.items():
         row = conn.execute("SELECT * FROM jobs WHERE id = ?", (key,)).fetchone()
         if row is None or row["item_id"] not in items:
             raise ValueError("The saved delivery history is missing or inconsistent.")
-        before[key] = _state(row)
-        after[key] = state or {**before[key], "status": "cancelled"}
-    return before, after
+        if row["item_id"] not in targets:
+            before[key] = _state(row)
+            after[key] = state or {**before[key], "status": "cancelled"}
+    remote_before, remote_after = prepare(
+        conn, {item: items[item] for item in targets}, targets, saved_at
+    )
+    return before | remote_before, after | remote_after
 
 
 def write(conn: sqlite3.Connection, changes: dict, version: int, saved_at: str) -> None:

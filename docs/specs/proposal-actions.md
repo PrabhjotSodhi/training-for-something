@@ -103,10 +103,10 @@ or database failure saves nothing. Repeated matching requests return the
 original receipt. Edits of done, removed or replaced items are refused.
 
 
-## Local undo
+## Undo and its preview
 
-`undo(db_path, target_version, request_id=..., approved_by=..., now=...)`
-reverses the latest local plan, goal or limit save. `target_version` must still be the
+`undo(db_path, target_version, request_id=..., approved_by=..., now=..., delivery_targets=...)`
+reverses the latest supported plan, goal or limit save. `target_version` must still be the
 current journal version. An intervening save makes it stale; selective undo of
 older history is not supported yet.
 
@@ -117,9 +117,10 @@ as its before-state. Earlier journal rows remain unchanged. The same request
 ID and target returns the original receipt; a different target fails. The
 latest undo can itself be undone.
 
-This local API refuses sent or unknown items and unsupported journal operation
-formats. External delivery reversal and client permission prompts are separate
-work. The MCP undo tool uses this same latest-only rule.
+`preview_undo(db_path, target_version, now=...)` returns the exact restored
+content and delivery targets without writes. Undo uses the same latest-only
+rule and refuses unsupported history or unresolved delivery. Existing delivered
+edit support is defined below; it is not a general remote deletion feature.
 
 
 ## Goals, limits and combined history
@@ -161,8 +162,10 @@ undo can be undone, including restoring a goal or limit removed by undo.
 - `save(proposal, request_id)` submits the full reviewed proposal through the
   client permission prompt. The server records the route as chat and uses the
   computer's aware local time; there is no AI-supplied approval boolean.
-- `undo(target_version, request_id)` reverses the latest local change through
-  the same client approval boundary.
+- `preview_undo(target_version)` shows the restored state and affected apps
+  without writing.
+- `undo(target_version, request_id, delivery_targets)` reverses the latest
+  supported change through the same client approval boundary.
 
 The tools advertise explicit input schemas. Unknown arguments and invalid
 proposals fail without a write. Reuse a request ID only for an identical retry.
@@ -203,10 +206,9 @@ remote object without changing that approved content or those destinations.
 Manual mark_done retains confirmed history and cancels pending replacements.
 
 Sending, in-doubt, unknown, conflict and needs-you jobs still block overlapping
-changes. Removing a delivered item and undo involving delivered state remain
-refused until compensation and manual-action handling are implemented. This is
-not remote undo support. Invented delivery tests do not satisfy real-provider
-proof #29.
+changes. Removing a delivered item remains refused pending manual-action
+handling. The bounded delivered-edit undo below uses approved updates; invented
+delivery tests do not satisfy real-provider proof #29.
 
 
 ## Unlink a wrong plan match
@@ -228,3 +230,33 @@ source-ID list. Other changes retain formats 2/3, and older history stays readab
 Latest-only undo/redo restores exclusions in the same transaction and rebuilds
 matches. The global version advances; unlink alone does not change the item's
 payload version. Request-ID retries return the original receipt.
+
+
+## Undoing an existing delivered edit
+
+Before saving a change to a linked item, journal format 5 records an optional
+`delivery_links` before-state map: item ID to connector IDs and their remote IDs.
+This proves which copies existed when the change was saved. A lower job version
+alone is not that proof. Formats 1–4 remain readable and are never rewritten;
+older rows lacking this evidence cannot undo a delivered edit.
+
+For a linked item, both current and restored state must be saved/sent and the
+prior item must exist. Its recorded prior remote copies must exactly match the
+current linked copies. A newly created external copy, changed remote identity,
+delivered add/remove/completion, disabled app or unresolved job requires
+reconciliation. A newly connected app with no link is not an undo destination.
+
+Preview returns restored items/goals/limits, optional match exclusions,
+`delivery_targets` and `delivery_apps`, with no writes. Show that content and
+copy the exact destination map into the approved undo request. Omitting targets
+means no external destinations. The transaction rechecks global version,
+recorded copies, current capabilities and targets. An invalid undo changes
+nothing, and an identical request retry returns its receipt.
+
+For remote items, cancel only pending/not-sent replacements and queue a fresh
+operation with the restored content. Preserve acknowledged jobs and current
+remote links/versions. Never restore historical sent statuses or reuse an old
+remote operation ID. Local-only items keep original-ID unsent undo. Undo records
+its own before-state, so undo-of-undo creates a fresh compensation when needed.
+The existing connector update checks the current provider version before writing.
+No provider delete, new table or automatic conflict resolution is introduced.

@@ -244,13 +244,24 @@ def _undo_items(conn: sqlite3.Connection, prior_items: dict, target: int) -> tup
     before, after = {}, {}
     for item, prior in prior_items.items():
         current = _load(conn, item)
-        if current is None or current["status"] in ("sent", "unknown"):
+        if current is None or current["status"] == "unknown":
             raise ValueError("This item needs delivery reconciliation before undo.")
         before[item] = current
         restored = copy.deepcopy(prior if prior is not None else current)
         if prior is None:
             restored["status"] = "removed"
-        if restored["status"] in ("sent", "unknown"):
+        linked = conn.execute("SELECT 1 FROM remote_links WHERE item_id=?", (item,)).fetchone()
+        if linked:
+            if (
+                prior is None
+                or current["status"] not in ("saved", "sent")
+                or restored["status"] not in ("saved", "sent")
+            ):
+                raise ValueError(
+                    "Delivered removal or completion needs reconciliation before undo."
+                )
+            restored["status"] = "saved"
+        elif current["status"] == "sent" or restored["status"] in ("sent", "unknown"):
             raise ValueError("This item needs delivery reconciliation before undo.")
         restored["version"] = current["version"] + 1
         restored["plan_version"] = target + 1
@@ -265,10 +276,10 @@ def prepare_undo(conn: sqlite3.Connection, target: int) -> tuple[dict, dict]:
     row = conn.execute("SELECT * FROM journal WHERE version = ?", (target,)).fetchone()
     original = json.loads(row["proposal_json"])
     allowed = FIELDS.keys() - ({"set_goal", "set_limit"} if row["format_version"] == 1 else set())
-    supported = set(original) == {"undo_version"} or (
+    supported = ({"undo_version"} <= set(original) <= {"undo_version", "delivery_targets"}) or (
         "actions" in original and all(action["action"] in allowed for action in original["actions"])
     )
-    if row["format_version"] not in (1, 2, 3, 4) or not supported:
+    if row["format_version"] not in (1, 2, 3, 4, 5) or not supported:
         raise ValueError("This saved operation does not support local undo.")
     prior = json.loads(row["before_json"])
     if row["format_version"] == 1:

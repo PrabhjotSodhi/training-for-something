@@ -38,6 +38,12 @@ def append(
     saved_at: str,
 ) -> int:
     """Append a receipt inside the caller's transaction and return its version."""
+    if "delivery_links" in before:
+        format_version = 5
+    elif "exclusions" in before:
+        format_version = 4
+    else:
+        format_version = 3 if "jobs" in before else 2
     return conn.execute(
         "INSERT INTO journal (request_id, proposal_json, before_json, approved_by, saved_at, format_version)"
         " VALUES (?, ?, ?, ?, ?, ?) RETURNING version",
@@ -47,6 +53,6 @@ def append(
             encode(before),
             approved_by,
             saved_at,
-            4 if "exclusions" in before else 3 if "jobs" in before else 2,
+            format_version,
         ),
     ).fetchone()[0]
