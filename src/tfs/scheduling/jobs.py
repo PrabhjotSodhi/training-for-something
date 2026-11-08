@@ -20,22 +20,20 @@ def destinations(conn: sqlite3.Connection, items: dict) -> tuple[dict, dict]:
     enabled = {row[0] for row in conn.execute("SELECT connector FROM sources WHERE enabled = 1")}
     targets = {}
     for item, state in items.items():
-        names = sorted(
+        eligible = {
             name
             for name in enabled
-            if name in manifests
-            and state["family"] in manifests[name]["sends"]
-            and state["status"] in ("saved", "sent")
-        )
-        if state["status"] in ("saved", "sent"):
-            linked = {
-                row[0]
-                for row in conn.execute(
-                    "SELECT connector FROM remote_links WHERE item_id = ?", (item,)
-                )
-            }
-            if linked - set(names):
+            if name in manifests and state["family"] in manifests[name]["sends"]
+        }
+        linked = {
+            row[0]
+            for row in conn.execute("SELECT connector FROM remote_links WHERE item_id=?", (item,))
+        }
+        names = []
+        if state["status"] in ("saved", "sent", "removed"):
+            if linked - eligible:
                 raise ValueError("Reconnect the previously linked app before changing this plan.")
+            names = sorted(linked if state["status"] == "removed" else eligible)
         if names:
             targets[item] = names
     labels = {name: manifests[name]["label"] for names in targets.values() for name in names}
@@ -59,7 +57,11 @@ def undo_destinations(
 ) -> tuple[dict, dict]:
     """Require the same previously acknowledged copies before approving compensation."""
     linked = link_snapshot(conn, items)
-    if linked != prior_links:
+    updating = {item: names for item, names in linked.items() if items[item]["status"] != "removed"}
+    prior_updates = {
+        item: names for item, names in prior_links.items() if items[item]["status"] != "removed"
+    }
+    if updating != prior_updates:
         raise ValueError(
             "This undo needs delivery reconciliation: prior remote copies are not established."
         )
@@ -69,14 +71,61 @@ def undo_destinations(
     return targets, {name: labels[name] for names in targets.values() for name in names}
 
 
+def _resolved_history(conn: sqlite3.Connection, row: sqlite3.Row) -> bool:
+    if row["resolved_by_version"] is not None:
+        return True
+    return (
+        row["status"] == "sent"
+        and conn.execute(
+            "SELECT 1 FROM jobs d WHERE d.item_id=? AND d.connector=?"
+            " AND d.resolved_by_version>? AND d.status='needs_you'"
+            " AND json_extract(d.result_json,'$.manual_action')='delete'"
+            " AND json_extract(d.result_json,'$.remote_id')=json_extract(?,'$.remote_id')",
+            (row["item_id"], row["connector"], row["plan_version"], row["result_json"]),
+        ).fetchone()
+        is not None
+    )
+
+
+def prepare_report(conn: sqlite3.Connection, action: dict) -> dict:
+    """Validate the exact unresolved deletion task and its still-linked remote copy."""
+    row = conn.execute(
+        "SELECT j.id FROM jobs j JOIN remote_links r ON r.item_id=j.item_id AND r.connector=j.connector"
+        " JOIN plan_items p ON p.id=j.item_id WHERE j.id=:op_id AND j.item_id=:item AND j.connector=:connector"
+        " AND r.remote_id=:remote_id AND p.status='removed' AND j.status='needs_you'"
+        " AND j.resolved_by_version IS NULL AND json_extract(j.payload_json,'$.status')='removed'"
+        " AND json_extract(j.result_json,'$.manual_action')='delete'"
+        " AND json_extract(j.result_json,'$.remote_id')=:remote_id",
+        action,
+    ).fetchone()
+    if row is None:
+        raise ValueError("The manual deletion task changed or is not eligible. Read it again.")
+    return {
+        **{key: action[key] for key in ("item", "connector", "op_id", "remote_id")},
+        "verification": "user_reported",
+    }
+
+
+def resolve_reports(conn: sqlite3.Connection, reports: dict, version: int) -> None:
+    """Record an approved user report and retire only its explicitly identified link."""
+    for report in reports.values():
+        conn.execute("UPDATE jobs SET resolved_by_version=? WHERE id=?", (version, report["op_id"]))
+        conn.execute(
+            "DELETE FROM remote_links WHERE item_id=:item AND connector=:connector AND remote_id=:remote_id",
+            report,
+        )
+
+
 def _pending(conn: sqlite3.Connection, items: dict, *, allow_sent: bool = False) -> dict:
     rows = {}
     for item in items:
         for row in conn.execute("SELECT * FROM jobs WHERE item_id = ?", (item,)):
+            if _resolved_history(conn, row):
+                continue
             if (
                 allow_sent
                 and row["status"] == "sent"
-                and items[item]["status"] in ("saved", "sent", "done")
+                and items[item]["status"] in ("saved", "sent", "done", "removed")
             ):
                 linked = conn.execute(
                     "SELECT 1 FROM remote_links WHERE item_id = ? AND connector = ?",
@@ -214,7 +263,7 @@ def _finish(conn: sqlite3.Connection, job: dict, outcome: dict, now: str) -> Non
             )
             conn.execute(
                 "UPDATE plan_items SET status = 'sent' WHERE id = ? AND status = 'saved'"
-                " AND NOT EXISTS (SELECT 1 FROM jobs WHERE item_id = ? AND status NOT IN ('sent', 'cancelled'))",
+                " AND NOT EXISTS (SELECT 1 FROM jobs WHERE item_id = ? AND status NOT IN ('sent', 'cancelled') AND resolved_by_version IS NULL)",
                 (job["item_id"], job["item_id"]),
             )
             matching.rebuild(conn)

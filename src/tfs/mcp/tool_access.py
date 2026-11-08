@@ -13,8 +13,10 @@ from tfs.persistence import sqlite
 VIEWS = {
     "coach_v1_deliveries": (
         "One row per approved delivery job, including cancelled history. op_id is stable."
-        " Times are UTC; unknown/conflict/needs_you require user action. Remote fields are"
-        " the latest successful link for that item and app. Sending never means training done."
+        " Times are UTC; unresolved unknown/conflict/needs_you require user action. Remote fields"
+        " identify that job's recorded result, falling back to the current link while pending."
+        " manual_action=delete is a manual task. resolved_by_version and resolution record a"
+        " user-reported deletion, not provider verification. Sending never means training done."
     ),
     "coach_v1_day_facts": (
         "One row per day and metric: the day's value, unit and source."

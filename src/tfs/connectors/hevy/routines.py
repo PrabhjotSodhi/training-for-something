@@ -236,6 +236,13 @@ def send(
     http: Callable,
 ) -> dict:
     """Map approved strength targets and reconcile uncertain sends without repeating writes."""
+    if item.get("status") == "removed" and remote_id:
+        return {
+            "status": "needs_you",
+            "manual_action": "delete",
+            "remote_id": remote_id,
+            "message": "Delete this routine in Hevy, then report its deletion in TFS. TFS cannot delete it for you.",
+        }
     if not _WRITES_PROVEN:
         return {
             "status": "needs_you",

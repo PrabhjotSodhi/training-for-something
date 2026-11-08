@@ -93,6 +93,16 @@ class HevySendTest(unittest.TestCase):
         self.assertEqual(result["status"], "needs_you")
         self.assertIn("verification", result["message"])
 
+    def test_removed_routine_returns_manual_instruction_without_http(self):
+        with mock.patch.object(routines, "_WRITES_PROVEN", False):
+            result = self.send(item={**ITEM, "status": "removed"}, remote_id="routine-1")
+        self.assertEqual(
+            (result["status"], result["manual_action"], result["remote_id"]),
+            ("needs_you", "delete", "routine-1"),
+        )
+        self.assertEqual(self.http.calls, [])
+        self.assertIn("cannot delete", result["message"])
+
     def test_create_preserves_exact_targets_and_adjacent_exercise_order(self):
         part = ITEM["parts"][0]
         item = {

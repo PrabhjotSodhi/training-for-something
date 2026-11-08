@@ -104,3 +104,12 @@ The choice therefore applies to duplicate copies currently grouped together and
 survives raw replay. It does not block a different eligible workout. The coach
 view exposes sorted active IDs as `matched_record_ids_json`, or `[]` when the
 match is absent or awaiting rebuild. Unlink does not clear manual completion.
+
+
+### Removal and restoration
+
+A removed item keeps its saved targets and history. Linked copies become approved
+removal jobs; a manual deletion report retires the exact link but does not erase
+the item or the acknowledged history. Restore a removed item with restore_session
+and an explicit date after outstanding tasks are resolved. Any approved delivery
+creates a new copy. Reporting deletion itself cannot be undone.

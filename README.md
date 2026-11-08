@@ -64,9 +64,10 @@ Ask for a plan or a change. The coach reads your current plan version, calls
 saves nothing. Approve `save` through your AI client's permission prompt to
 store the proposal. `preview_undo` shows the restored content and affected apps;
 `undo` applies that exact reversal after approval. Existing delivered edits use
-new queued updates, preserving their original receipts. Delivered removal and
-new external copies still need manual reconciliation; provider writes remain
-disabled pending verification.
+new queued updates, preserving their original receipts. A removal can create a
+manual deletion task. An approved report records that you deleted the exact copy;
+it is not provider verification. Restoring it creates a new copy after approval.
+Provider writes remain disabled pending verification.
 
 Keep `save` and `undo` configured to ask for permission. An always-allow setting
 can skip the prompt. TFS records the calling route but does not independently

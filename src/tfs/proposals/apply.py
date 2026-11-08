@@ -19,7 +19,14 @@ def preview(db_path: Path, proposal: dict, *, now: datetime) -> dict:
         conn.execute("BEGIN")
         _, items = actions.prepare(conn, proposal, now.date())
         delivery, labels = jobs.destinations(conn, items["items"])
-    return _summary(proposal["plan_version"], items, delivery, labels)
+        jobs.prepare(conn, items["items"], delivery, to_utc_text(now))
+    result = _summary(proposal["plan_version"], items, delivery, labels)
+    result["creates_new_copies"] = [
+        action["item"]
+        for action in proposal["actions"]
+        if action["action"] == "restore_session" and action["item"] in delivery
+    ]
+    return result
 
 
 def _summary(version: int, states: dict, delivery: dict, labels: dict) -> dict:
@@ -33,6 +40,8 @@ def _summary(version: int, states: dict, delivery: dict, labels: dict) -> dict:
         result["match_exclusions"] = [
             {"item": item, "record_ids": ids} for item, ids in states["exclusions"].items()
         ]
+    if states.get("reports"):
+        result["reported_deletions"] = list(states["reports"].values())
     return result
 
 
@@ -144,6 +153,7 @@ def _save(
         for state in items["items"].values():
             _write(conn, state, version)
         jobs.write(conn, job_after, version, saved_at)
+        jobs.resolve_reports(conn, items.get("reports", {}), version)
         matching.write_exclusions(conn, items.get("exclusions", {}))
         if items["items"] or items.get("exclusions"):
             matching.rebuild(conn)

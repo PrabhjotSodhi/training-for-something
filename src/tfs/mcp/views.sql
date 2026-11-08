@@ -121,6 +121,11 @@ SELECT j.id AS op_id, j.item_id AS plan_item_id, j.plan_version, j.connector,
   j.status, j.attempts, j.next_attempt_at, j.created_at,
   json_extract(j.result_json, '$.message') AS message,
   json_extract(j.result_json, '$.auth_failed') AS auth_failed,
-  r.remote_id, r.remote_version
+  coalesce(json_extract(j.result_json, '$.remote_id'), r.remote_id) AS remote_id,
+  CASE WHEN json_extract(j.result_json, '$.remote_id') IS NOT NULL
+    THEN json_extract(j.result_json, '$.remote_version') ELSE r.remote_version END AS remote_version,
+  json_extract(j.result_json, '$.manual_action') AS manual_action,
+  j.resolved_by_version,
+  CASE WHEN j.resolved_by_version IS NOT NULL THEN 'user_reported_deleted' END AS resolution
 FROM main.jobs j LEFT JOIN main.remote_links r
   ON r.item_id = j.item_id AND r.connector = j.connector;
