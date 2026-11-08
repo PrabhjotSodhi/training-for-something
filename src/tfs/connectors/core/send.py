@@ -43,6 +43,14 @@ def deliver(job: dict, manifest: dict, now: str) -> dict:
     return _outcome(result, list(secrets.values()))
 
 
+def _safe_reference(value: object, secrets: list[str]) -> bool:
+    return (
+        isinstance(value, str)
+        and bool(value.strip())
+        and not any(s and s in value for s in secrets)
+    )
+
+
 def _outcome(result: dict, secrets: list[str]) -> dict:
     if result.get("unsupported") is True:
         return {"status": "needs_you", "message": "This app does not support plan delivery."}
@@ -62,16 +70,18 @@ def _outcome(result: dict, secrets: list[str]) -> dict:
     if status == "sent":
         for field in ("remote_id", "remote_version"):
             value = result.get(field)
-            if (
-                not isinstance(value, str)
-                or not value.strip()
-                or any(s and s in value for s in secrets)
-            ):
+            if not _safe_reference(value, secrets):
                 return {
                     "status": "unknown",
                     "message": "The app did not confirm a usable remote reference.",
                 }
             safe[field] = value
+    if (
+        status == "needs_you"
+        and result.get("manual_action") == "delete"
+        and _safe_reference(result.get("remote_id"), secrets)
+    ):
+        safe.update(manual_action="delete", remote_id=result["remote_id"])
     if isinstance(result.get("message"), str):
         message = result["message"]
         for secret in sorted(filter(None, secrets), key=len, reverse=True):

@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 
 from tfs.connectors.core.contract import FAMILIES
 from tfs.proposals import journal, matching, targets
+from tfs.scheduling import jobs
 
 FIELDS = {
     "add_session": (
@@ -21,6 +22,8 @@ FIELDS = {
     "remove_session": ({"action", "item"}, set()),
     "mark_done": ({"action", "item"}, set()),
     "unlink_plan_match": ({"action", "item", "record_ids"}, set()),
+    "restore_session": ({"action", "item", "to"}, {"start_hint"}),
+    "report_delivery_deleted": ({"action", "item", "connector", "op_id", "remote_id"}, set()),
     "set_goal": ({"action", "item", "type", "date", "target"}, set()),
     "set_limit": ({"action", "item", "kind", "values"}, set()),
 }
@@ -176,6 +179,17 @@ def _edit(state: dict | None, action: dict, today: date) -> None:
         state["status"] = "removed" if name == "remove_session" else "done"
 
 
+def _restore(conn: sqlite3.Connection, state: dict | None, action: dict, today: date) -> None:
+    if state is None or state["status"] != "removed":
+        raise ValueError("Only a removed plan item can be restored.")
+    if conn.execute("SELECT 1 FROM remote_links WHERE item_id=?", (state["id"],)).fetchone():
+        raise ValueError("Resolve the existing deletion task before restoring a new copy.")
+    state["local_date"] = _day(action["to"], today)
+    if "start_hint" in action:
+        state["start_hint"] = _start_hint(action["start_hint"])
+    state["status"] = "saved"
+
+
 def _session(
     conn: sqlite3.Connection, action: dict, today: date, before: dict, after: dict
 ) -> None:
@@ -192,7 +206,10 @@ def _session(
             conn, item, after.get("exclusions", {}).get(item, ())
         ):
             raise ValueError("This plan item is done according to an imported workout.")
-        _edit(after["items"][item], action, today)
+        if action["action"] == "restore_session":
+            _restore(conn, after["items"][item], action, today)
+        else:
+            _edit(after["items"][item], action, today)
 
 
 def _unlink(conn: sqlite3.Connection, action: dict, before: dict, after: dict) -> None:
@@ -207,6 +224,14 @@ def _unlink(conn: sqlite3.Connection, action: dict, before: dict, after: dict) -
     after.setdefault("exclusions", {})[item] = sorted(
         set(before["exclusions"][item]) | set(records)
     )
+
+
+def _report(conn: sqlite3.Connection, action: dict, count: int) -> dict:
+    if count != 1:
+        raise ValueError("Report a deletion separately before proposing another change.")
+    for field in ("connector", "op_id", "remote_id"):
+        _text(action[field])
+    return {action["op_id"]: jobs.prepare_report(conn, action)}
 
 
 def prepare(conn: sqlite3.Connection, proposal: dict, today: date) -> tuple[dict, dict]:
@@ -230,6 +255,8 @@ def prepare(conn: sqlite3.Connection, proposal: dict, today: date) -> tuple[dict
             after[table][item] = targets.validate(action, today)
         elif name == "unlink_plan_match":
             _unlink(conn, action, before, after)
+        elif name == "report_delivery_deleted":
+            after["reports"] = _report(conn, action, len(proposal["actions"]))
         else:
             _session(conn, action, today, before, after)
             after["items"][item]["why"] = proposal["why"]
@@ -252,15 +279,14 @@ def _undo_items(conn: sqlite3.Connection, prior_items: dict, target: int) -> tup
             restored["status"] = "removed"
         linked = conn.execute("SELECT 1 FROM remote_links WHERE item_id=?", (item,)).fetchone()
         if linked:
-            if (
-                prior is None
-                or current["status"] not in ("saved", "sent")
-                or restored["status"] not in ("saved", "sent")
+            if current["status"] not in ("saved", "sent", "removed") or restored["status"] not in (
+                "saved",
+                "sent",
+                "removed",
             ):
-                raise ValueError(
-                    "Delivered removal or completion needs reconciliation before undo."
-                )
-            restored["status"] = "saved"
+                raise ValueError("Delivered completion needs reconciliation before undo.")
+            if restored["status"] != "removed":
+                restored["status"] = "saved"
         elif current["status"] == "sent" or restored["status"] in ("sent", "unknown"):
             raise ValueError("This item needs delivery reconciliation before undo.")
         restored["version"] = current["version"] + 1
@@ -275,6 +301,12 @@ def prepare_undo(conn: sqlite3.Connection, target: int) -> tuple[dict, dict]:
         raise ValueError("The undo is stale. Read the current plan again.")
     row = conn.execute("SELECT * FROM journal WHERE version = ?", (target,)).fetchone()
     original = json.loads(row["proposal_json"])
+    if any(
+        action.get("action") == "report_delivery_deleted" for action in original.get("actions", [])
+    ):
+        raise ValueError(
+            "A reported external deletion cannot be undone. Propose restore_session to create a new copy."
+        )
     allowed = FIELDS.keys() - ({"set_goal", "set_limit"} if row["format_version"] == 1 else set())
     supported = ({"undo_version"} <= set(original) <= {"undo_version", "delivery_targets"}) or (
         "actions" in original and all(action["action"] in allowed for action in original["actions"])

@@ -63,7 +63,7 @@ training-for-something/
       matching.py             matches workouts to plans, retaining approved exclusions and manual completion
     scheduling/
       scheduler.py            the 60 second loop, next_due
-      jobs.py                 atomic queue, unsent undo, claim, finish and crash reconciliation
+      jobs.py                 atomic queue, undo, manual deletion reports, claim, finish and crash reconciliation
       triggers.py             the missed-session rule
     web/
       server.py               HTTP server on 127.0.0.1, sessions, request checks
@@ -119,7 +119,7 @@ Each milestone adds one numbered migration for the tables it needs. `0001_init.s
 | `remote_links` | Yours | Plan item, connector, remote id, remote version |
 | `source_order` | Yours | Your source list per data type |
 | `chat` | Yours | Visible chat turns |
-| `jobs` | Work | Approved send payloads with stable op id, item/journal version, status, next due, attempts and result; AI/trigger jobs follow later |
+| `jobs` | Work | Approved send payloads with stable op id, item/journal version, status, next due, attempts, result and optional resolution-journal version; AI/trigger jobs follow later |
 
 "Derived" tables can be dropped and rebuilt from `source_records` and the journal. "Yours" tables are kept by backups.
 

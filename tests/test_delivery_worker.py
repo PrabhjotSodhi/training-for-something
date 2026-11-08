@@ -202,8 +202,9 @@ class DeliveryWorkerTest(unittest.TestCase):
     def test_undo_refuses_new_external_copies_without_erasing_history(self):
         with mock.patch.object(send.runner, "run", return_value=SENT):
             jobs.run_one(self.path, STAMP)
-            with self.assertRaisesRegex(ValueError, "reconciliation"):
-                preview_undo(self.path, 1, now=NOW)
+            removal = preview_undo(self.path, 1, now=NOW)
+            self.assertEqual(removal["items"][0]["status"], "removed")
+            self.assertEqual(removal["delivery_targets"], {"p1": ["invented"]})
             self.conn.execute("INSERT INTO sources(connector) VALUES ('new_app')")
             with mock.patch.object(
                 jobs, "load_manifests", return_value={"invented": MANIFEST, "new_app": MANIFEST}
@@ -235,6 +236,148 @@ class DeliveryWorkerTest(unittest.TestCase):
                 self.assertEqual(
                     self.conn.execute("SELECT max(version) FROM journal").fetchone()[0], 2
                 )
+
+    def removal_task(self):
+        with mock.patch.object(send.runner, "run", return_value=SENT):
+            jobs.run_one(self.path, STAMP)
+        self.save(proposal({"action": "remove_session", "item": "p1"}, version=1), "remove")
+        outcome = {
+            "status": "needs_you",
+            "manual_action": "delete",
+            "remote_id": "routine-1",
+            "message": "Delete the routine in the app",
+        }
+        with mock.patch.object(send.runner, "run", return_value=outcome):
+            jobs.run_one(self.path, STAMP)
+        row = dict(self.conn.execute("SELECT * FROM jobs WHERE status='needs_you'").fetchone())
+        action = {
+            "action": "report_delivery_deleted",
+            "item": "p1",
+            "connector": "invented",
+            "op_id": row["id"],
+            "remote_id": "routine-1",
+        }
+        return row, action
+
+    def test_manual_delete_report_restore_and_new_copy_preserve_history(self):
+        task, action = self.removal_task()
+        first = dict(self.conn.execute("SELECT * FROM jobs WHERE status='sent'").fetchone())
+        restore = {"action": "restore_session", "item": "p1", "to": "2026-11-10"}
+        with self.assertRaisesRegex(ValueError, "deletion task"):
+            preview(self.path, proposal(restore, version=2), now=NOW)
+        report = proposal(action, version=2)
+        self.conn.execute("UPDATE sources SET enabled=0")
+        shown = preview(self.path, report, now=NOW)
+        self.assertEqual(shown["delivery_targets"], {})
+        self.assertEqual(shown["reported_deletions"][0]["remote_id"], "routine-1")
+        self.assertIsNone(
+            self.conn.execute(
+                "SELECT resolved_by_version FROM jobs WHERE id=?", (task["id"],)
+            ).fetchone()[0]
+        )
+        for _ in range(2):
+            self.assertEqual(
+                save(self.path, report, request_id="reported", approved_by="chat", now=NOW)[
+                    "plan_version"
+                ],
+                3,
+            )
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM remote_links").fetchone()[0], 0)
+        with self.assertRaisesRegex(ValueError, "cannot be undone"):
+            undo(self.path, 3, request_id="undo-report", approved_by="chat", now=NOW)
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.conn.execute("UPDATE jobs SET resolved_by_version=NULL WHERE id=?", (task["id"],))
+        with closing(open_reader(self.path)) as reader:
+            resolved = query(
+                reader,
+                "SELECT remote_id,status,manual_action,resolved_by_version,resolution FROM coach_v1_deliveries WHERE manual_action='delete'",
+            )
+            self.assertEqual(
+                resolved["rows"], [["routine-1", "needs_you", "delete", 3, "user_reported_deleted"]]
+            )
+        self.conn.execute("UPDATE sources SET enabled=1")
+        shown = preview(self.path, proposal(restore, version=3), now=NOW)
+        self.assertEqual(shown["creates_new_copies"], ["p1"])
+        self.save(proposal(restore, version=3), "restore")
+        with mock.patch.object(
+            send.runner, "run", return_value={**SENT, "remote_id": "routine-2"}
+        ) as call:
+            self.assertTrue(jobs.run_one(self.path, STAMP))
+            self.assertIsNone(call.call_args.args[2]["remote_id"])
+        self.assertEqual(self.conn.execute("SELECT status FROM plan_items").fetchone()[0], "sent")
+        self.assertEqual(
+            dict(self.conn.execute("SELECT * FROM jobs WHERE id=?", (first["id"],)).fetchone()),
+            first,
+        )
+        resolved_task = dict(
+            self.conn.execute("SELECT * FROM jobs WHERE id=?", (task["id"],)).fetchone()
+        )
+        self.assertEqual(resolved_task, {**task, "resolved_by_version": 3})
+        reversal = preview_undo(self.path, 4, now=NOW)
+        self.assertEqual(reversal["items"][0]["status"], "removed")
+        undo(
+            self.path,
+            4,
+            request_id="undo-restored",
+            approved_by="chat",
+            now=NOW,
+            delivery_targets=reversal["delivery_targets"],
+        )
+        self.assertEqual(
+            self.conn.execute("SELECT count(*) FROM jobs WHERE status='pending'").fetchone()[0], 1
+        )
+        self.assertEqual(
+            dict(self.conn.execute("SELECT * FROM jobs WHERE id=?", (task["id"],)).fetchone()),
+            resolved_task,
+        )
+
+    def test_deletion_report_rejects_wrong_task_and_mixed_changes_atomically(self):
+        task, action = self.removal_task()
+        queries = (
+            "SELECT * FROM jobs ORDER BY id",
+            "SELECT * FROM remote_links",
+            "SELECT * FROM journal",
+            "SELECT * FROM plan_items",
+        )
+        before = [[tuple(row) for row in self.conn.execute(q)] for q in queries]
+        for change in (
+            {"remote_id": "wrong-copy"},
+            {"op_id": "wrong-operation"},
+            {"connector": "other-app"},
+        ):
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, "task changed"):
+                save(
+                    self.path,
+                    proposal(action | change, version=2),
+                    request_id="bad-report",
+                    approved_by="chat",
+                    now=NOW,
+                )
+        with self.assertRaisesRegex(ValueError, "separately"):
+            save(
+                self.path,
+                proposal(
+                    action,
+                    {"action": "restore_session", "item": "p1", "to": "2026-11-10"},
+                    version=2,
+                ),
+                request_id="mixed",
+                approved_by="chat",
+                now=NOW,
+            )
+        self.assertEqual([[tuple(row) for row in self.conn.execute(q)] for q in queries], before)
+        self.conn.execute(
+            "UPDATE jobs SET result_json=? WHERE id=?",
+            (json.dumps({"status": "needs_you", "auth_failed": True}), task["id"]),
+        )
+        with self.assertRaisesRegex(ValueError, "task changed"):
+            preview(self.path, proposal(action, version=2), now=NOW)
+        self.assertIsNone(
+            self.conn.execute(
+                "SELECT resolved_by_version FROM jobs WHERE id=?", (task["id"],)
+            ).fetchone()[0]
+        )
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM remote_links").fetchone()[0], 1)
 
     def test_delivered_edit_refuses_disconnected_app_and_uncertain_replacement(self) -> None:
         with mock.patch.object(send.runner, "run", return_value=SENT):

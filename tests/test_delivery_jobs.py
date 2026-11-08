@@ -152,9 +152,9 @@ class DeliveryJobsTest(unittest.TestCase):
             with self.subTest(status=status):
                 self.conn.execute("UPDATE jobs SET status=?", (status,))
                 before = self.snapshot()
-                value = self.approve(
-                    proposal({"action": "remove_session", "item": "p1"}, version=1)
-                )
+                value = proposal({"action": "remove_session", "item": "p1"}, version=1)
+                with self.assertRaisesRegex(ValueError, "reconciliation"):
+                    self.approve(value)
                 with self.assertRaisesRegex(ValueError, "reconciliation"):
                     self.save(value, "save-2")
                 with self.assertRaisesRegex(ValueError, "reconciliation"):

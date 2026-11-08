@@ -54,6 +54,8 @@ ACTIONS = [
         "anyOf": [{"required": [name]} for name in ("label", "parts", "start_hint")],
     },
     _action("remove_session", {}),
+    _action("restore_session", {"to": DAY}, {"start_hint": START_HINT}),
+    _action("report_delivery_deleted", {"connector": TEXT, "op_id": TEXT, "remote_id": TEXT}),
     _action("mark_done", {}),
     _action(
         "unlink_plan_match",
@@ -127,12 +129,12 @@ TOOLS = [
     ),
     _tool(
         "preview_undo",
-        "Preview undo of the latest change without writing. Show restored content and delivery apps before approval. Copy delivery_targets into undo; new or changed remote copies require reconciliation. Delivered removal/completion undo is not supported.",
+        "Preview undo of the latest change without writing. Show restored content and delivery apps before approval. Copy delivery_targets into undo; new or changed remote copies require reconciliation. Removal creates a manual deletion task. A reported deletion cannot be undone; restore_session creates a new copy after explicit approval.",
         {"target_version": {"type": "integer", "minimum": 1}},
     ),
     _tool(
         "undo",
-        "Undo the latest local change at target_version after user approval through the client's permission prompt. Read the current global version first. Later saves make this stale. Reuse request_id for identical retries. Existing delivered edits queue new updates only to the previewed apps. Delivered add/remove/completion undo remains unsupported.",
+        "Undo the latest local change at target_version after user approval through the client's permission prompt. Read the current global version first. Later saves make this stale. Reuse request_id for identical retries. Existing delivered edits queue new updates only to the previewed apps. Removal queues a manual deletion task. Reported deletion and delivered completion cannot be reversed automatically.",
         {"target_version": {"type": "integer", "minimum": 1}, "request_id": TEXT},
         {"delivery_targets": PROPOSAL["properties"]["delivery_targets"]},
     ),

@@ -25,7 +25,9 @@ A proposal holds one or more actions. Save applies all of them in one transactio
 | `add_session` | A new plan item | Date not in the past, known family | Yes, apps whose `sends` list the family | Remove it |
 | `move_session` | An item's date | Item exists and is not done | Yes, as an update | Move it back |
 | `change_session` | An item's targets or label | Item exists and is not done | Yes, as an update | Restore the old version |
-| `remove_session` | Marks an item removed | Item exists and is not done | Delete, or a `needs_you` to-do | Restore it |
+| `remove_session` | Marks an item removed | Item exists and is not done | Delete, or a `needs_you` to-do | Undo pending removal; explicitly restore after a deletion report |
+| `restore_session` | Restores a removed plan on an explicit date | No linked copy or unresolved deletion task; date not past | Create a new copy in approved apps | Remove it |
+| `report_delivery_deleted` | Records the person's report and retires the exact link | Exact outstanding deletion task; single-action proposal | No | Report is permanent; restore the plan explicitly |
 | `set_goal` | Adds or edits a goal: type, date, target | Date in the future, known goal type | No | Restore the old goal |
 | `set_limit` | A constraint, such as an injury, a day you cannot train, or a maximum session length | Known limit kind | No | Remove it |
 | `log_meal` | A meal with foods, portions, how sure, and sources | Values in plausible ranges | No | Delete it |
@@ -70,7 +72,8 @@ does not make a Save tool available.
 ## Local session proposal API
 
 The local application API currently supports `set_goal`, `set_limit`,
-`add_session`, `move_session`, `change_session`, `remove_session`, `mark_done` and `unlink_plan_match`. Other actions are refused
+`add_session`, `move_session`, `change_session`, `remove_session`, `restore_session`, `mark_done`, `unlink_plan_match` and
+`report_delivery_deleted`. Other actions are refused
 until their handlers arrive. The MCP tools below expose this same API.
 
 Every proposal supplies `plan_version`, `why`, `sources` and a non-empty
@@ -80,9 +83,10 @@ and a stable `item` ID. Unknown fields are errors.
 | Action | Additional fields |
 |---|---|
 | add_session | date, family, label, parts; optional goal_ids naming existing goals, start_hint |
-| move_session | to; optional start_hint |
+| move_session, restore_session | to; optional start_hint |
 | change_session | at least one of label, parts, start_hint |
 | remove_session, mark_done | none |
+| report_delivery_deleted | connector, op_id, remote_id; single-action proposal |
 | unlink_plan_match | record_ids: complete sorted unique non-empty list from matched_record_ids_json |
 
 `start_hint` is a local 24-hour HH:MM time, or null for no preferred time.
@@ -100,7 +104,8 @@ changing an item in the same proposal works. Saving validates again inside the
 write transaction and stores the final item state once per affected item,
 together with its prior state in the journal. A stale proposal, invalid action
 or database failure saves nothing. Repeated matching requests return the
-original receipt. Edits of done, removed or replaced items are refused.
+original receipt. Ordinary edits of done, removed or replaced items are refused;
+restore_session is the explicit route for a removed item.
 
 
 ## Undo and its preview
@@ -185,8 +190,8 @@ the proposal shown for Save. Omission means no destinations; Save refuses if the
 current targets differ. A newly connected app cannot silently receive a plan.
 
 Save cancels superseded pending/not-sent jobs and queues the exact final item in
-the same transaction as its plan and journal. Removed or done items enqueue
-nothing. Jobs keep a stable operation ID and immutable approved payload; secrets
+the same transaction as its plan and journal. Removed items target only existing
+linked copies; unlinked removals and done items enqueue nothing. Jobs keep a stable operation ID and immutable approved payload; secrets
 never enter them. Provider sends are not enabled yet.
 
 Journal format 3 adds optional `jobs` before-state: job IDs mapped to their prior
@@ -206,9 +211,10 @@ remote object without changing that approved content or those destinations.
 Manual mark_done retains confirmed history and cancels pending replacements.
 
 Sending, in-doubt, unknown, conflict and needs-you jobs still block overlapping
-changes. Removing a delivered item remains refused pending manual-action
-handling. The bounded delivered-edit undo below uses approved updates; invented
-delivery tests do not satisfy real-provider proof #29.
+changes. Resolved deletion instructions and their retired acknowledged copies
+remain history and do not block later work. Delivered-edit undo uses approved
+updates; removal follows the manual task flow below. Invented delivery tests do
+not satisfy real-provider proof #29.
 
 
 ## Unlink a wrong plan match
@@ -240,11 +246,13 @@ This proves which copies existed when the change was saved. A lower job version
 alone is not that proof. Formats 1–4 remain readable and are never rewritten;
 older rows lacking this evidence cannot undo a delivered edit.
 
-For a linked item, both current and restored state must be saved/sent and the
-prior item must exist. Its recorded prior remote copies must exactly match the
-current linked copies. A newly created external copy, changed remote identity,
-delivered add/remove/completion, disabled app or unresolved job requires
-reconciliation. A newly connected app with no link is not an undo destination.
+For an update to a linked item, recorded prior remote copies must exactly match
+the current linked copies. Missing evidence, a changed remote identity, disabled
+app or unresolved job requires reconciliation. A newly connected unlinked app
+is not an undo destination. If undo removes a delivered addition or restoration,
+preview names its current linked copies and the approved reversal creates
+removal tasks. Unresolved tasks block undo until the person reports deletion;
+then use explicit restore_session. Delivered completion undo remains unsupported.
 
 Preview returns restored items/goals/limits, optional match exclusions,
 `delivery_targets` and `delivery_apps`, with no writes. Show that content and
@@ -260,3 +268,40 @@ remote operation ID. Local-only items keep original-ID unsent undo. Undo records
 its own before-state, so undo-of-undo creates a fresh compensation when needed.
 The existing connector update checks the current provider version before writing.
 No provider delete, new table or automatic conflict resolution is introduced.
+
+
+## Manual deletion and explicit restoration
+
+Removal keeps sent receipts and links and queues an immutable removed payload
+for each linked destination. Hevy returns needs_you, manual_action=delete and
+the remote ID, without any HTTP request. The existing credential and capability
+gates still apply before dispatch; a disconnected app may need reconnecting
+before TFS can produce this instruction. TFS never claims it deleted the routine.
+
+report_delivery_deleted requires item, connector, removal op_id and remote_id.
+It must be the only action. Preview and Save validate the exact unresolved
+structured removal result and current link; authentication problems, unknown
+outcomes, conflicts and generic needs_you messages are not eligible. Reporting
+an existing task works after disconnecting the app. Approval records the person's
+statement, not a provider check. Preview labels verification as user_reported.
+
+In one transaction, append the report to the journal, set the job's nullable
+resolved_by_version to that entry and retire only the identified link. The
+original needs_you outcome, result, payload and earlier sent receipts remain.
+The resolution cannot be reset. A matching request retry returns its receipt.
+Undo of this external report is refused rather than erasing the fact or reviving
+the link. Other journal rows and their versions are unchanged.
+
+restore_session requires a removed item, no remaining linked copy and no
+unresolved delivery. The explicit to date must be today or later; existing
+targets are retained and an optional start_hint follows move_session rules.
+Preview's creates_new_copies names restored items with outgoing destinations.
+Save queues new operation IDs; subsequent dispatch has no retired remote ID.
+Undo before delivery cancels that work. Undo after delivery uses another removal
+task. This keeps reversible desired plan content separate from reported external
+actions, without skipping journal rows or silently undoing an older removal.
+
+coach_v1_deliveries exposes manual_action, resolved_by_version and resolution
+(user_reported_deleted). Its remote fields prefer the job's recorded result,
+so an old task remains identifiable after link retirement or later restoration.
+Filter resolved_by_version IS NULL when looking for outstanding manual tasks.
