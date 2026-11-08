@@ -379,6 +379,76 @@ class DeliveryWorkerTest(unittest.TestCase):
         )
         self.assertEqual(self.conn.execute("SELECT count(*) FROM remote_links").fetchone()[0], 1)
 
+    def test_completion_undo_preserves_receipts_and_resumes_only_original_update(self):
+        with mock.patch.object(send.runner, "run", return_value=SENT):
+            jobs.run_one(self.path, STAMP)
+        first = dict(self.conn.execute("SELECT * FROM jobs").fetchone())
+        self.save(proposal({"action": "mark_done", "item": "p1"}, version=1), "done")
+        shown = preview_undo(self.path, 2, now=NOW)
+        self.assertEqual(shown["delivery_targets"], {})
+        self.assertEqual(shown["restored_deliveries"], [])
+        self.assertEqual(shown["items"][0]["status"], "sent")
+        undo(self.path, 2, request_id="clear-done", approved_by="chat", now=NOW)
+        undo(self.path, 3, request_id="redo-done", approved_by="chat", now=NOW)
+        self.assertEqual([dict(row) for row in self.conn.execute("SELECT * FROM jobs")], [first])
+        undo(self.path, 4, request_id="clear-again", approved_by="chat", now=NOW)
+        self.save(
+            proposal(
+                {"action": "change_session", "item": "p1", "label": "Next targets"}, version=5
+            ),
+            "edit",
+        )
+        pending = dict(self.conn.execute("SELECT * FROM jobs WHERE status='pending'").fetchone())
+        self.save(proposal({"action": "mark_done", "item": "p1"}, version=6), "done-with-update")
+        shown = preview_undo(self.path, 7, now=NOW)
+        self.assertEqual(shown["delivery_targets"], {})
+        self.assertEqual(len(shown["restored_deliveries"]), 1)
+        resumed = shown["restored_deliveries"][0]
+        self.assertEqual(
+            (resumed["op_id"], resumed["connector"], resumed["app"]),
+            (pending["id"], "invented", "Invented app"),
+        )
+        self.assertEqual(resumed["item"], json.loads(pending["payload_json"]))
+        self.conn.execute("UPDATE sources SET enabled=0")
+        undo(self.path, 7, request_id="resume-update", approved_by="chat", now=NOW)
+        self.assertFalse(jobs.run_one(self.path, STAMP))
+        self.assertEqual(
+            dict(self.conn.execute("SELECT * FROM jobs WHERE id=?", (pending["id"],)).fetchone()),
+            pending,
+        )
+        self.conn.execute("UPDATE sources SET enabled=1")
+        with mock.patch.object(
+            send.runner, "run", return_value={**SENT, "remote_version": "updated"}
+        ):
+            jobs.run_one(self.path, STAMP)
+        acknowledged = [dict(row) for row in self.conn.execute("SELECT * FROM jobs ORDER BY id")]
+        undo(self.path, 8, request_id="redo-after-update", approved_by="chat", now=NOW)
+        self.assertEqual(self.conn.execute("SELECT status FROM plan_items").fetchone()[0], "done")
+        self.assertEqual(
+            [dict(row) for row in self.conn.execute("SELECT * FROM jobs ORDER BY id")], acknowledged
+        )
+        self.assertFalse(jobs.run_one(self.path, STAMP))
+
+    def test_completion_redo_keeps_first_delivery_acknowledged_after_undo(self):
+        original = self.row()
+        self.save(proposal({"action": "mark_done", "item": "p1"}, version=1), "done-before-send")
+        shown = preview_undo(self.path, 2, now=NOW)
+        self.assertEqual(shown["restored_deliveries"][0]["op_id"], original["id"])
+        undo(self.path, 2, request_id="resume-first", approved_by="chat", now=NOW)
+        with mock.patch.object(send.runner, "run", return_value=SENT):
+            jobs.run_one(self.path, STAMP)
+        acknowledged = self.row()
+        self.conn.execute("UPDATE sources SET enabled=0")
+        shown = preview_undo(self.path, 3, now=NOW)
+        self.assertEqual(shown["delivery_targets"], {})
+        self.assertEqual(shown["restored_deliveries"], [])
+        undo(self.path, 3, request_id="redo-completion", approved_by="chat", now=NOW)
+        self.assertEqual(self.row(), acknowledged)
+        self.assertEqual(self.conn.execute("SELECT status FROM plan_items").fetchone()[0], "done")
+        self.assertEqual(
+            self.conn.execute("SELECT remote_id FROM remote_links").fetchone()[0], "routine-1"
+        )
+
     def test_delivered_edit_refuses_disconnected_app_and_uncertain_replacement(self) -> None:
         with mock.patch.object(send.runner, "run", return_value=SENT):
             jobs.run_one(self.path, STAMP)

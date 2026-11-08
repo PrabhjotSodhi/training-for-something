@@ -129,12 +129,12 @@ TOOLS = [
     ),
     _tool(
         "preview_undo",
-        "Preview undo of the latest change without writing. Show restored content and delivery apps before approval. Copy delivery_targets into undo; new or changed remote copies require reconciliation. Removal creates a manual deletion task. A reported deletion cannot be undone; restore_session creates a new copy after explicit approval.",
+        "Preview undo of the latest change without writing. Show restored content, delivery apps and restored_deliveries (original jobs that will resume) before approval. Copy delivery_targets into undo; new or changed remote copies require reconciliation. Removal creates a manual deletion task. A reported deletion cannot be undone; restore_session creates a new copy after explicit approval.",
         {"target_version": {"type": "integer", "minimum": 1}},
     ),
     _tool(
         "undo",
-        "Undo the latest local change at target_version after user approval through the client's permission prompt. Read the current global version first. Later saves make this stale. Reuse request_id for identical retries. Existing delivered edits queue new updates only to the previewed apps. Removal queues a manual deletion task. Reported deletion and delivered completion cannot be reversed automatically.",
+        "Undo the latest local change at target_version after user approval through the client's permission prompt. Read the current global version first. Later saves make this stale. Reuse request_id for identical retries. Existing delivered edits queue new updates only to the previewed apps. Removal queues a manual deletion task. Manual completion undo preserves acknowledgements and restores only original unsent work; redo sends nothing. A reported deletion cannot be undone.",
         {"target_version": {"type": "integer", "minimum": 1}, "request_id": TEXT},
         {"delivery_targets": PROPOSAL["properties"]["delivery_targets"]},
     ),
