@@ -1,11 +1,20 @@
 import copy
 import json
 import unittest
+from contextlib import closing
+from pathlib import Path
 from unittest import mock
 from urllib.parse import urlsplit
 
+from tests.helpers import open_database
+from tests.test_proposals import ADD, NOW, proposal
+from tfs.connectors.core import send
+from tfs.connectors.core.contract import load_manifests, to_utc_text
 from tfs.connectors.core.runner import run
 from tfs.connectors.hevy import routines
+from tfs.mcp.tool_access import open_reader, query
+from tfs.proposals.apply import preview, save, undo
+from tfs.scheduling import jobs
 
 ITEM = {
     "family": "strength",
@@ -103,6 +112,68 @@ class HevySendTest(unittest.TestCase):
         self.assertEqual(self.http.calls, [])
         self.assertIn("cannot delete", result["message"])
 
+    def test_mapping_failure_can_be_corrected_and_undone_before_one_send(self):
+        conn = open_database(self)
+        path = Path(conn.execute("PRAGMA database_list").fetchone()[2])
+        conn.execute("INSERT INTO sources(connector) VALUES ('hevy')")
+        manifests = load_manifests()
+        manifests["hevy"]["sends"] = ["strength"]
+        stamp = to_utc_text(NOW)
+
+        def deliver(connector, operation, payload, **options):
+            self.assertEqual((connector, operation), ("hevy", "send"))
+            return routines.send(**payload, http=self.http)
+
+        def approved(value, request):
+            value["delivery_targets"] = preview(path, value, now=NOW)["delivery_targets"]
+            return save(path, value, request_id=request, approved_by="chat", now=NOW)
+
+        with (
+            mock.patch.object(jobs, "load_manifests", return_value=manifests),
+            mock.patch.object(send.password_store, "get", return_value="invented-key"),
+            mock.patch.object(send.runner, "run", side_effect=deliver),
+        ):
+            bad = {**ADD, "parts": [{**ITEM["parts"][0], "label": "Not in catalog"}]}
+            approved(proposal(bad), "bad-name")
+            self.assertTrue(jobs.run_one(path, stamp))
+            failed = dict(conn.execute("SELECT * FROM jobs").fetchone())
+            self.assertEqual(failed["status"], "needs_you")
+            self.assertIs(json.loads(failed["result_json"])["safe_to_replace"], True)
+            self.assertFalse(jobs.run_one(path, stamp))
+            self.assertEqual(self.http.writes(), [])
+            with closing(open_reader(path)) as reader:
+                self.assertEqual(
+                    query(reader, "SELECT safe_to_replace FROM coach_v1_deliveries")["rows"], [[1]]
+                )
+            approved(
+                proposal(
+                    {"action": "change_session", "item": "p1", "parts": ITEM["parts"]}, version=1
+                ),
+                "correct-name",
+            )
+            replacement = dict(conn.execute("SELECT * FROM jobs WHERE status='pending'").fetchone())
+            self.assertNotEqual(failed["id"], replacement["id"])
+            undo(path, 2, request_id="undo-correction", approved_by="chat", now=NOW)
+            self.assertEqual(
+                dict(conn.execute("SELECT * FROM jobs WHERE id=?", (failed["id"],)).fetchone()),
+                failed,
+            )
+            self.assertFalse(jobs.run_one(path, stamp))
+            undo(path, 3, request_id="redo-correction", approved_by="chat", now=NOW)
+            self.assertEqual(
+                dict(
+                    conn.execute("SELECT * FROM jobs WHERE id=?", (replacement["id"],)).fetchone()
+                ),
+                replacement,
+            )
+            self.assertTrue(jobs.run_one(path, stamp))
+            self.assertEqual(len(self.http.writes()), 1)
+            self.assertEqual(conn.execute("SELECT status FROM plan_items").fetchone()[0], "sent")
+            self.assertEqual(
+                dict(conn.execute("SELECT * FROM jobs WHERE id=?", (failed["id"],)).fetchone()),
+                {**failed, "status": "cancelled"},
+            )
+
     def test_create_preserves_exact_targets_and_adjacent_exercise_order(self):
         part = ITEM["parts"][0]
         item = {
@@ -183,7 +254,10 @@ class HevySendTest(unittest.TestCase):
         ):
             with self.subTest(changes=changes):
                 item = {**ITEM, "parts": [{**ITEM["parts"][0], **changes}]}
-                self.assertEqual(self.send(item)["status"], "needs_you")
+                result = self.send(item)
+                self.assertEqual(result["status"], "needs_you")
+                self.assertIs(result["safe_to_replace"], True)
+                self.assertNotIn("safe_to_replace", self.send(item, in_doubt=True))
         self.http.templates.append({"id": "other-press", "title": " PRESS "})
         self.assertEqual(self.send()["status"], "needs_you")
         self.assertEqual(self.http.writes(), [])

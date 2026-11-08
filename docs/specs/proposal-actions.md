@@ -328,3 +328,20 @@ acknowledged receipt, cancel only pending/not-sent work and queue nothing.
 Sending or unresolved work still blocks it. No historical-link comparison is
 needed for this local completion change, including when a first delivery finished
 between undo and redo. It never replays a cancelled status onto a newly sent job.
+
+
+## Correcting a proven unsent mapping failure
+
+A connector may return needs_you with safe_to_replace=true only when this fresh
+operation failed its own mapping/validation before any write. Hevy uses this for
+unknown or ambiguous exercise names, unsupported targets and missing sets.
+Reconciliation never carries this flag; neither do unknown, conflict,
+authentication, manual-deletion or unproven provider failures.
+
+The coach delivery view exposes this evidence as safe_to_replace=1. It permits
+an approved correction, not an automatic retry. Preview and Save may supersede
+the flagged operation, retain its immutable payload/result, mark it cancelled
+and queue a fresh approved operation. Acknowledged jobs and links stay intact.
+Local unsent undo can restore the original flagged task and redo can restore the
+original queued correction, without inventing another send. Other unresolved
+outcomes still require reconciliation; no user-supplied flag bypasses this rule.

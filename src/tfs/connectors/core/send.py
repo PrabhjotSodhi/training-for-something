@@ -40,7 +40,16 @@ def deliver(job: dict, manifest: dict, now: str) -> dict:
             "status": "unknown",
             "message": "Delivery is uncertain. Check the app before trying again.",
         }
-    return _outcome(result, list(secrets.values()))
+    safe = _outcome(result, list(secrets.values()))
+    if (
+        not job["in_doubt"]
+        and safe["status"] == "needs_you"
+        and not safe.get("auth_failed")
+        and not safe.get("manual_action")
+        and result.get("safe_to_replace") is True
+    ):
+        safe["safe_to_replace"] = True
+    return safe
 
 
 def _safe_reference(value: object, secrets: list[str]) -> bool:

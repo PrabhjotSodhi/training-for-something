@@ -124,6 +124,13 @@ def resolve_reports(conn: sqlite3.Connection, reports: dict, version: int) -> No
         )
 
 
+def _replaceable(row: sqlite3.Row) -> bool:
+    return (
+        row["status"] == "needs_you"
+        and json.loads(row["result_json"] or "{}").get("safe_to_replace") is True
+    )
+
+
 def _pending(conn: sqlite3.Connection, items: dict, *, allow_sent: bool = False) -> dict:
     rows = {}
     for item in items:
@@ -141,7 +148,7 @@ def _pending(conn: sqlite3.Connection, items: dict, *, allow_sent: bool = False)
                 ).fetchone()
                 if linked:
                     continue
-            if row["status"] not in ("pending", "not_sent", "cancelled"):
+            if row["status"] not in ("pending", "not_sent", "cancelled") and not _replaceable(row):
                 raise ValueError("This item needs delivery reconciliation before changing it.")
             if row["status"] != "cancelled":
                 rows[row["id"]] = dict(row)
@@ -199,7 +206,7 @@ def restore(
         if row is None or row["item_id"] not in items:
             raise ValueError("The saved delivery history is missing or inconsistent.")
         if row["item_id"] not in targets and row["item_id"] not in done:
-            if row["status"] not in ("pending", "not_sent", "cancelled"):
+            if row["status"] not in ("pending", "not_sent", "cancelled") and not _replaceable(row):
                 raise ValueError(
                     "An acknowledged or uncertain job cannot be restored from old history."
                 )
