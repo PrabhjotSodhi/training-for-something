@@ -60,6 +60,7 @@ training-for-something/
       targets.py              validates and stores goals and training limits
       apply.py                validates a proposal, applies it, undoes it
       journal.py              the append-only journal
+      matching.py             matches imported workouts to plans without overwriting manual completion
     scheduling/
       scheduler.py            the 60 second loop, next_due
       jobs.py                 atomic queue, unsent undo, claim, finish and crash reconciliation
@@ -113,6 +114,7 @@ Each milestone adds one numbered migration for the tables it needs. `0001_init.s
 | `journal` | Yours | Append-only. One row per saved proposal or user action: actions JSON, who approved, time, format version |
 | `goals`, `limits` | Yours | Current goals and limits, kept in step with the journal |
 | `plan_items` | Yours | Current plan, as in the plan items spec |
+| `plan_matches` | Derived | One workout group per completed plan item, with matching reason |
 | `remote_links` | Yours | Plan item, connector, remote id, remote version |
 | `source_order` | Yours | Your source list per data type |
 | `chat` | Yours | Visible chat turns |
@@ -127,6 +129,7 @@ connector (in connectors/core/runner.py)  →  importer.raw_store.save()  →  f
 importer  →  connector read() in runner.py  →  importer.records  →  source_records (insert or replace by revision)
 source_records  →  duplicates.workouts.update(dates)  →  session_groups
 duplicates  →  source_priority.daily_totals.rebuild(dates)  →  day_facts  →  scores
+session_groups + plan_items + remote_links  →  proposals.matching  →  plan_matches
 coach views  ←  mcp/tool_access.py  ←  mcp/server.py  ←  the AI tool
 AI proposal  →  proposals.apply()  →  journal + yours tables + send jobs, one transaction
 scheduling/jobs.py  →  connectors/core/send.py  →  connector send() in runner.py  →  remote_links
