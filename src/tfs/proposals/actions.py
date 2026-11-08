@@ -267,7 +267,9 @@ def prepare(conn: sqlite3.Connection, proposal: dict, today: date) -> tuple[dict
     return before, after
 
 
-def _undo_items(conn: sqlite3.Connection, prior_items: dict, target: int) -> tuple[dict, dict]:
+def _undo_items(
+    conn: sqlite3.Connection, prior_items: dict, target: int, completion: set[str]
+) -> tuple[dict, dict]:
     before, after = {}, {}
     for item, prior in prior_items.items():
         current = _load(conn, item)
@@ -279,13 +281,13 @@ def _undo_items(conn: sqlite3.Connection, prior_items: dict, target: int) -> tup
             restored["status"] = "removed"
         linked = conn.execute("SELECT 1 FROM remote_links WHERE item_id=?", (item,)).fetchone()
         if linked:
-            if current["status"] not in ("saved", "sent", "removed") or restored["status"] not in (
-                "saved",
-                "sent",
-                "removed",
+            allowed = {"saved", "sent", "removed"} | ({"done"} if item in completion else set())
+            if current["status"] not in allowed or restored["status"] not in allowed:
+                raise ValueError("This completion change needs reconciliation before undo.")
+            if restored["status"] != "removed" and "done" not in (
+                current["status"],
+                restored["status"],
             ):
-                raise ValueError("Delivered completion needs reconciliation before undo.")
-            if restored["status"] != "removed":
                 restored["status"] = "saved"
         elif current["status"] == "sent" or restored["status"] in ("sent", "unknown"):
             raise ValueError("This item needs delivery reconciliation before undo.")
@@ -317,7 +319,21 @@ def prepare_undo(conn: sqlite3.Connection, target: int) -> tuple[dict, dict]:
     if row["format_version"] == 1:
         prior = {"items": prior, "goals": {}, "limits": {}}
     before, after = {}, copy.deepcopy(prior)
-    before["items"], after["items"] = _undo_items(conn, prior["items"], target)
+    completion = (
+        set(prior["items"])
+        if "undo_version" in original
+        else {
+            action["item"]
+            for action in original.get("actions", [])
+            if action["action"] == "mark_done"
+        }
+    )
+    before["items"], after["items"] = _undo_items(conn, prior["items"], target, completion)
+    after["completion_items"] = [
+        item
+        for item in sorted(completion)
+        if "done" in (before["items"][item]["status"], after["items"][item]["status"])
+    ]
     if "exclusions" in prior:
         before["exclusions"] = {
             item: matching.exclusions(conn, item) for item in prior["exclusions"]

@@ -252,7 +252,7 @@ app or unresolved job requires reconciliation. A newly connected unlinked app
 is not an undo destination. If undo removes a delivered addition or restoration,
 preview names its current linked copies and the approved reversal creates
 removal tasks. Unresolved tasks block undo until the person reports deletion;
-then use explicit restore_session. Delivered completion undo remains unsupported.
+then use explicit restore_session. Manual completion reversal is described below.
 
 Preview returns restored items/goals/limits, optional match exclusions,
 `delivery_targets` and `delivery_apps`, with no writes. Show that content and
@@ -305,3 +305,26 @@ coach_v1_deliveries exposes manual_action, resolved_by_version and resolution
 (user_reported_deleted). Its remote fields prefer the job's recorded result,
 so an old task remains identifiable after link retirement or later restoration.
 Filter resolved_by_version IS NULL when looking for outstanding manual tasks.
+
+
+## Undoing manual completion
+
+Supported mark_done history and its undo identify a completion reversal. Clearing
+manual completion preserves the prior saved/sent status and checks prior link
+identity. It restores only the original cancelled pending/not-sent jobs, with
+unchanged IDs and payloads; an acknowledged or uncertain job cannot be rewritten
+from an old job-state map. With no previously cancelled work, it queues nothing.
+Disconnected restored work remains paused until reconnection.
+
+Undo preview includes restored_deliveries with each original operation ID,
+connector/app label, exact item payload, status and next-attempt time. Show these
+alongside restored plan content and any fresh delivery_targets before approval.
+The immutable journal binds these original job IDs; undo validates their current
+states again within the transaction. Existing request IDs and stale-version
+checks still apply. This preview also identifies resumed jobs in local-only undo.
+
+Redo to done behaves like forward mark_done: preserve current links and every
+acknowledged receipt, cancel only pending/not-sent work and queue nothing.
+Sending or unresolved work still blocks it. No historical-link comparison is
+needed for this local completion change, including when a first delivery finished
+between undo and redo. It never replays a cancelled status onto a newly sent job.

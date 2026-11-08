@@ -52,10 +52,22 @@ def preview_undo(db_path: Path, target_version: int, *, now: datetime) -> dict:
         conn.execute("BEGIN")
         _, states = actions.prepare_undo(conn, target_version)
         delivery, labels = jobs.undo_destinations(
-            conn, states["items"], states.get("delivery_links", {})
+            conn,
+            states["items"],
+            states.get("delivery_links", {}),
+            completion=states["completion_items"],
         )
-        jobs.restore(conn, states["items"], states.get("jobs", {}), delivery, saved_at)
-    return _summary(target_version, states, delivery, labels)
+        _, changes = jobs.restore(
+            conn,
+            states["items"],
+            states.get("jobs", {}),
+            delivery,
+            saved_at,
+            completion=states["completion_items"],
+        )
+        result = _summary(target_version, states, delivery, labels)
+        result["restored_deliveries"] = jobs.restored_deliveries(conn, changes)
+    return result
 
 
 def _write(conn: sqlite3.Connection, state: dict, version: int) -> None:
@@ -104,7 +116,12 @@ def _prepare_change(
     saved_at = to_utc_text(now)
     if restoring:
         before, items = actions.prepare_undo(conn, proposal["undo_version"])
-        delivery, _ = jobs.undo_destinations(conn, items["items"], items.get("delivery_links", {}))
+        delivery, _ = jobs.undo_destinations(
+            conn,
+            items["items"],
+            items.get("delivery_links", {}),
+            completion=items["completion_items"],
+        )
     else:
         before, items = actions.prepare(conn, proposal, now.date())
         delivery, _ = jobs.destinations(conn, items["items"])
@@ -114,7 +131,12 @@ def _prepare_change(
         )
     if restoring:
         job_before, job_after = jobs.restore(
-            conn, items["items"], items.get("jobs", {}), delivery, saved_at
+            conn,
+            items["items"],
+            items.get("jobs", {}),
+            delivery,
+            saved_at,
+            completion=items["completion_items"],
         )
     else:
         job_before, job_after = jobs.prepare(conn, items["items"], delivery, saved_at)
