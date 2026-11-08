@@ -36,11 +36,15 @@ def _exercises(parts: list, templates: list) -> list:
         matches = names.get(part.get("label", "").strip().casefold(), [])
         if len(matches) != 1:
             raise _DeliveryError(
-                "needs_you", "Use an exact, unambiguous Hevy exercise name for each set."
+                "needs_you",
+                "Use an exact, unambiguous Hevy exercise name for each set.",
+                safe_to_replace=True,
             )
         if part.keys() - allowed or kind not in ("set", "normal", "warmup", "dropset", "failure"):
             raise _DeliveryError(
-                "needs_you", "This plan has targets Hevy delivery does not support yet."
+                "needs_you",
+                "This plan has targets Hevy delivery does not support yet.",
+                safe_to_replace=True,
             )
         values = {key: None for key in _SET_FIELDS}
         values.update(
@@ -58,6 +62,7 @@ def _exercises(parts: list, templates: list) -> list:
                     raise _DeliveryError(
                         "needs_you",
                         "Hevy requires whole metres and seconds; change the target explicitly.",
+                        safe_to_replace=True,
                     )
                 values[target] = int(number)
         exercise_id = matches[0]
@@ -73,7 +78,9 @@ def _exercises(parts: list, templates: list) -> list:
             )
         exercises[-1]["sets"].append(values)
     if not exercises:
-        raise _DeliveryError("needs_you", "Add strength sets before sending this routine.")
+        raise _DeliveryError(
+            "needs_you", "Add strength sets before sending this routine.", safe_to_replace=True
+        )
     return exercises
 
 
@@ -264,6 +271,8 @@ def send(
             return _update(request, expected, marker, remote_id, remote_version, in_doubt)
         return _create(request, expected, marker, in_doubt)
     except _DeliveryError as error:
+        if in_doubt:
+            error.result.pop("safe_to_replace", None)
         return error.result
     except (KeyError, TypeError, ValueError):
         return {"status": "unknown", "message": "Hevy returned an invalid routine response."}

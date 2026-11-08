@@ -666,3 +666,10 @@ class DeliveryWorkerTest(unittest.TestCase):
                 safe = send.deliver(job, MANIFEST, STAMP)
                 self.assertEqual(safe["status"], expected)
                 self.assertNotIn("invented-secret", json.dumps(safe))
+
+        with mock.patch.object(
+            send.runner, "run", return_value={"status": "needs_you", "safe_to_replace": True}
+        ):
+            self.assertNotIn(
+                "safe_to_replace", send.deliver({**job, "in_doubt": True}, MANIFEST, STAMP)
+            )
