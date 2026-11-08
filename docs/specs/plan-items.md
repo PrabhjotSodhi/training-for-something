@@ -89,4 +89,18 @@ Groups with member dates awaiting rebuild are excluded, and the coach view hides
 old matches during that window. Replaying or correcting imported data can change
 automatic completion without rewriting the journal. Move/change/remove refuses
 an automatically completed item; mark_done can preserve completion explicitly.
-Unlinking a wrong automatic match still needs its separate action implementation.
+Use the approved unlink_plan_match action to reject a wrong automatic match.
+
+
+### Rejecting a wrong match
+
+`plan_match_exclusions` stores user-approved item/source-record pairs. It is
+user-owned state, retained during rebuilds and included with SQLite backups.
+The source ID deliberately has no foreign key to imported rows: raw replay may
+remove and recreate them. The journal records prior exclusions for undo.
+
+Matching skips a candidate group containing an excluded active source record.
+The choice therefore applies to duplicate copies currently grouped together and
+survives raw replay. It does not block a different eligible workout. The coach
+view exposes sorted active IDs as `matched_record_ids_json`, or `[]` when the
+match is absent or awaiting rebuild. Unlink does not clear manual completion.

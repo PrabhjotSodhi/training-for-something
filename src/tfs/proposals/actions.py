@@ -20,6 +20,7 @@ FIELDS = {
     "change_session": ({"action", "item"}, {"label", "parts", "start_hint"}),
     "remove_session": ({"action", "item"}, set()),
     "mark_done": ({"action", "item"}, set()),
+    "unlink_plan_match": ({"action", "item", "record_ids"}, set()),
     "set_goal": ({"action", "item", "type", "date", "target"}, set()),
     "set_limit": ({"action", "item", "kind", "values"}, set()),
 }
@@ -187,9 +188,25 @@ def _session(
             raise ValueError("This plan item already exists.")
         after["items"][item] = _add(conn, action, today, after["goals"])
     else:
-        if action["action"] != "mark_done" and matching.completed(conn, item):
+        if action["action"] != "mark_done" and matching.completed(
+            conn, item, after.get("exclusions", {}).get(item, ())
+        ):
             raise ValueError("This plan item is done according to an imported workout.")
         _edit(after["items"][item], action, today)
+
+
+def _unlink(conn: sqlite3.Connection, action: dict, before: dict, after: dict) -> None:
+    item, records = action["item"], action["record_ids"]
+    if not isinstance(records, list) or not records:
+        raise ValueError("Unlink needs the current matched source-record IDs.")
+    for record in records:
+        _text(record)
+    if records != sorted(set(records)) or records != matching.matched_records(conn, item):
+        raise ValueError("The workout match changed. Read it and preview again.")
+    before.setdefault("exclusions", {}).setdefault(item, matching.exclusions(conn, item))
+    after.setdefault("exclusions", {})[item] = sorted(
+        set(before["exclusions"][item]) | set(records)
+    )
 
 
 def prepare(conn: sqlite3.Connection, proposal: dict, today: date) -> tuple[dict, dict]:
@@ -211,6 +228,8 @@ def prepare(conn: sqlite3.Connection, proposal: dict, today: date) -> tuple[dict
             if item not in before[table]:
                 before[table][item] = targets.load(conn, table, item)
             after[table][item] = targets.validate(action, today)
+        elif name == "unlink_plan_match":
+            _unlink(conn, action, before, after)
         else:
             _session(conn, action, today, before, after)
             after["items"][item]["why"] = proposal["why"]
@@ -249,13 +268,17 @@ def prepare_undo(conn: sqlite3.Connection, target: int) -> tuple[dict, dict]:
     supported = set(original) == {"undo_version"} or (
         "actions" in original and all(action["action"] in allowed for action in original["actions"])
     )
-    if row["format_version"] not in (1, 2, 3) or not supported:
+    if row["format_version"] not in (1, 2, 3, 4) or not supported:
         raise ValueError("This saved operation does not support local undo.")
     prior = json.loads(row["before_json"])
     if row["format_version"] == 1:
         prior = {"items": prior, "goals": {}, "limits": {}}
     before, after = {}, copy.deepcopy(prior)
     before["items"], after["items"] = _undo_items(conn, prior["items"], target)
+    if "exclusions" in prior:
+        before["exclusions"] = {
+            item: matching.exclusions(conn, item) for item in prior["exclusions"]
+        }
     for table in ("goals", "limits"):
         before[table] = {item: targets.load(conn, table, item) for item in prior[table]}
     return before, after

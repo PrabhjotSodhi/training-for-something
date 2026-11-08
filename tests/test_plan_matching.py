@@ -16,7 +16,7 @@ from tfs.mcp.tool_access import open_reader, query
 from tfs.persistence.migrations import migrate
 from tfs.persistence.sqlite import transaction
 from tfs.proposals import matching
-from tfs.proposals.apply import save, undo
+from tfs.proposals.apply import preview, save, undo
 
 
 class PlanMatchingTest(unittest.TestCase):
@@ -85,6 +85,76 @@ class PlanMatchingTest(unittest.TestCase):
             )
             self.assertNotIn("error", result)
             return result["rows"]
+
+    def unlink(self, item="p1"):
+        with closing(open_reader(self.path)) as reader:
+            rows = query(
+                reader, "SELECT plan_item_id,matched_record_ids_json FROM coach_v1_plan_items"
+            )["rows"]
+        records = next(json.loads(row[1]) for row in rows if row[0] == item)
+        return {"action": "unlink_plan_match", "item": item, "record_ids": records}
+
+    def test_unlink_duplicate_match_preview_and_undo_preserve_delivery_history(self):
+        self.save(self.plan())
+        self.link("p1", "invented", "routine-1")
+        self.import_records([self.workout(plan_ref="routine-1")])
+        self.import_records([self.workout()], connector="other")
+        action = self.unlink()
+        self.assertEqual(len(action["record_ids"]), 2)
+        value = proposal(action, version=1)
+        shown = preview(self.path, value, now=NOW)
+        self.assertEqual(
+            shown["match_exclusions"], [{"item": "p1", "record_ids": action["record_ids"]}]
+        )
+        self.assertEqual(shown["delivery_targets"], {})
+        self.assertEqual(
+            self.conn.execute("SELECT count(*) FROM plan_match_exclusions").fetchone()[0], 0
+        )
+        history = [tuple(row) for row in self.conn.execute("SELECT * FROM jobs")]
+        self.save(action)
+        self.assertEqual(self.visible(), [["p1", "saved", None, None]])
+        self.assertEqual(matching.exclusions(self.conn, "p1"), action["record_ids"])
+        undo(self.path, 2, request_id="undo-unlink", approved_by="chat", now=NOW)
+        self.assertEqual(self.visible()[0][1], "done")
+        undo(self.path, 3, request_id="redo-unlink", approved_by="chat", now=NOW)
+        self.assertEqual(self.visible(), [["p1", "saved", None, None]])
+        self.assertEqual([tuple(row) for row in self.conn.execute("SELECT * FROM jobs")], history)
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM remote_links").fetchone()[0], 1)
+        self.assertEqual(
+            [row[0] for row in self.conn.execute("SELECT format_version FROM journal")],
+            [2, 4, 4, 4],
+        )
+
+    def test_changed_match_refuses_unlink_without_partial_write(self):
+        self.save(self.plan())
+        self.import_records([self.workout()])
+        value = proposal(self.unlink(), version=1)
+        preview(self.path, value, now=NOW)
+        self.import_records([self.workout()], connector="other")
+        with self.assertRaisesRegex(ValueError, "match changed"):
+            save(self.path, value, request_id="stale-match", approved_by="chat", now=NOW)
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM journal").fetchone()[0], 1)
+        self.assertEqual(matching.exclusions(self.conn, "p1"), [])
+        self.assertEqual(self.visible()[0][1], "done")
+
+    def test_unlink_then_edit_obeys_action_order_and_retries_once(self):
+        self.save(self.plan())
+        self.import_records([self.workout()])
+        action = self.unlink()
+        edit = {"action": "move_session", "item": "p1", "to": "2026-11-09"}
+        with self.assertRaisesRegex(ValueError, "done"):
+            self.save(edit, action)
+        value = proposal(action, edit, version=1)
+        for _ in range(2):
+            save(self.path, value, request_id="unlink-edit", approved_by="chat", now=NOW)
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM journal").fetchone()[0], 2)
+        self.assertEqual(
+            self.conn.execute("SELECT local_date FROM plan_items").fetchone()[0], "2026-11-09"
+        )
+        self.assertEqual(self.matches(), [])
+        undo(self.path, 2, request_id="undo-edit", approved_by="chat", now=NOW)
+        self.assertEqual(self.visible()[0][1], "done")
+        self.assertEqual(matching.exclusions(self.conn, "p1"), [])
 
     def test_nearest_time_duplicate_group_and_rebuild_are_deterministic(self):
         self.save(self.plan("early", "07:30"), self.plan("late", "17:30"))
@@ -213,10 +283,11 @@ class PlanMatchingTest(unittest.TestCase):
         self.assertEqual([r.status for r in results], ["ok"])
         self.assertEqual(len(self.matches()), 1)
         expected = self.matches()
+        self.conn.execute("DROP TABLE plan_match_exclusions")
         self.conn.execute("DROP TABLE plan_matches")
         self.conn.execute("PRAGMA user_version=4")
         self.assertEqual(self.conn.execute("SELECT count(*) FROM rebuild_dates").fetchone()[0], 0)
-        self.assertEqual(migrate(self.conn), 5)
+        self.assertEqual(migrate(self.conn), 6)
         self.assertEqual(process_pending(self.conn, self.path.parent, tz=UTC), [])
         self.assertEqual(self.matches(), expected)
         self.save({"action": "mark_done", "item": "p1"})
@@ -226,3 +297,14 @@ class PlanMatchingTest(unittest.TestCase):
         self.assertEqual(self.matches(), before)
         self.assertEqual([tuple(r) for r in self.conn.execute("SELECT * FROM journal")], journal)
         self.assertEqual(self.conn.execute("SELECT status FROM plan_items").fetchone()[0], "done")
+
+        action = self.unlink()
+        self.save(action)
+        self.assertEqual(self.visible(), [["p1", "done", None, None]])
+        before_unlink = [tuple(r) for r in self.conn.execute("SELECT * FROM journal")]
+        self.assertEqual(rebuild_all(self.conn, self.path.parent, tz=UTC), 1)
+        self.assertEqual(self.visible(), [["p1", "done", None, None]])
+        self.assertEqual(matching.exclusions(self.conn, "p1"), action["record_ids"])
+        self.assertEqual(
+            [tuple(r) for r in self.conn.execute("SELECT * FROM journal")], before_unlink
+        )

@@ -33,6 +33,7 @@ A proposal holds one or more actions. Save applies all of them in one transactio
 | `correct_record` | A fix to a source record, such as its sport family | Record exists | No | Remove the correction |
 | `link_sessions`, `unlink_sessions` | Two records counted as one workout, or split apart | Records exist | No | The opposite action |
 | `set_source_order` | Your source list for one data type | Data type known | No | Restore the old order |
+| `unlink_plan_match` | Rejects one workout match for a plan item | Exact current source-record IDs | No | Restore the match exclusions |
 | `mark_done` | "I did this" for a plan item | Item exists | No | Clear it |
 | `set_forecast` | A coach estimate for a goal with no code forecast: a range, the method, sources and date | Goal exists and has no code forecast | No | Restore the previous estimate |
 
@@ -69,7 +70,7 @@ does not make a Save tool available.
 ## Local session proposal API
 
 The local application API currently supports `set_goal`, `set_limit`,
-`add_session`, `move_session`, `change_session`, `remove_session` and `mark_done`. Other actions are refused
+`add_session`, `move_session`, `change_session`, `remove_session`, `mark_done` and `unlink_plan_match`. Other actions are refused
 until their handlers arrive. The MCP tools below expose this same API.
 
 Every proposal supplies `plan_version`, `why`, `sources` and a non-empty
@@ -82,6 +83,7 @@ and a stable `item` ID. Unknown fields are errors.
 | move_session | to; optional start_hint |
 | change_session | at least one of label, parts, start_hint |
 | remove_session, mark_done | none |
+| unlink_plan_match | record_ids: complete sorted unique non-empty list from matched_record_ids_json |
 
 `start_hint` is a local 24-hour HH:MM time, or null for no preferred time.
 Omission on add means null; omission on move/change keeps the previous hint.
@@ -205,3 +207,24 @@ changes. Removing a delivered item and undo involving delivered state remain
 refused until compensation and manual-action handling are implemented. This is
 not remote undo support. Invented delivery tests do not satisfy real-provider
 proof #29.
+
+
+## Unlink a wrong plan match
+
+`unlink_plan_match` is separate from `unlink_sessions`, which separates duplicate
+imported workouts. It excludes the supplied source records from matching this
+plan. Preview and Save require the complete active evidence currently shown by
+`matched_record_ids_json`; changed or pending evidence requires a fresh read and
+preview. The choice uses stable source IDs, never a rebuilt workout group ID.
+
+Preview returns `match_exclusions` as item/record_ids entries. Unlink alone changes
+no planned targets, delivery jobs or remote links. It preserves manual done.
+Unlink followed by a plan edit in the same proposal follows action order; the
+edit keeps the ordinary delivery rules. Another eligible workout may still
+complete the plan.
+
+Journal format 4 adds an optional `exclusions` map from item ID to its prior
+source-ID list. Other changes retain formats 2/3, and older history stays readable.
+Latest-only undo/redo restores exclusions in the same transaction and rebuilds
+matches. The global version advances; unlink alone does not change the item's
+payload version. Request-ID retries return the original receipt.

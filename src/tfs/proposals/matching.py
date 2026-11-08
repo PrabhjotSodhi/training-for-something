@@ -1,6 +1,7 @@
 """Match completed workout groups without overwriting user-owned completion."""
 
 import sqlite3
+from collections.abc import Sequence
 from datetime import timedelta, timezone, tzinfo
 
 from tfs.connectors.core.contract import parse_iso_time
@@ -26,6 +27,11 @@ JOIN source_records r ON r.id = (
   WHERE m.group_id = g.id AND s.deleted_at IS NULL ORDER BY s.start_utc, s.id LIMIT 1
 )
 WHERE p.status IN ('saved', 'sent', 'done', 'missed', 'unknown')
+AND NOT EXISTS (
+  SELECT 1 FROM plan_match_exclusions e JOIN session_group_members m ON m.record_id=e.record_id
+  JOIN source_records s ON s.id=m.record_id AND s.deleted_at IS NULL
+  WHERE e.item_id=p.id AND m.group_id=g.id
+)
 AND NOT EXISTS (
   SELECT 1 FROM session_group_members m JOIN source_records s ON s.id = m.record_id
   JOIN rebuild_dates d ON d.local_date = s.local_date WHERE m.group_id = g.id
@@ -64,16 +70,42 @@ def rebuild(conn: sqlite3.Connection, *, tz: tzinfo | None = None) -> None:
         groups.add(group)
 
 
-def completed(conn: sqlite3.Connection, item: str) -> bool:
-    """Whether an item has active matched evidence outside a pending rebuild."""
-    return (
-        conn.execute(
-            "SELECT 1 FROM plan_matches p WHERE p.item_id = ?"
-            " AND EXISTS (SELECT 1 FROM session_group_members m JOIN source_records r ON r.id=m.record_id"
-            " WHERE m.group_id=p.group_id AND r.deleted_at IS NULL)"
-            " AND NOT EXISTS (SELECT 1 FROM session_group_members m JOIN source_records r ON r.id=m.record_id"
-            " JOIN rebuild_dates d ON d.local_date=r.local_date WHERE m.group_id=p.group_id)",
+def matched_records(conn: sqlite3.Connection, item: str) -> list[str]:
+    """Return the active source IDs of a match whose import rebuild is complete."""
+    return [
+        row[0]
+        for row in conn.execute(
+            "SELECT r.id FROM plan_matches p JOIN session_group_members m ON m.group_id=p.group_id"
+            " JOIN source_records r ON r.id=m.record_id WHERE p.item_id=? AND r.deleted_at IS NULL"
+            " AND NOT EXISTS (SELECT 1 FROM session_group_members gm JOIN source_records s ON s.id=gm.record_id"
+            " JOIN rebuild_dates d ON d.local_date=s.local_date WHERE gm.group_id=p.group_id) ORDER BY r.id",
             (item,),
-        ).fetchone()
-        is not None
-    )
+        )
+    ]
+
+
+def completed(conn: sqlite3.Connection, item: str, exclusions: Sequence[str] = ()) -> bool:
+    """Whether active matched evidence remains after this proposal's exclusions."""
+    records = matched_records(conn, item)
+    return bool(records) and not set(records).intersection(exclusions)
+
+
+def exclusions(conn: sqlite3.Connection, item: str) -> list[str]:
+    """Read the user's stable source-record exclusions for one plan item."""
+    return [
+        row[0]
+        for row in conn.execute(
+            "SELECT record_id FROM plan_match_exclusions WHERE item_id=? ORDER BY record_id",
+            (item,),
+        )
+    ]
+
+
+def write_exclusions(conn: sqlite3.Connection, changes: dict) -> None:
+    """Restore the selected exclusions in the caller's journal transaction."""
+    for item, records in changes.items():
+        conn.execute("DELETE FROM plan_match_exclusions WHERE item_id=?", (item,))
+        conn.executemany(
+            "INSERT INTO plan_match_exclusions VALUES (?, ?)",
+            [(item, record) for record in records],
+        )

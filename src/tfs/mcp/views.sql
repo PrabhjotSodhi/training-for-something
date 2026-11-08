@@ -87,7 +87,11 @@ CREATE TEMP VIEW coach_v1_plan_items AS
 SELECT p.id AS plan_item_id, p.version, p.plan_version, p.local_date, p.start_hint,
   p.family, p.label, p.goal_ids_json, p.why, p.sources_json,
   CASE WHEN m.item_id IS NOT NULL THEN 'done' ELSE p.status END AS status,
-  m.group_id AS matched_workout_id, m.reason AS match_reason
+  m.group_id AS matched_workout_id, m.reason AS match_reason,
+  (SELECT json_group_array(id) FROM (
+    SELECT r.id FROM main.session_group_members gm JOIN main.source_records r ON r.id=gm.record_id
+    WHERE gm.group_id=m.group_id AND r.deleted_at IS NULL ORDER BY r.id
+  )) AS matched_record_ids_json
 FROM main.plan_items p LEFT JOIN main.plan_matches m ON m.item_id=p.id
 AND EXISTS (SELECT 1 FROM main.session_group_members gm JOIN main.source_records r ON r.id=gm.record_id
   WHERE gm.group_id=m.group_id AND r.deleted_at IS NULL)
