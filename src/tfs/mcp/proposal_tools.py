@@ -56,6 +56,10 @@ ACTIONS = [
     _action("remove_session", {}),
     _action("mark_done", {}),
     _action(
+        "unlink_plan_match",
+        {"record_ids": {"type": "array", "items": TEXT, "minItems": 1, "uniqueItems": True}},
+    ),
+    _action(
         "set_goal",
         {
             "type": {"enum": list(GOAL_TYPES)},

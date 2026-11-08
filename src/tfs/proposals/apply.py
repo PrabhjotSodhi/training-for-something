@@ -19,7 +19,17 @@ def preview(db_path: Path, proposal: dict, *, now: datetime) -> dict:
         conn.execute("BEGIN")
         _, items = actions.prepare(conn, proposal, now.date())
         delivery, labels = jobs.destinations(conn, items["items"])
+    exclusions = items.pop("exclusions", {})
     return {
+        **(
+            {
+                "match_exclusions": [
+                    {"item": item, "record_ids": ids} for item, ids in exclusions.items()
+                ]
+            }
+            if exclusions
+            else {}
+        ),
         "plan_version": proposal["plan_version"],
         "delivery_targets": delivery,
         "delivery_apps": labels,
@@ -107,7 +117,8 @@ def _save(
         for state in items["items"].values():
             _write(conn, state, version)
         jobs.write(conn, job_after, version, saved_at)
-        if items["items"]:
+        matching.write_exclusions(conn, items.get("exclusions", {}))
+        if items["items"] or items.get("exclusions"):
             matching.rebuild(conn)
     return {"request_id": request_id, "plan_version": version}
 

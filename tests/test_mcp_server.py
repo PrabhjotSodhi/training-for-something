@@ -71,6 +71,17 @@ class McpServerTest(unittest.TestCase):
         [reply] = self.talk(request(1, "tools/list"))
         describe, query, propose, save, undo = reply["result"]["tools"]
         self.assertEqual([propose["name"], save["name"], undo["name"]], ["propose", "save", "undo"])
+        actions = propose["inputSchema"]["properties"]["proposal"]["properties"]["actions"][
+            "items"
+        ]["oneOf"]
+        unlink = next(
+            action
+            for action in actions
+            if action["properties"]["action"]["const"] == "unlink_plan_match"
+        )
+        self.assertEqual(unlink["required"], ["action", "item", "record_ids"])
+        self.assertTrue(unlink["properties"]["record_ids"]["uniqueItems"])
+
         self.assertTrue(propose["annotations"]["readOnlyHint"])
         for tool in (save, undo):
             self.assertFalse(tool["annotations"]["readOnlyHint"])

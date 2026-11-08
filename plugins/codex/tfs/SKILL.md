@@ -23,7 +23,9 @@ For `undo`, explain that it reverses the most recent local change and use the cu
 
 The client permission prompt is the consent boundary. An AI-generated approval flag is not consent, and always-allow client settings can skip the prompt. The installed AI CLI is trusted software with the person's operating-system access; TFS tools are not an OS sandbox. Keep save and undo configured to require approval. Do not edit files or use another route to change the person's data.
 
-Supported local changes are set_goal, set_limit, add_session, move_session, change_session, remove_session and mark_done. Sending plans to apps, corrections and other action types are not available through these tools yet.
+Supported local changes are set_goal, set_limit, add_session, move_session, change_session, remove_session, mark_done and unlink_plan_match. Sending plans to apps, corrections and other action types are not available through these tools yet.
+
+For a wrong automatic match, read `matched_record_ids_json` from the plan view. Propose `unlink_plan_match` with the item and that complete sorted list as `record_ids`. Explain that this prevents those workouts from completing this plan, survives replay, and leaves manual completion intact. If the match changes before Save, read and preview again.
 
 ## Research
 

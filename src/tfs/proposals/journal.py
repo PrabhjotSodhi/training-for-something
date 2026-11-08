@@ -47,6 +47,6 @@ def append(
             encode(before),
             approved_by,
             saved_at,
-            3 if "jobs" in before else 2,
+            4 if "exclusions" in before else 3 if "jobs" in before else 2,
         ),
     ).fetchone()[0]
