@@ -446,7 +446,7 @@ The engine runs in both cases. It imports data, builds numbers, and runs the pho
 
 ### 9.2 How the AI reads your data
 
-The AI reads data through the ask TFS tool. It never opens `tfs.db` or `raw/` through this route. The tool is a small local MCP server that TFS ships, written with the standard library only.
+The AI reads data through the ask TFS tool. It never opens `tfs.db` or `raw/` through this route. The tool is a small local MCP server that TFS ships, built on the official MCP Python SDK.
 
 The `describe` action returns views, columns, units and row meanings. The `query` action runs one SELECT over the views. Both use one guarded reader with three controls.
 

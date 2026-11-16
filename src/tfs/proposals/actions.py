@@ -2,84 +2,18 @@
 
 import copy
 import json
-import math
-import re
 import sqlite3
 from datetime import date
-from urllib.parse import urlsplit
 
-from tfs.connectors.core.contract import FAMILIES
 from tfs.proposals import journal, matching, targets
+from tfs.proposals.models import Proposal
 from tfs.scheduling import jobs
 
-FIELDS = {
-    "add_session": (
-        {"action", "item", "date", "family", "label", "parts"},
-        {"goal_ids", "start_hint"},
-    ),
-    "move_session": ({"action", "item", "to"}, {"start_hint"}),
-    "change_session": ({"action", "item"}, {"label", "parts", "start_hint"}),
-    "remove_session": ({"action", "item"}, set()),
-    "mark_done": ({"action", "item"}, set()),
-    "unlink_plan_match": ({"action", "item", "record_ids"}, set()),
-    "restore_session": ({"action", "item", "to"}, {"start_hint"}),
-    "report_delivery_deleted": ({"action", "item", "connector", "op_id", "remote_id"}, set()),
-    "set_goal": ({"action", "item", "type", "date", "target"}, set()),
-    "set_limit": ({"action", "item", "kind", "values"}, set()),
-}
-PART_FIELDS = {"part_kind", "label", "duration_s", "distance_m", "reps", "weight_kg", "avg_hr"}
 
-
-def _fields(value: object, required: set, optional: set = frozenset()) -> None:
-    if not isinstance(value, dict) or not required <= value.keys() <= required | optional:
-        raise ValueError("Missing or unknown fields.")
-
-
-def _text(value: object) -> None:
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError("Expected non-empty text.")
-
-
-def _day(value: object, today: date) -> str:
-    if not isinstance(value, str):
-        raise ValueError("Expected an ISO local date.")
-    try:
-        parsed = date.fromisoformat(value)
-    except ValueError as error:
-        raise ValueError("Expected an ISO local date.") from error
-    if parsed.isoformat() != value or parsed < today:
+def _day(value: str, today: date) -> str:
+    if date.fromisoformat(value) < today:
         raise ValueError("A planned date must be today or later, in YYYY-MM-DD form.")
     return value
-
-
-def _start_hint(value: object) -> str | None:
-    if value is not None and (
-        not isinstance(value, str) or not re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", value)
-    ):
-        raise ValueError("start_hint must be a local HH:MM time or null.")
-    return value
-
-
-def _parts(value: object) -> None:
-    if not isinstance(value, list):
-        raise ValueError("Parts must be a list.")
-    for part in value:
-        _fields(part, {"part_kind"}, PART_FIELDS - {"part_kind"})
-        _text(part["part_kind"])
-        if "label" in part:
-            _text(part["label"])
-        for field in PART_FIELDS - {"part_kind", "label"}:
-            if field not in part:
-                continue
-            number = part[field]
-            if (
-                type(number) not in (int, float)
-                or not 0 <= number <= 1e308
-                or not math.isfinite(number)
-            ):
-                raise ValueError(f"{field} must be a finite non-negative number.")
-            if field == "reps" and (type(number) is not int or number > 2**63 - 1):
-                raise ValueError("reps must be a whole number.")
 
 
 def _load(conn: sqlite3.Connection, item: str) -> dict | None:
@@ -101,43 +35,17 @@ def _load(conn: sqlite3.Connection, item: str) -> dict | None:
 
 
 def _proposal(conn: sqlite3.Connection, proposal: dict) -> None:
-    _fields(proposal, {"plan_version", "why", "sources", "actions"}, {"delivery_targets"})
-    delivery = proposal.get("delivery_targets", {})
-    if not isinstance(delivery, dict):
-        raise ValueError("Delivery targets must map item IDs to connector lists.")
-    for item, names in delivery.items():
-        _text(item)
-        if not isinstance(names, list) or not all(isinstance(name, str) and name for name in names):
-            raise ValueError("Delivery targets must be connector-ID lists.")
+    Proposal.model_validate(proposal)
+    for names in proposal.get("delivery_targets", {}).values():
         if names != sorted(set(names)):
             raise ValueError("Delivery targets must be sorted without duplicates.")
-    expected = proposal["plan_version"]
-    if type(expected) is not int or expected < 0 or expected != journal.version(conn):
+    if proposal["plan_version"] != journal.version(conn):
         raise ValueError("The proposal is stale. Read the current plan and propose again.")
-    _text(proposal["why"])
-    if not isinstance(proposal["sources"], list):
-        raise ValueError("Sources must be a list.")
-    for source in proposal["sources"]:
-        _fields(source, {"url", "type"})
-        _text(source["url"])
-        _text(source["type"])
-        link = urlsplit(source["url"])
-        if link.scheme not in ("https", "http") or not link.netloc:
-            raise ValueError("Each source needs an HTTP or HTTPS URL.")
-    if not isinstance(proposal["actions"], list) or not proposal["actions"]:
-        raise ValueError("A proposal needs at least one action.")
 
 
 def _add(conn: sqlite3.Connection, action: dict, today: date, pending_goals: dict) -> dict:
-    if action["family"] not in FAMILIES:
-        raise ValueError("Unknown sport family.")
-    _text(action["label"])
-    _parts(action["parts"])
     goals = action.get("goal_ids", [])
-    if not isinstance(goals, list):
-        raise ValueError("goal_ids must be a list.")
     for goal in goals:
-        _text(goal)
         if (
             goal not in pending_goals
             and conn.execute("SELECT 1 FROM goals WHERE id = ?", (goal,)).fetchone() is None
@@ -147,7 +55,7 @@ def _add(conn: sqlite3.Connection, action: dict, today: date, pending_goals: dic
         "id": action["item"],
         "version": 0,
         "local_date": _day(action["date"], today),
-        "start_hint": _start_hint(action.get("start_hint")),
+        "start_hint": action.get("start_hint"),
         "family": action["family"],
         "label": action["label"],
         "goal_ids": list(dict.fromkeys(goals)),
@@ -163,17 +71,13 @@ def _edit(state: dict | None, action: dict, today: date) -> None:
     if name in ("move_session", "change_session"):
         state["status"] = "saved"
     if "start_hint" in action:
-        state["start_hint"] = _start_hint(action["start_hint"])
+        state["start_hint"] = action["start_hint"]
     if name == "move_session":
         state["local_date"] = _day(action["to"], today)
     elif name == "change_session":
-        if not ({"label", "parts", "start_hint"} & action.keys()):
-            raise ValueError("A change needs a label, parts or start_hint.")
         if "label" in action:
-            _text(action["label"])
             state["label"] = action["label"]
         if "parts" in action:
-            _parts(action["parts"])
             state["parts"] = copy.deepcopy(action["parts"])
     else:
         state["status"] = "removed" if name == "remove_session" else "done"
@@ -186,7 +90,7 @@ def _restore(conn: sqlite3.Connection, state: dict | None, action: dict, today: 
         raise ValueError("Resolve the existing deletion task before restoring a new copy.")
     state["local_date"] = _day(action["to"], today)
     if "start_hint" in action:
-        state["start_hint"] = _start_hint(action["start_hint"])
+        state["start_hint"] = action["start_hint"]
     state["status"] = "saved"
 
 
@@ -214,10 +118,6 @@ def _session(
 
 def _unlink(conn: sqlite3.Connection, action: dict, before: dict, after: dict) -> None:
     item, records = action["item"], action["record_ids"]
-    if not isinstance(records, list) or not records:
-        raise ValueError("Unlink needs the current matched source-record IDs.")
-    for record in records:
-        _text(record)
     if records != sorted(set(records)) or records != matching.matched_records(conn, item):
         raise ValueError("The workout match changed. Read it and preview again.")
     before.setdefault("exclusions", {}).setdefault(item, matching.exclusions(conn, item))
@@ -229,8 +129,6 @@ def _unlink(conn: sqlite3.Connection, action: dict, before: dict, after: dict) -
 def _report(conn: sqlite3.Connection, action: dict, count: int) -> dict:
     if count != 1:
         raise ValueError("Report a deletion separately before proposing another change.")
-    for field in ("connector", "op_id", "remote_id"):
-        _text(action[field])
     return {action["op_id"]: jobs.prepare_report(conn, action)}
 
 
@@ -240,14 +138,7 @@ def prepare(conn: sqlite3.Connection, proposal: dict, today: date) -> tuple[dict
     before = {"items": {}, "goals": {}, "limits": {}}
     after = copy.deepcopy(before)
     for action in proposal["actions"]:
-        if not isinstance(action, dict) or not isinstance(action.get("action"), str):
-            raise ValueError("Each action needs a known action name.")
-        name = action["action"]
-        if name not in FIELDS:
-            raise ValueError(f"Unsupported action: {name}.")
-        _fields(action, *FIELDS[name])
-        item = action["item"]
-        _text(item)
+        name, item = action["action"], action["item"]
         if name in ("set_goal", "set_limit"):
             table = "goals" if name == "set_goal" else "limits"
             if item not in before[table]:
@@ -309,9 +200,10 @@ def prepare_undo(conn: sqlite3.Connection, target: int) -> tuple[dict, dict]:
         raise ValueError(
             "A reported external deletion cannot be undone. Propose restore_session to create a new copy."
         )
-    allowed = FIELDS.keys() - ({"set_goal", "set_limit"} if row["format_version"] == 1 else set())
+    not_yet = ("set_goal", "set_limit") if row["format_version"] == 1 else ()
     supported = ({"undo_version"} <= set(original) <= {"undo_version", "delivery_targets"}) or (
-        "actions" in original and all(action["action"] in allowed for action in original["actions"])
+        "actions" in original
+        and not any(action["action"] in not_yet for action in original["actions"])
     )
     if row["format_version"] not in (1, 2, 3, 4, 5) or not supported:
         raise ValueError("This saved operation does not support local undo.")

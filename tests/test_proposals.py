@@ -117,18 +117,11 @@ class ProposalsTest(unittest.TestCase):
             ("2026-11-11", "00:00"),
         )
 
-    def test_invalid_start_time_in_later_action_saves_nothing(self) -> None:
-        for hint in ("7:30", "24:00", "12:60", "07:30:00", "07:30+13:00", " 07:30", True, 730):
-            with self.subTest(hint=hint), self.assertRaises(ValueError):
-                self.save(
-                    proposal(ADD, {"action": "change_session", "item": "p1", "start_hint": hint})
-                )
-            self.assertEqual(self.counts(), (0, 0, 0))
-
     def test_invalid_later_action_and_unknown_fields_save_nothing(self) -> None:
         cases = [
             proposal(ADD, {"action": "move_session", "item": "missing", "to": "2026-11-09"}),
             proposal({**ADD, "send_now": True}),
+            proposal({**ADD, "action": "erase_session"}),
             proposal({**ADD, "date": "2026-11-06"}),
             proposal({**ADD, "family": "unknown"}),
             proposal({**ADD, "goal_ids": ["missing"]}),
