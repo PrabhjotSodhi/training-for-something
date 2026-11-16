@@ -23,7 +23,7 @@ Python 3.12. Tests use `unittest`. Hypothesis is allowed in tests only. Ruff lin
 
 ## Rules
 
-1. Standard library only. `keyring` is the one approved runtime package. Never add a dependency. If you need one, stop and ask on the issue.
+1. Runtime packages are the ones listed in `pyproject.toml`. Add one only when the issue names it. A package qualifies when it solves a problem many projects share, it is widely used and maintained, and it installs with TFS with no second program to run.
 2. One issue per pull request. Touch only the files the issue lists under "Expected files", plus their tests. If you need another file or table, stop and ask on the issue.
 3. Never edit `docs/HLD.md`, `docs/code-map.md`, `docs/specs/`, `AGENTS.md`, `ruff.toml` or `.github/` unless the issue says so. Never add `# noqa` to silence Ruff. If a finding looks wrong, stop and ask on the issue.
 4. Follow the issue's test policy. "Test first" means you commit the failing tests from the acceptance examples before the code that makes them pass.

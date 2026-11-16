@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "A free, open source, local-first coach for one person's goal."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["keyring>=25"]
+dependencies = []
 
 [project.scripts]
 tfs = "tfs.cli:main"

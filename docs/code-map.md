@@ -2,7 +2,7 @@
 
 Where each part of the high level design (`docs/HLD.md`) lives in code, the database tables, and how the parts call each other. Every ticket names files from this map. A ticket that needs a file or table not listed here stops and asks.
 
-Python 3.12, standard library only. `keyring` is the one approved runtime package. Hypothesis is a test-only package.
+Python 3.12. Runtime packages are listed in `pyproject.toml`. Hypothesis is a test-only package.
 
 ## 1. Folders
 
@@ -72,7 +72,7 @@ training-for-something/
       templates/
       static/
     diagnostics.py            one status report for screens and `tfs status`
-    password_store.py         app tokens and API keys in the OS password store, with a user-only file fallback
+    password_store.py         app tokens and API keys in one private `.env` file in the data folder
     backup_restore.py         backup and restore
     export.py                 export your data
     delete_data.py            Delete my data
