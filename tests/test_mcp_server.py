@@ -5,8 +5,12 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+from mcp import Client, ClientSession, StdioServerParameters, stdio_client, types
+from mcp.types.version import HANDSHAKE_PROTOCOL_VERSIONS
 
 import tfs
 from tfs.mcp.server import NO_DATA, serve
@@ -303,6 +307,80 @@ class McpServerTest(unittest.TestCase):
         self.assertEqual(
             self.tool_data("query", {"sql": "SELECT * FROM coach_v1_plan_state"})["rows"], [[0]]
         )
+
+
+def plan(**part: object) -> dict:
+    return {
+        "plan_version": 0,
+        "why": "Easy practice",
+        "sources": [],
+        "actions": [
+            {
+                "action": "add_session",
+                "item": "p1",
+                "date": (datetime.now(UTC) + timedelta(days=2)).date().isoformat(),
+                "family": "run",
+                "label": "café ✓",
+                "parts": [{"part_kind": "interval", **part}],
+            }
+        ],
+    }
+
+
+@asynccontextmanager
+async def tfs_mcp(folder: str):
+    """Start `tfs mcp` as a subprocess and yield the SDK's streams to it."""
+    env = {**os.environ, "TFS_HOME": folder, "PYTHONPATH": SRC}
+    command = StdioServerParameters(command=sys.executable, args=["-m", "tfs", "mcp"], env=env)
+    with Path(os.devnull).open("w") as server_log:
+        async with stdio_client(command, errlog=server_log) as streams:
+            yield streams
+
+
+class McpSdkTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = folder.name
+
+    async def test_initialize_with_an_unsupported_version_gets_a_supported_one(self) -> None:
+        async with tfs_mcp(self.folder) as (read, write), ClientSession(read, write) as session:
+            result = await session.send_request(
+                types.InitializeRequest(
+                    params=types.InitializeRequestParams(
+                        protocol_version="invented-unsupported-version",
+                        capabilities=types.ClientCapabilities(),
+                        client_info=types.Implementation(name="test", version="0"),
+                    )
+                ),
+                types.InitializeResult,
+            )
+        self.assertIn(result.protocol_version, HANDSHAKE_PROTOCOL_VERSIONS)
+
+    async def test_propose_refuses_a_wrong_shape_before_any_proposal_code_runs(self) -> None:
+        unknown_action = plan()
+        unknown_action["actions"][0]["action"] = "erase_session"
+        extra_field = plan()
+        extra_field["actions"][0]["send_now"] = True
+        async with Client(tfs_mcp(self.folder)) as client:
+            # There is no database yet, so proposal code would answer NO_DATA.
+            for proposal, named in [
+                (plan(reps=2.5), "reps"),
+                (unknown_action, "erase_session"),
+                (extra_field, "send_now"),
+            ]:
+                with self.subTest(named=named):
+                    result = await client.call_tool("propose", {"proposal": proposal})
+                    self.assertTrue(result.is_error)
+                    self.assertIn(named, result.content[0].text)
+                    self.assertNotIn(NO_DATA, result.content[0].text)
+            make_database(self.folder)
+            result = await client.call_tool("propose", {"proposal": plan(reps=10)})
+            self.assertFalse(result.is_error, result)
+            self.assertEqual(
+                result.structured_content["items"][0]["parts"],
+                [{"part_kind": "interval", "reps": 10}],
+            )
 
 
 if __name__ == "__main__":
