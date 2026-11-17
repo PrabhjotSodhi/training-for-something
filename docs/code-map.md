@@ -50,12 +50,12 @@ training-for-something/
       views.sql               the coach_v1_* views
       tool_access.py          the guarded read-only reader
       server.py               the ask TFS tool over stdio
-      proposal_tools.py       schemas and dispatch for propose, save and undo
     providers/
       briefing.py             the briefing that starts every run TFS starts
       claude_code.py          one file per AI tool
       codex.py
     proposals/
+      models.py               the shape of every proposal action, written once
       actions.py              validates proposals and calculates resulting state
       targets.py              validates and stores goals and training limits
       apply.py                validates a proposal, applies it, undoes it

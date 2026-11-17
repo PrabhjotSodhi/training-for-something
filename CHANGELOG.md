@@ -6,6 +6,7 @@ Versions follow Python's PEP 440. Each release starts with "Breaking changes". E
 
 ### Breaking changes
 
+- The ask TFS tool runs on the official MCP Python SDK. The tool schemas are generated, so their JSON layout differs. Tool names, arguments and results do not change. A failed call returns plain text that starts with `Error executing tool`, where it returned a JSON object with an `error` key.
 - App keys moved to a `.env` file in the data folder. Run `tfs connect` again for each app.
 
 ### Added
