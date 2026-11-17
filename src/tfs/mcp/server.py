@@ -9,7 +9,7 @@ from typing import Annotated, Any
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from tfs import __version__, config
 from tfs.mcp import tool_access
@@ -98,3 +98,12 @@ def undo(
         approved_by="chat",
         delivery_targets=delivery_targets,
     )
+
+
+# The SDK drops an argument a tool does not declare, and has no public way to reach its tools.
+for _tool in mcp._tool_manager.list_tools():
+    _declared = _tool.fn_metadata.arg_model
+    _tool.fn_metadata.arg_model = type(
+        _declared.__name__, (_declared,), {"model_config": ConfigDict(extra="forbid")}
+    )
+    _tool.parameters = _tool.fn_metadata.arg_model.model_json_schema(by_alias=True)

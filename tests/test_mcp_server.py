@@ -127,6 +127,7 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
                 "Only coach_v1 views can be read.",
                 await self.refused(client, "query", {"sql": "SELECT * FROM day_facts"}),
             )
+            self.assertIn("limit", await self.refused(client, "query", {"sql": sql, "limit": 5}))
 
     async def test_propose_refuses_a_wrong_shape_before_any_proposal_code_runs(self) -> None:
         unknown_action = plan()
@@ -167,6 +168,8 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
                 {"proposal": proposal},
             ):
                 await self.refused(client, "save", arguments)
+            unknown = {"proposal": proposal, "request_id": "s1", "approved": True}
+            self.assertIn("approved", await self.refused(client, "save", unknown))
             self.assertEqual(await rows("SELECT * FROM coach_v1_plan_state"), [[0]])
 
             receipt = await self.data(client, "save", {"proposal": proposal, "request_id": "s1"})
