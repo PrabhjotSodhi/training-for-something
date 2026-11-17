@@ -22,9 +22,7 @@ class ConnectTest(unittest.TestCase):
         self.addCleanup(os.umask, os.umask(0o022))
         home = tempfile.TemporaryDirectory()
         self.addCleanup(home.cleanup)
-        environment = mock.patch.dict(
-            os.environ, {"TFS_HOME": home.name, "TFS_PASSWORD_STORE": "file"}
-        )
+        environment = mock.patch.dict(os.environ, {"TFS_HOME": home.name})
         environment.start()
         self.addCleanup(environment.stop)
 
@@ -99,7 +97,7 @@ class ConnectTest(unittest.TestCase):
     def test_an_unknown_connector_is_refused(self):
         code, out, err = self.connect("unknown")
         self.assertEqual((code, out, err), (2, "", "No connector named unknown.\n"))
-        self.assertFalse(Path(config.data_dir(), "secrets.json").exists())
+        self.assertFalse(Path(config.data_dir(), ".env").exists())
 
 
 if __name__ == "__main__":

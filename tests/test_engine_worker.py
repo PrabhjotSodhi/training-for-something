@@ -41,9 +41,7 @@ class EngineWorkerTest(unittest.TestCase):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.data_dir = Path(folder.name)
-        env = mock.patch.dict(
-            os.environ, {"TFS_HOME": str(self.data_dir), "TFS_PASSWORD_STORE": "file"}
-        )
+        env = mock.patch.dict(os.environ, {"TFS_HOME": str(self.data_dir)})
         env.start()
         self.addCleanup(env.stop)
         self.db_path = self.data_dir / "tfs.db"

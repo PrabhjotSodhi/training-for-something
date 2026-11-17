@@ -34,7 +34,7 @@ class CrashSyncPushTest(unittest.TestCase):
         home = self.new_folder()
         environment = mock.patch.dict(
             os.environ,
-            {"TFS_HOME": str(home), "TFS_PASSWORD_STORE": "file", "FAKE_FETCH": json.dumps(PLAN)},
+            {"TFS_HOME": str(home), "FAKE_FETCH": json.dumps(PLAN)},
         )
         environment.start()
         self.addCleanup(environment.stop)

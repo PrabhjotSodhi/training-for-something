@@ -5,7 +5,6 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from importlib.metadata import requires
 from pathlib import Path
 from unittest import mock
 
@@ -36,9 +35,6 @@ class CliTest(unittest.TestCase):
     def test_version_constant(self):
         self.assertEqual(tfs.__version__, "0.1.0.dev0")
 
-    def test_keyring_is_the_only_runtime_dependency(self):
-        self.assertEqual(requires("training-for-something"), ["keyring>=25"])
-
     def test_version_flag_prints_version_and_exits_0(self):
         result = run_tfs("--version")
         self.assertEqual(result.returncode, 0)
@@ -56,7 +52,7 @@ class CliTest(unittest.TestCase):
         export = Path(home.name, "export.xml")
         export.write_text(EXPORT, encoding="utf-8")
         data = Path(home.name, "data")
-        with mock.patch.dict(os.environ, {"TFS_HOME": str(data), "TFS_PASSWORD_STORE": "file"}):
+        with mock.patch.dict(os.environ, {"TFS_HOME": str(data)}):
             result = run_tfs("import", str(export))
         self.assertEqual(result.returncode, 0, result.stderr)
         modes = {

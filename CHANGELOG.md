@@ -6,7 +6,7 @@ Versions follow Python's PEP 440. Each release starts with "Breaking changes". E
 
 ### Breaking changes
 
-None.
+- App keys moved to a `.env` file in the data folder. Run `tfs connect` again for each app.
 
 ### Added
 

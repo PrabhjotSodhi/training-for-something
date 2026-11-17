@@ -572,7 +572,7 @@ TFS uses the `Tailscale-User-Login` header as an extra check when present. It ne
 
 Python's built-in HTTP server provides only basic security checks. TFS adds checks for Host, Origin, session cookies and request size. Every change also requires a CSRF token, which protects against requests from other sites. Pages escape displayed content. The engine closes the connection on any refused push.
 
-App tokens and API keys use the `keyring` package and the OS password store. These stores include Windows Credential Manager, Mac Keychain and the Linux desktop keyring. Where no store exists, such as a Linux server without a desktop, TFS uses a user-only file.
+App tokens and API keys live in one `.env` file in the TFS data folder. Only the user can read it. Backups and exports leave it out.
 
 Secrets never enter `raw/`, chat, logs, exports or backups. Moving to a new computer requires reconnecting accounts.
 
@@ -582,7 +582,7 @@ Some AI tools cannot disable their shell. Codex keeps one in read-only mode, so 
 
 You can also add the ask TFS server by hand to desktop chat apps such as Claude Desktop or LM Studio. A remote MCP endpoint for ChatGPT, Claude and Grok on the phone waits until a real need justifies public access. It requires a maintained OAuth component. TFS will not implement OAuth itself.
 
-Options considered. A public tunnel with OAuth for 1.0 exposes health data before solving background coaching. Tailscale-only phone data requires people to keep a VPN on. Storing secrets only in `.env` risks disclosure when someone copies the folder.
+Options considered. A public tunnel with OAuth for 1.0 exposes health data before solving background coaching. Tailscale-only phone data requires people to keep a VPN on. An OS password store adds a package and three platform paths to guard two low-value keys that the user can reset.
 
 ## 13. Lifecycle
 

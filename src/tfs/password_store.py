@@ -1,25 +1,10 @@
-"""App tokens and API keys, kept in the OS password store or a user-only file."""
+"""App tokens and API keys, kept in one private .env file in the data folder."""
 
-import contextlib
-import json
 import os
-import sys
 import tempfile
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any
-
-import keyring
-import keyring.backends.fail
 
 from tfs import config
-
-SERVICE_NAME = "training-for-something"
-STORE_UNAVAILABLE = "The OS password store is locked or unavailable."
-STORE_NOT_SET_UP = (
-    "The OS password store could not be set up. "
-    "Set TFS_PASSWORD_STORE=file to use a private file instead."
-)
 
 
 class PasswordStoreError(Exception):
@@ -28,77 +13,47 @@ class PasswordStoreError(Exception):
 
 def get(name: str) -> str | None:
     """Return the secret stored under name, or None when there is none."""
-    if _use_file():
-        return _read_file().get(name)
-    return _ask_os_store(keyring.get_password, SERVICE_NAME, name)
+    return _read_file().get(_stored_name(name))
 
 
 def set(name: str, value: str) -> None:
     """Store a secret under name, replacing any earlier one."""
-    if _use_file():
-        secrets = _read_file()
-        secrets[name] = value
-        _write_file(secrets)
-    else:
-        _ask_os_store(keyring.set_password, SERVICE_NAME, name, value)
+    if "\n" in value or "\r" in value:
+        raise PasswordStoreError("A secret cannot contain a line break.")
+    secrets = _read_file()
+    secrets[_stored_name(name)] = value
+    _write_file(secrets)
 
 
 def delete(name: str) -> None:
     """Remove the secret stored under name. A name with no secret is not an error."""
-    if _use_file():
-        secrets = _read_file()
-        if secrets.pop(name, None) is not None:
-            _write_file(secrets)
-    elif _ask_os_store(keyring.get_password, SERVICE_NAME, name) is not None:
-        _ask_os_store(keyring.delete_password, SERVICE_NAME, name)
+    secrets = _read_file()
+    if secrets.pop(_stored_name(name), None) is not None:
+        _write_file(secrets)
 
 
-def _use_file() -> bool:
-    if os.environ.get("TFS_PASSWORD_STORE") == "file":
-        return True
-    if not isinstance(_find_backend(), keyring.backends.fail.Keyring):
-        return False
-    if sys.platform == "win32":
-        raise PasswordStoreError("Windows has no OS password store that TFS can use.")
-    return True
-
-
-def _find_backend() -> Any:
-    try:
-        return keyring.get_keyring()
-    except Exception as error:
-        raise PasswordStoreError(STORE_NOT_SET_UP) from error
-
-
-def _ask_os_store(operation: Callable[..., Any], *arguments: str) -> Any:
-    # Backends raise many error types and may echo what they were given, for example a
-    # UnicodeDecodeError that holds the secret. So the raise happens after the block,
-    # which leaves no cause or context on the raised error.
-    with contextlib.suppress(Exception):
-        return operation(*arguments)
-    raise PasswordStoreError(STORE_UNAVAILABLE)
+def _stored_name(name: str) -> str:
+    return name.upper().replace(":", "_")
 
 
 def _secrets_path() -> Path:
-    return config.data_dir() / "secrets.json"
+    return config.data_dir() / ".env"
 
 
 def _read_file() -> dict[str, str]:
     path = _secrets_path()
     # Raised after the except block: a UnicodeDecodeError holds every byte of the file.
     try:
-        secrets = json.loads(path.read_text(encoding="utf-8"))
+        lines = [line for line in path.read_text(encoding="utf-8").split("\n") if line]
     except FileNotFoundError:
         return {}
-    except (ValueError, RecursionError):
-        secrets = None
-    if not isinstance(secrets, dict) or not all(
-        isinstance(value, str) for value in secrets.values()
-    ):
+    except ValueError:
+        lines = None
+    if lines is None or not all("=" in line for line in lines):
         raise PasswordStoreError(
             f"The password file {path} is damaged. Delete it and connect your apps again."
         )
-    return secrets
+    return dict(line.split("=", 1) for line in lines)
 
 
 def _write_file(secrets: dict[str, str]) -> None:
@@ -109,8 +64,8 @@ def _write_file(secrets: dict[str, str]) -> None:
     descriptor, name = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
     temporary = Path(name)
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(secrets, handle)
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            handle.writelines(f"{key}={value}\n" for key, value in secrets.items())
             handle.flush()
             os.fsync(handle.fileno())
         temporary.replace(path)

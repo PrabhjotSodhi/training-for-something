@@ -16,6 +16,7 @@ Thumbs.db
 
 # Never commit secrets or real health data
 .env
+.tfs/
 *.db
 *.db-wal
 *.db-shm
