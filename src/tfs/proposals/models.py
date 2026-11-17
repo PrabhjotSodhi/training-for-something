@@ -24,7 +24,17 @@ def _http_url(value: str) -> str:
 
 
 Text = Annotated[str, Field(pattern=r"\S")]
-Number = Annotated[float, Field(ge=0, le=1e308)]
+# Bounds on a union publish as raw ge and le keys, so each alias states its schema.
+Number = Annotated[
+    int | float,
+    Field(ge=0, le=1e308),
+    WithJsonSchema({"type": "number", "minimum": 0, "maximum": 1e308}),
+]
+Minutes = Annotated[
+    int | float,
+    Field(gt=0, le=1e308),
+    WithJsonSchema({"type": "number", "exclusiveMinimum": 0, "maximum": 1e308}),
+]
 Day = Annotated[str, AfterValidator(_iso_day), WithJsonSchema({"type": "string", "format": "date"})]
 StartHint = Annotated[str, Field(pattern=r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")] | None
 
@@ -159,7 +169,7 @@ class UnavailableDay(_Model):
 class MaxSessionLength(_Model):
     """The longest session the user accepts."""
 
-    minutes: float = Field(gt=0, le=1e308)
+    minutes: Minutes
 
 
 class _SetLimit(_Action):

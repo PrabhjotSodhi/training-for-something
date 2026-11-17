@@ -12,6 +12,7 @@ from mcp.types.version import HANDSHAKE_PROTOCOL_VERSIONS
 from tfs.mcp import tool_access
 from tfs.persistence.migrations import migrate
 from tfs.persistence.sqlite import connect
+from tfs.proposals.apply import save
 
 SRC = str(Path(__file__).resolve().parent.parent / "src")
 NO_DATA = "TFS has no data yet. Run tfs import or tfs start first."
@@ -173,6 +174,10 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 await self.data(client, "save", {"proposal": proposal, "request_id": "s1"}),
                 receipt,
+            )
+            now = datetime.now(UTC).astimezone()
+            self.assertEqual(
+                save(db_path, proposal, request_id="s1", approved_by="chat", now=now), receipt
             )
             self.assertEqual(await rows("SELECT distance_km FROM coach_v1_plan_parts"), [[6.001]])
             self.assertEqual(await rows("SELECT start_hint FROM coach_v1_plan_items"), [["07:30"]])
