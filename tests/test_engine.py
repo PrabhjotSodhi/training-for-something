@@ -44,9 +44,7 @@ class EngineTest(unittest.TestCase):
     def setUp(self) -> None:
         self.data_dir = self.new_folder()
         for patch in (
-            mock.patch.dict(
-                os.environ, {"TFS_HOME": str(self.data_dir), "TFS_PASSWORD_STORE": "file"}
-            ),
+            mock.patch.dict(os.environ, {"TFS_HOME": str(self.data_dir)}),
             mock.patch.object(engine, "HOME_WIFI_HOST", config.SCREEN_HOST),
         ):
             patch.start()

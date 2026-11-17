@@ -29,9 +29,7 @@ class PushTest(unittest.TestCase):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.data_dir = Path(folder.name)
-        env = mock.patch.dict(
-            os.environ, {"TFS_HOME": str(self.data_dir), "TFS_PASSWORD_STORE": "file"}
-        )
+        env = mock.patch.dict(os.environ, {"TFS_HOME": str(self.data_dir)})
         env.start()
         self.addCleanup(env.stop)
         password_store.set("push_token", TOKEN)

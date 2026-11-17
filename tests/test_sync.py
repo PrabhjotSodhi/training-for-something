@@ -24,9 +24,7 @@ class SyncTest(unittest.TestCase):
         self.addCleanup(os.umask, os.umask(0o022))
         home = tempfile.TemporaryDirectory()
         self.addCleanup(home.cleanup)
-        environment = mock.patch.dict(
-            os.environ, {"TFS_HOME": home.name, "TFS_PASSWORD_STORE": "file"}
-        )
+        environment = mock.patch.dict(os.environ, {"TFS_HOME": home.name})
         environment.start()
         self.addCleanup(environment.stop)
         password_store.set(f"{NAME}:api_key", SECRET)
