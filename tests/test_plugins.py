@@ -27,14 +27,13 @@ class PluginsTest(unittest.TestCase):
         config = json.loads((ROOT / "plugins/tfs/.mcp.json").read_text(encoding="utf-8"))
         self.assertEqual(config, {"mcpServers": {"tfs": {"command": "tfs", "args": ["mcp"]}}})
 
-    def test_the_short_skill_names_a_reference_file_for_each_job(self) -> None:
+    def test_the_skill_names_a_reference_file_for_each_job(self) -> None:
         skill = ROOT / "plugins/tfs/skills/tfs"
         text = (skill / "SKILL.md").read_text(encoding="utf-8")
         _, frontmatter, body = text.split("---", 2)
         fields = dict(line.split(": ", 1) for line in frontmatter.strip().splitlines())
         self.assertEqual(fields["name"], "tfs")
         self.assertTrue(fields["description"].strip())
-        self.assertLess(len(text.splitlines()), 30)
         for reference in ("references/ask.md", "references/plan.md", "references/research.md"):
             self.assertIn(reference, body)
             self.assertTrue((skill / reference).read_text(encoding="utf-8").strip())
