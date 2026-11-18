@@ -99,7 +99,7 @@ Other journeys include adding a blood test in section 6.5 and rewriting the week
 | Day builder | Day facts and scores, the same code for live data and rebuilds | Materialized view |
 | Coach views | `coach_v1_*` views, the one read surface for the AI and the dashboard | Command query separation |
 | Ask TFS tool | A local MCP server TFS ships. Read actions (describe, query) through one guarded reader, plus propose and save. Used by both front doors. | Tool interface over a read model |
-| TFS plugin | One per AI tool: a skill telling the AI to use TFS and how to research, plus the ask TFS tool | |
+| TFS plugin | One folder for every AI tool: one skill with a reference file for asking, planning and research, plus the ask TFS tool | |
 | Coach runner | Runs your AI tool in the background for TFS screens and triggers, with the ask TFS tool plugged in | |
 | Save | Checks a proposal and applies it with a journal row in one transaction | Plan then apply |
 | Triggers | The built-in missed-session rule, ask only in v1.0 | Event, condition, action |

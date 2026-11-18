@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "tfs",
-      "source": "./plugins/claude-code"
+      "source": "./plugins/tfs"
     }
   ]
 }
