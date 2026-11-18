@@ -12,5 +12,3 @@ Read the matching file before you act:
 - A question about the person's data: read `references/ask.md`.
 - A plan, goal or limit change: read `references/plan.md` and `references/ask.md`.
 - A claim that needs evidence: read `references/research.md`.
-
-If a request fits more than one line, read each file it names.
