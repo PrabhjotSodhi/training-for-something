@@ -14,7 +14,7 @@ class PluginsTest(unittest.TestCase):
         self.assertEqual(marketplace["owner"], {"name": "Training For Something"})
         self.assertEqual(
             marketplace["plugins"],
-            [{"name": "tfs", "source": "./plugins/claude-code"}],
+            [{"name": "tfs", "source": "./plugins/tfs"}],
         )
         plugin_root = ROOT / marketplace["plugins"][0]["source"]
         manifest = json.loads(
@@ -24,15 +24,17 @@ class PluginsTest(unittest.TestCase):
         self.assertTrue((plugin_root / "skills/tfs/SKILL.md").is_file())
 
     def test_mcp_starts_the_local_tfs_command(self) -> None:
-        config = json.loads((ROOT / "plugins/claude-code/.mcp.json").read_text(encoding="utf-8"))
+        config = json.loads((ROOT / "plugins/tfs/.mcp.json").read_text(encoding="utf-8"))
         self.assertEqual(config, {"mcpServers": {"tfs": {"command": "tfs", "args": ["mcp"]}}})
 
-    def test_both_clients_get_the_same_skill(self) -> None:
-        claude = (ROOT / "plugins/claude-code/skills/tfs/SKILL.md").read_bytes()
-        codex = (ROOT / "plugins/codex/tfs/SKILL.md").read_bytes()
-        self.assertEqual(claude, codex)
-        _, frontmatter, body = claude.decode("utf-8").split("---", 2)
+    def test_the_short_skill_names_a_reference_file_for_each_job(self) -> None:
+        skill = ROOT / "plugins/tfs/skills/tfs"
+        text = (skill / "SKILL.md").read_text(encoding="utf-8")
+        _, frontmatter, body = text.split("---", 2)
         fields = dict(line.split(": ", 1) for line in frontmatter.strip().splitlines())
         self.assertEqual(fields["name"], "tfs")
         self.assertTrue(fields["description"].strip())
-        self.assertTrue(body.strip())
+        self.assertLess(len(text.splitlines()), 30)
+        for reference in ("references/ask.md", "references/plan.md", "references/research.md"):
+            self.assertIn(reference, body)
+            self.assertTrue((skill / reference).read_text(encoding="utf-8").strip())

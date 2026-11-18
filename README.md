@@ -47,7 +47,7 @@ Enable the plugin and its local TFS MCP server when prompted. Start a new chat a
 
 ### Codex
 
-Copy the `plugins/codex/tfs` folder, including `SKILL.md`, to your personal skills folder. [Current Codex documentation](https://developers.openai.com/codex/skills) uses `~/.agents/skills/tfs`. For installations using the older Codex skills location, copy it to `~/.codex/skills/tfs`, or `$CODEX_HOME/skills/tfs` if you set `CODEX_HOME`. Use the location supported by your installed version.
+Copy the `plugins/tfs/skills/tfs` folder, including `SKILL.md` and its `references` folder, to your personal skills folder. [Current Codex documentation](https://developers.openai.com/codex/skills) uses `~/.agents/skills/tfs`. For installations using the older Codex skills location, copy it to `~/.codex/skills/tfs`, or `$CODEX_HOME/skills/tfs` if you set `CODEX_HOME`. Use the location supported by your installed version.
 
 Register the local MCP server from a terminal where `tfs --version` works:
 

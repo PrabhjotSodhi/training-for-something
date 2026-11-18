@@ -77,8 +77,7 @@ training-for-something/
     export.py                 export your data
     delete_data.py            Delete my data
   plugins/
-    claude-code/              the TFS plugin: skill plus ask TFS tool config
-    codex/                    the TFS skill for Codex
+    tfs/                      the TFS plugin: one skill with reference files, plus the ask TFS tool config, for every AI tool
   tests/
     fixtures/<connector>/     invented files shaped like each app's real ones
     test_<module>.py          one test file per module

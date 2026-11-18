@@ -89,6 +89,12 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
                 types.InitializeResult,
             )
         self.assertIn(result.protocol_version, HANDSHAKE_PROTOCOL_VERSIONS)
+        for always_on in (
+            "This is not medical advice. See a doctor or physio for advice about your health.",
+            "If a message suggests an emergency",
+            "Never open `tfs.db` or the TFS data folder directly.",
+        ):
+            self.assertIn(always_on, result.instructions)
 
     async def test_tools_list_names_the_six_tools_and_their_hints(self) -> None:
         async with Client(tfs_mcp(self.folder)) as client:
