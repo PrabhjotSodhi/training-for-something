@@ -39,6 +39,7 @@ WITH measured AS (
   FROM source_records
   WHERE kind = 'measurement' AND metric = :metric AND deleted_at IS NULL
     AND local_date IN (SELECT value FROM json_each(:days))
+    AND NOT (:zero_is_missing AND json_extract(values_json, '$.value') = 0)
 ), daily AS (
   SELECT local_date, connector, avg(value) AS value, count(*) AS readings,
          (SELECT group_concat(source, ' + ') FROM (
@@ -46,7 +47,6 @@ WITH measured AS (
             WHERE other.local_date = measured.local_date AND other.connector = measured.connector
             ORDER BY source)) AS source
   FROM measured
-  WHERE NOT (:zero_is_missing AND value = 0)
   GROUP BY local_date, connector
 )
 SELECT local_date, :metric, value, :unit, source, 'full', :formula_version FROM (
