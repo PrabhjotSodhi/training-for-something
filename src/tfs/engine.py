@@ -19,12 +19,13 @@ from tfs.importer.raw_store import scan_raw
 from tfs.importer.session import process_pending
 from tfs.persistence.migrations import migrate
 from tfs.persistence.sqlite import connect, transaction
-from tfs.scheduling import jobs
+from tfs.scheduling import jobs, scheduler
 from tfs.web.push import make_push_handler
 from tfs.web.server import PushHandler, make_server
 
 HOME_WIFI_HOST = "0.0.0.0"
 PING_TIMEOUT_S = 1
+SCHEDULER_INTERVAL_S = 60
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,7 @@ class Engine:
         self._stopping = threading.Event()
         self._worker: threading.Thread | None = None
         self._delivery_worker: threading.Thread | None = None
+        self._scheduler: threading.Thread | None = None
 
     def start(self) -> None:
         """Claim the ports, prepare the data and start serving. On any failure, release the ports."""
@@ -97,6 +99,8 @@ class Engine:
         self._jobs.put(True)
         self._delivery_worker = threading.Thread(target=self._deliver)
         self._delivery_worker.start()
+        self._scheduler = threading.Thread(target=self._schedule)
+        self._scheduler.start()
 
     def stop(self) -> None:
         """Finish active workers before releasing the exclusive engine port."""
@@ -109,6 +113,9 @@ class Engine:
         delivery, self._delivery_worker = self._delivery_worker, None
         if delivery is not None:
             delivery.join()
+        scheduler_thread, self._scheduler = self._scheduler, None
+        if scheduler_thread is not None:
+            scheduler_thread.join()
         _stop(running)
 
     def drain(self) -> None:
@@ -138,6 +145,15 @@ class Engine:
                 worked = False
             if not worked:
                 self._stopping.wait(1)
+
+    def _schedule(self) -> None:
+        while not self._stopping.is_set():
+            try:
+                with contextlib.closing(connect(self._data_dir / "tfs.db", "save")) as conn:
+                    scheduler.run_due(conn, to_utc_text(self._now_fn()))
+            except (OSError, ValueError, sqlite3.Error):
+                logger.error("Scheduler run failed. TFS tries again in a minute.")
+            self._stopping.wait(SCHEDULER_INTERVAL_S)
 
     def _prepare_data(self, db_path: Path) -> None:
         (self._data_dir / "raw").mkdir(parents=True, exist_ok=True)
