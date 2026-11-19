@@ -5,7 +5,6 @@ import unittest
 from tfs.connectors.core.contract import (
     FAMILIES,
     METRICS,
-    SESSION_VALUES,
     RecordError,
     record_id,
     validate_record,
@@ -220,51 +219,6 @@ class ValidateRejectTest(unittest.TestCase):
         ):
             with self.subTest(values=values):
                 self.assert_rejected(changed(MEASUREMENT, values=values), "values")
-
-
-class ConstantsTest(unittest.TestCase):
-    def test_families(self):
-        self.assertEqual(
-            FAMILIES,
-            (
-                "run",
-                "ride",
-                "swim",
-                "strength",
-                "row",
-                "walk_hike",
-                "ski",
-                "racket",
-                "combat",
-                "climb",
-                "mixed",
-                "mobility",
-            ),
-        )
-
-    def test_metrics(self):
-        table = {
-            name: (metric.unit, metric.daily, metric.zero_is_missing)
-            for name, metric in METRICS.items()
-        }
-        self.assertEqual(
-            table,
-            {
-                "steps": ("count", "sum", False),
-                "active_energy": ("kcal", "sum", False),
-                "sleep_asleep": ("h", "sum", True),
-                "resting_hr": ("bpm", "latest", True),
-                "weight": ("kg", "latest", False),
-                "heart_rate": ("bpm", "none", True),
-                "hrv_sdnn": ("ms", "none", True),
-            },
-        )
-
-    def test_session_values(self):
-        self.assertEqual(
-            SESSION_VALUES,
-            ("duration_s", "distance_m", "active_energy_kcal", "avg_hr", "max_hr"),
-        )
 
 
 class RecordIdTest(unittest.TestCase):

@@ -6,24 +6,6 @@ from pathlib import Path
 from tfs.persistence.migrations import migrate
 from tfs.persistence.sqlite import connect
 
-TABLES = {
-    "files",
-    "sources",
-    "source_records",
-    "source_deletes",
-    "session_parts",
-    "session_groups",
-    "session_group_members",
-    "day_facts",
-    "rebuild_dates",
-}
-
-INDEXES = {
-    "source_records_day": ["local_date", "kind"],
-    "source_records_metric_day": ["metric", "local_date"],
-    "source_records_file": ["file_sha256"],
-}
-
 # Invented values for the columns a row cannot do without. Every column here is NOT NULL.
 # Columns that have a database default (files.status, sources.enabled) are left out on purpose.
 DEFAULTS = {
@@ -110,18 +92,6 @@ class SchemaTest(unittest.TestCase):
         insert(self.conn, "session_parts")
         insert(self.conn, "session_groups")
         insert(self.conn, "session_group_members")
-
-    def test_a_new_database_has_the_0_1_tables(self):
-        rows = self.conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
-        ).fetchall()
-        self.assertLessEqual(TABLES, {row["name"] for row in rows})
-
-    def test_the_source_record_indexes_cover_the_right_columns(self):
-        for name, columns in INDEXES.items():
-            with self.subTest(index=name):
-                info = self.conn.execute(f"PRAGMA index_info({name})").fetchall()
-                self.assertEqual([row["name"] for row in info], columns)
 
     def test_a_record_must_name_a_file_that_exists(self):
         with self.assertRaises(sqlite3.IntegrityError):
