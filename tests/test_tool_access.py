@@ -167,6 +167,7 @@ class ToolAccessTest(unittest.TestCase):
             [
                 "coach_v1_deliveries",
                 "coach_v1_day_facts",
+                "coach_v1_scores",
                 "coach_v1_workouts",
                 "coach_v1_workout_parts",
                 "coach_v1_sources",

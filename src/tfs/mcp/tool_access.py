@@ -24,6 +24,11 @@ VIEWS = {
         "One row per day and metric: the day's value, unit and source."
         " Coverage is full, partial or importing."
     ),
+    "coach_v1_scores": (
+        "One row per day and score. value is 1 to 99 with 50 as the person's normal, and null"
+        " when data is missing; low and high are its likely range. inputs_json shows each"
+        " input's working or the reason it was left out."
+    ),
     "coach_v1_workouts": (
         "One row per workout, shown once even when several apps recorded it."
         " start_utc is UTC and utc_offset_min gives local time. source names the app whose"

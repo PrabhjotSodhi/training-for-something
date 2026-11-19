@@ -18,8 +18,9 @@ from tfs.connectors.core.contract import to_utc_text
 from tfs.importer.raw_store import scan_raw
 from tfs.importer.session import process_pending
 from tfs.persistence.migrations import migrate
-from tfs.persistence.sqlite import connect
+from tfs.persistence.sqlite import connect, transaction
 from tfs.scheduling import jobs
+from tfs.scores import readiness
 from tfs.web.push import make_push_handler
 from tfs.web.server import PushHandler, make_server
 
@@ -143,6 +144,8 @@ class Engine:
         (self._data_dir / "raw").mkdir(parents=True, exist_ok=True)
         with contextlib.closing(connect(db_path)) as conn:
             migrate(conn)
+            with transaction(conn):
+                readiness.rebuild_if_outdated(conn)
             scan_raw(conn, self._data_dir)
             jobs.recover(conn)
         if not password_store.get("push_token"):

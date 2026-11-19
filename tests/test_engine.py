@@ -102,6 +102,21 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], migrate(conn))
         self.assertEqual(len(password_store.get("push_token") or ""), 43)
 
+    def test_start_rebuilds_scores_stored_with_an_older_formula_version(self):
+        with contextlib.closing(connect(self.data_dir / "tfs.db")) as conn:
+            migrate(conn)
+            conn.execute(
+                "INSERT INTO day_facts VALUES ('2026-06-01', 'hrv_sdnn', 40, 'ms', 'a', 'full', 'v')"
+            )
+            conn.execute(
+                "INSERT INTO scores VALUES ('2026-06-01', 'readiness', NULL, NULL, NULL, '{}', 'old')"
+            )
+        self.new_engine().start()
+        with contextlib.closing(connect(self.data_dir / "tfs.db")) as conn:
+            self.assertNotEqual(
+                conn.execute("SELECT formula_version FROM scores").fetchone()[0], "old"
+            )
+
     def test_stop_ends_the_server_threads(self):
         before = set(threading.enumerate())
         running = self.new_engine(home_wifi=True, home_wifi_port=free_port())
