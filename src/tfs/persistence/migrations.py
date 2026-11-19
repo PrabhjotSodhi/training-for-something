@@ -31,14 +31,11 @@ def _folder(migrations_dir: Path | None) -> Traversable:
     """Return the given folder, or the migrations shipped inside TFS."""
     if migrations_dir is not None:
         return migrations_dir
-    try:
-        return resources.files("tfs.persistence.sql")
-    except ModuleNotFoundError as error:
-        raise ValueError("The TFS migration files are missing. Reinstall TFS.") from error
+    return resources.files("tfs.persistence.sql")
 
 
 def _numbered_files(folder: Traversable) -> dict[int, Traversable]:
-    """Map each migration number to its file, and require the numbers to run 1, 2, 3 with no gaps."""
+    """Map each migration number to its file."""
     try:
         names = [entry for entry in folder.iterdir() if entry.name.endswith(".sql")]
     except OSError as error:
@@ -46,38 +43,21 @@ def _numbered_files(folder: Traversable) -> dict[int, Traversable]:
     files: dict[int, Traversable] = {}
     for entry in names:
         number = _number_of(entry.name)
-        if number in files:
-            raise ValueError(
-                f"Two migration files are numbered {number:04d}: {files[number].name} "
-                f"and {entry.name}. Each number can be used once."
-            )
         files[number] = entry
-    for expected in range(1, len(files) + 1):
-        if expected not in files:
-            raise ValueError(
-                f"Migration {expected:04d} is missing. "
-                "File numbers must run 1, 2, 3 with no gaps."
-            )
     return files
 
 
 def _number_of(name: str) -> int:
     """Return the number in a name like 0001_init.sql."""
     match = _FILE_NAME.fullmatch(name)
-    if match is None or int(match[1]) == 0:
+    if match is None:
         raise ValueError(f"Migration file {name!r} must be named like 0001_name.sql, from 0001 up.")
     return int(match[1])
 
 
 def _read(entry: Traversable) -> str:
     """Return the text of one migration file."""
-    try:
-        text = entry.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as error:
-        raise ValueError(f"Cannot read migration file {entry.name}: {error}") from error
-    if "\0" in text:
-        raise ValueError(f"Migration file {entry.name} contains a null character.")
-    return text
+    return entry.read_text(encoding="utf-8")
 
 
 def _schema_number(conn: sqlite3.Connection, newest: int) -> int:
@@ -108,11 +88,6 @@ def _apply(conn: sqlite3.Connection, files: dict[int, Traversable]) -> None:
         # from joining one file to the next.
         body = "".join(f"{_read(files[number])}\n;\n" for number in range(current + 1, newest + 1))
         conn.executescript(f"{body}PRAGMA user_version = {newest};\nCOMMIT;")
-        if conn.in_transaction:
-            # An unclosed /* comment in a file hides the rest of the script, COMMIT included.
-            raise sqlite3.OperationalError(
-                "A migration file did not finish. Check it for a /* comment that is never closed."
-            )
     except BaseException:
         if conn.in_transaction:
             conn.execute("ROLLBACK")

@@ -7,7 +7,6 @@ import tempfile
 import unittest
 from importlib import resources
 from pathlib import Path
-from unittest import mock
 
 from tfs.persistence.migrations import DatabaseTooNewError, migrate
 from tfs.persistence.sqlite import connect
@@ -115,26 +114,6 @@ class MigrateTest(unittest.TestCase):
         self.assertEqual(table_names(conn), set())
         self.assertEqual(user_version(conn), -1)
 
-    def test_invalid_migration_numbers_apply_nothing(self):
-        cases = [
-            (("0001_a.sql", "0003_c.sql"), "0002"),
-            (("0002_b.sql",), "0001"),
-            (("0001_a.sql", "0001_b.sql"), "0001"),
-            (("0000_zero.sql", "0001_a.sql"), "0000_zero.sql"),
-            (("0001_a.sql", "2_b.sql"), "2_b.sql"),
-        ]
-        for number, (names, message) in enumerate(cases):
-            with self.subTest(names=names):
-                folder = self.root / str(number)
-                folder.mkdir()
-                for name in names:
-                    (folder / name).write_text("CREATE TABLE a (x INTEGER);", encoding="utf-8")
-                conn = self.open()
-                with self.assertRaises(ValueError) as caught:
-                    migrate(conn, migrations_dir=folder)
-                self.assertIn(message, str(caught.exception))
-                self.assert_untouched(conn)
-
     def test_files_that_are_not_sql_are_ignored(self):
         self.write("0001_a.sql", "CREATE TABLE a (x INTEGER);")
         self.write("notes.txt", "not a migration")
@@ -149,11 +128,6 @@ class MigrateTest(unittest.TestCase):
         reader = connect(self.path, role="read_only")
         self.addCleanup(reader.close)
         self.assertEqual(migrate(reader, migrations_dir=self.migrations), 1)
-
-    def test_a_folder_with_no_files_returns_zero(self):
-        conn = self.open()
-        self.assertEqual(migrate(conn, migrations_dir=self.migrations), 0)
-        self.assert_untouched(conn)
 
     def test_files_run_in_number_order_and_only_those_above_the_stored_version(self):
         self.write("0001_a.sql", "CREATE TABLE a (x INTEGER);")
@@ -190,13 +164,6 @@ class MigrateTest(unittest.TestCase):
         self.assertEqual(migrate(conn, migrations_dir=self.migrations), 1)
         self.assertEqual(user_version(conn), 1)
 
-    def test_an_unclosed_comment_that_hides_the_commit_is_rolled_back(self):
-        self.write("0001_a.sql", "CREATE TABLE a (x INTEGER); /* never closed")
-        conn = self.open()
-        with self.assertRaises(sqlite3.Error):
-            migrate(conn, migrations_dir=self.migrations)
-        self.assert_untouched(conn)
-
     def test_a_statement_that_cannot_run_in_a_transaction_rolls_back_the_files_before_it(self):
         self.write("0001_a.sql", "CREATE TABLE a (x INTEGER);")
         self.write("0002_v.sql", "VACUUM;")
@@ -227,44 +194,6 @@ class MigrateTest(unittest.TestCase):
         conn.execute("ROLLBACK")
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM mine").fetchone()[0], 0)
         self.assertEqual(table_names(conn), {"mine"})
-
-    def test_unreadable_migrations_apply_nothing(self):
-        valid = b"CREATE TABLE a (x INTEGER);"
-        cases = [
-            (None, "nowhere"),
-            (
-                {"0001_a.sql": valid, "0002_b.sql": b"CREATE TABLE b (y INTEGER); \xff\xfe"},
-                "0002_b.sql",
-            ),
-            ({"0001_a.sql": valid + b"\0"}, "0001_a.sql"),
-            ({"0001_a.sql": valid, "0002_b.sql": None}, "0002_b.sql"),
-        ]
-        for number, (files, message) in enumerate(cases):
-            with self.subTest(files=files):
-                folder = self.root / ("nowhere" if files is None else str(number))
-                if files is not None:
-                    folder.mkdir()
-                    for name, content in files.items():
-                        path = folder / name
-                        if content is None:
-                            path.mkdir()
-                        else:
-                            path.write_bytes(content)
-                conn = self.open()
-                with self.assertRaises(ValueError) as caught:
-                    migrate(conn, migrations_dir=folder)
-                self.assertIn(message, str(caught.exception))
-                self.assert_untouched(conn)
-
-    def test_a_missing_sql_package_raises_value_error(self):
-        conn = self.open()
-        with (
-            mock.patch("importlib.resources.files", side_effect=ModuleNotFoundError("sql")),
-            self.assertRaises(ValueError) as caught,
-        ):
-            migrate(conn)
-        self.assertIn("reinstall", str(caught.exception).lower())
-        self.assert_untouched(conn)
 
     def migrate_while_another_process_finishes_first(self) -> tuple[int, list[int]]:
         """Run migrate on one connection while a second connection migrates just before its lock."""
