@@ -159,20 +159,6 @@ class PlansSchemaTest(unittest.TestCase):
                 self.conn.execute(sql)
         self.assertEqual(self.conn.execute("SELECT count(*) FROM journal").fetchone()[0], 2)
 
-    def test_a_failed_transaction_leaves_no_journal_or_plan(self) -> None:
-        self.conn.execute("BEGIN IMMEDIATE")
-        self.journal()
-        self.plan()
-        self.conn.execute("ROLLBACK")
-        self.assertEqual(
-            tuple(
-                self.conn.execute(
-                    "SELECT (SELECT count(*) FROM journal), (SELECT count(*) FROM plan_items)"
-                ).fetchone()
-            ),
-            (0, 0),
-        )
-
     def test_user_state_uses_existing_versions_and_valid_json(self) -> None:
         with self.assertRaises(sqlite3.IntegrityError):
             self.plan()

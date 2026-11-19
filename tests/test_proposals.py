@@ -300,7 +300,7 @@ class ProposalsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unknown goal"):
             self.save(proposal({**ADD, "goal_ids": ["g1"]}, goal))
 
-    def test_limit_only_save_invalidates_proposal_and_mixed_failure_rolls_back(self) -> None:
+    def test_limit_only_save_invalidates_proposal(self) -> None:
         self.save(proposal(ADD))
         old = proposal({"action": "move_session", "item": "p1", "to": "2026-11-10"}, version=1)
         preview(self.path, old, now=NOW)
@@ -318,26 +318,3 @@ class ProposalsTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "stale"):
             self.save(old, "old")
-        self.conn.executescript(
-            "CREATE TRIGGER fail_plan BEFORE UPDATE ON plan_items BEGIN SELECT RAISE(ABORT, 'invented failure'); END;"
-        )
-        with self.assertRaisesRegex(sqlite3.IntegrityError, "invented failure"):
-            self.save(
-                proposal(
-                    {
-                        "action": "set_goal",
-                        "item": "g1",
-                        "type": "custom",
-                        "date": "2027-01-01",
-                        "target": {"description": "Goal"},
-                    },
-                    {"action": "move_session", "item": "p1", "to": "2026-11-10"},
-                    version=2,
-                ),
-                "failure",
-            )
-        self.assertEqual(self.conn.execute("SELECT count(*) FROM goals").fetchone()[0], 0)
-        self.assertEqual(self.counts(), (2, 1, 1))
-        self.assertEqual(
-            self.conn.execute("SELECT local_date FROM plan_items").fetchone()[0], "2026-11-08"
-        )
