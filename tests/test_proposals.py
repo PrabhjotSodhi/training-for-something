@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from tests.test_schema import insert
+from tfs.mcp.tool_access import open_reader, query
 from tfs.persistence.migrations import migrate
 from tfs.persistence.sqlite import connect
 from tfs.proposals.apply import preview, save
@@ -318,3 +319,74 @@ class ProposalsTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "stale"):
             self.save(old, "old")
+
+    def forecasts(self) -> list:
+        reader = open_reader(self.path)
+        self.addCleanup(reader.close)
+        return query(
+            reader,
+            "SELECT goal_id, low, high, unit, method, local_date, label FROM coach_v1_forecasts",
+        )["rows"]
+
+    def goal(self, kind: str) -> dict:
+        return {
+            "action": "set_goal",
+            "item": "g1",
+            "type": kind,
+            "date": "2027-04-01",
+            "target": {"description": "Finish"},
+        }
+
+    def forecast(self, low: int, high: int) -> dict:
+        return {
+            "action": "set_forecast",
+            "item": "g1",
+            "low": low,
+            "high": high,
+            "unit": "minutes",
+            "method": "Scale recent station times",
+        }
+
+    def test_a_coach_forecast_shows_and_the_newest_replaces_it(self) -> None:
+        # GIVEN a Hyrox goal
+        self.save(proposal(self.goal("hyrox")))
+        source = [{"url": "https://example.com/pacing", "type": "article"}]
+        # WHEN Save gets a range of 85 to 95 minutes with a method and one source
+        self.save({**proposal(self.forecast(85, 95), version=1), "sources": source}, "first")
+        # THEN the view shows it with today's date
+        self.assertEqual(
+            self.forecasts(),
+            [
+                [
+                    "g1",
+                    85,
+                    95,
+                    "minutes",
+                    "Scale recent station times",
+                    "2026-11-07",
+                    "Coach estimate",
+                ]
+            ],
+        )
+        # WHEN a second Save arrives
+        self.save(proposal(self.forecast(80, 90), version=2), "second")
+        # THEN only the newest estimate shows
+        self.assertEqual([row[1:3] for row in self.forecasts()], [[80, 90]])
+
+    def test_a_goal_with_a_code_forecast_refuses_a_coach_forecast(self) -> None:
+        # GIVEN a marathon goal
+        self.save(proposal(self.goal("marathon")))
+        # WHEN Save gets set_forecast THEN it refuses
+        with self.assertRaisesRegex(ValueError, "this goal has a code forecast"):
+            self.save(proposal(self.forecast(85, 95), version=1), "forecast")
+        self.assertEqual(self.forecasts(), [])
+
+    def test_an_unknown_goal_or_backwards_range_is_refused(self) -> None:
+        # GIVEN no goal
+        # WHEN Save gets a forecast for it THEN it refuses
+        with self.assertRaisesRegex(ValueError, "Unknown goal"):
+            self.save(proposal(self.forecast(85, 95)), "unknown")
+        # GIVEN a Hyrox goal WHEN the range runs backwards THEN it refuses
+        self.save(proposal(self.goal("hyrox")), "goal")
+        with self.assertRaises(ValueError):
+            self.save(proposal(self.forecast(95, 85), version=1), "backwards")

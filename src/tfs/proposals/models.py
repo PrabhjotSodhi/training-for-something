@@ -145,6 +145,22 @@ class SetGoal(_Action):
     target: MeasuredGoal | GoalDescription
 
 
+class SetForecast(_Action):
+    """Record a coach estimate for a goal with no code forecast."""
+
+    action: Literal["set_forecast"]
+    low: Number
+    high: Number
+    unit: Text
+    method: Text
+
+    @model_validator(mode="after")
+    def _low_not_above_high(self) -> Self:
+        if self.low > self.high:
+            raise ValueError("A forecast range needs low at or below high.")
+        return self
+
+
 class Injury(_Model):
     """An injury in the user's own words."""
 
@@ -200,6 +216,7 @@ Action = Annotated[
     | MarkDone
     | UnlinkPlanMatch
     | SetGoal
+    | SetForecast
     | SetLimit,
     Field(discriminator="action"),
 ]

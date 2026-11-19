@@ -65,6 +65,10 @@ VIEWS = {
         "One row per user-approved goal. target_json holds its description and optional"
         " value/unit pair in the saved units. local_date is its target date, not a forecast."
     ),
+    "coach_v1_forecasts": (
+        "One row per goal with a coach estimate, the latest Save only. low and high bound the"
+        " range in unit. Show it as the label, with its method, sources_json and local_date."
+    ),
     "coach_v1_limits": (
         "One row per user-approved training constraint. values_json holds the kind's"
         " fields, such as minutes, a date or user-recorded injury text; not a diagnosis."

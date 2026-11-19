@@ -36,6 +36,8 @@ def _summary(version: int, states: dict, delivery: dict, labels: dict) -> dict:
         "delivery_apps": labels,
         **{name: list(states[name].values()) for name in ("items", "goals", "limits")},
     }
+    if states.get("forecasts"):
+        result["forecasts"] = list(states["forecasts"].values())
     if states.get("exclusions"):
         result["match_exclusions"] = [
             {"item": item, "record_ids": ids} for item, ids in states["exclusions"].items()
@@ -83,6 +85,16 @@ def _write(conn: sqlite3.Connection, state: dict, version: int) -> None:
         )
 
 
+def _write_forecasts(conn: sqlite3.Connection, forecasts: dict) -> None:
+    for state in forecasts.values():
+        conn.execute(
+            "INSERT OR REPLACE INTO coach_forecasts"
+            " (goal_id, low, high, unit, method, sources_json, local_date)"
+            " VALUES (:goal_id, :low, :high, :unit, :method, :sources_json, :local_date)",
+            {**state, "sources_json": journal.encode(state["sources"])},
+        )
+
+
 def _prepare_change(
     conn: sqlite3.Connection, proposal: dict, now: datetime
 ) -> tuple[dict, dict, dict]:
@@ -120,6 +132,7 @@ def _save(
         before, items, job_after = _prepare_change(conn, proposal, now)
         version = journal.append(conn, request_id, encoded, before, approved_by, saved_at)
         targets.write(conn, items)
+        _write_forecasts(conn, items.get("forecasts", {}))
         for state in items["items"].values():
             _write(conn, state, version)
         jobs.write(conn, job_after, version, saved_at)
