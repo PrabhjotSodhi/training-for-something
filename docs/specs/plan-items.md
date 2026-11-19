@@ -1,6 +1,6 @@
 # Plan items
 
-One planned session, its fields, its states and how a workout marks it done. Save, sending, done matching, the missed-session rule and undo all depend on it.
+One planned session, its fields, its states and how a workout marks it done. Save, sending, done matching, and the missed-session rule all depend on it.
 
 ## What a plan item is
 
@@ -61,7 +61,7 @@ Sending a plan never marks it done.
 
 `plan_items` holds the current version of each planned session. Its `plan_version`
 references the journal entry that last changed it. Removed items use the status
-`removed`; undo history lives in the journal rather than duplicate current rows.
+`removed`; history lives in the journal rather than duplicate current rows.
 
 `session_parts` has exactly one owner: `record_id` for an imported workout or
 `plan_item_id` for a planned session. Sequence numbers are unique within each
@@ -84,7 +84,7 @@ UTC-only sources use the computer's zone. Each selected pair consumes both
 IDs. Manual-done items can still claim their matching workout; removed, skipped
 and replaced items cannot.
 
-Recompute after monthly regrouping, Save/undo and a confirmed remote link.
+Recompute after monthly regrouping, Save and a confirmed remote link.
 Groups with member dates awaiting rebuild are excluded, and the coach view hides
 old matches during that window. Replaying or correcting imported data can change
 automatic completion without rewriting the journal. Move/change/remove refuses
@@ -97,7 +97,7 @@ Use the approved unlink_plan_match action to reject a wrong automatic match.
 `plan_match_exclusions` stores user-approved item/source-record pairs. It is
 user-owned state, retained during rebuilds and included with SQLite backups.
 The source ID deliberately has no foreign key to imported rows: raw replay may
-remove and recreate them. The journal records prior exclusions for undo.
+remove and recreate them. The journal records prior exclusions.
 
 Matching skips a candidate group containing an excluded active source record.
 The choice therefore applies to duplicate copies currently grouped together and
@@ -109,7 +109,8 @@ match is absent or awaiting rebuild. Unlink does not clear manual completion.
 ### Removal and restoration
 
 A removed item keeps its saved targets and history. Linked copies become approved
-removal jobs; a manual deletion report retires the exact link but does not erase
-the item or the acknowledged history. Restore a removed item with restore_session
-and an explicit date after outstanding tasks are resolved. Any approved delivery
-creates a new copy. Reporting deletion itself cannot be undone.
+removal jobs. When an app cannot delete a copy, TFS gives the person a manual
+delete task and forgets the link straight away. It does not check the app
+afterwards and does not erase the item or the acknowledged history. Restore a
+removed item with restore_session and an explicit date. Any approved delivery
+creates a new copy.
