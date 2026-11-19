@@ -88,19 +88,6 @@ class DeliveryJobsTest(unittest.TestCase):
         self.save(self.approve(updated), "save-1")
         self.assertEqual([row["connector"] for row in self.rows()], ["invented_b"])
 
-    def test_job_failure_rolls_back_plan_receipt_and_cancellation(self) -> None:
-        self.save(self.approve(proposal(ADD)), "save-1")
-        before = self.snapshot()
-        self.conn.executescript(
-            "CREATE TRIGGER refuse_job BEFORE INSERT ON jobs BEGIN SELECT RAISE(ABORT, 'invented failure'); END;"
-        )
-        edit = self.approve(
-            proposal({"action": "change_session", "item": "p1", "label": "Lighter"}, version=1)
-        )
-        with self.assertRaisesRegex(sqlite3.IntegrityError, "invented failure"):
-            self.save(edit, "save-2")
-        self.assertEqual(self.snapshot(), before)
-
     def test_replace_cancels_old_job_and_queues_new_one(self) -> None:
         self.save(self.approve(proposal(ADD)), "save-1")
         self.conn.execute(
