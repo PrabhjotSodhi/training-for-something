@@ -13,7 +13,7 @@ from tfs.connectors.core.contract import load_manifests, to_utc_text
 from tfs.connectors.core.runner import run
 from tfs.connectors.hevy import routines
 from tfs.mcp.tool_access import open_reader, query
-from tfs.proposals.apply import preview, save, undo
+from tfs.proposals.apply import preview, save
 from tfs.scheduling import jobs
 
 ITEM = {
@@ -112,7 +112,7 @@ class HevySendTest(unittest.TestCase):
         self.assertEqual(self.http.calls, [])
         self.assertIn("cannot delete", result["message"])
 
-    def test_mapping_failure_can_be_corrected_and_undone_before_one_send(self):
+    def test_mapping_failure_can_be_corrected_before_one_send(self):
         conn = open_database(self)
         path = Path(conn.execute("PRAGMA database_list").fetchone()[2])
         conn.execute("INSERT INTO sources(connector) VALUES ('hevy')")
@@ -153,19 +153,6 @@ class HevySendTest(unittest.TestCase):
             )
             replacement = dict(conn.execute("SELECT * FROM jobs WHERE status='pending'").fetchone())
             self.assertNotEqual(failed["id"], replacement["id"])
-            undo(path, 2, request_id="undo-correction", approved_by="chat", now=NOW)
-            self.assertEqual(
-                dict(conn.execute("SELECT * FROM jobs WHERE id=?", (failed["id"],)).fetchone()),
-                failed,
-            )
-            self.assertFalse(jobs.run_one(path, stamp))
-            undo(path, 3, request_id="redo-correction", approved_by="chat", now=NOW)
-            self.assertEqual(
-                dict(
-                    conn.execute("SELECT * FROM jobs WHERE id=?", (replacement["id"],)).fetchone()
-                ),
-                replacement,
-            )
             self.assertTrue(jobs.run_one(path, stamp))
             self.assertEqual(len(self.http.writes()), 1)
             self.assertEqual(conn.execute("SELECT status FROM plan_items").fetchone()[0], "sent")

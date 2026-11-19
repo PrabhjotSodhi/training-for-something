@@ -2,7 +2,7 @@
 
 A free, open source coach for one person's goal. A small engine runs on your computer, reads your health and training apps, and builds numbers you can trust. The AI tool you already use reads those numbers and answers questions.
 
-**Status:** in development. Data imports, questions and local plan/goal/limit preview, save and undo tools are available. Sending plans to connected apps is still being built.
+**Status:** in development. Data imports, questions and local plan/goal/limit preview and save tools are available. Sending plans to connected apps is still being built.
 
 ## Not medical advice
 
@@ -62,14 +62,14 @@ Restart Codex, select the TFS skill with `$tfs`, and ask about your data. If the
 Ask for a plan or a change. The coach reads your current plan version, calls
 `propose` and shows the exact changes with their reason and sources. Preview
 saves nothing. Approve `save` through your AI client's permission prompt to
-store the proposal. `preview_undo` shows the restored content and affected apps;
-`undo` applies that exact reversal after approval. Existing delivered edits use
-new queued updates, preserving their original receipts. A removal can create a
-manual deletion task. An approved report records that you deleted the exact copy;
+store the proposal. To take back a saved change, ask for the opposite change,
+such as removing an added session or moving a session back, and approve it like
+any other change. Existing delivered edits use new queued updates, preserving
+their original receipts. A removal can create a manual deletion task. An approved report records that you deleted the exact copy;
 it is not provider verification. Restoring it creates a new copy after approval.
 Provider writes remain disabled pending verification.
 
-Keep `save` and `undo` configured to ask for permission. An always-allow setting
+Keep `save` configured to ask for permission. An always-allow setting
 can skip the prompt. TFS records the calling route but does not independently
 prove consent; check the approval/refusal behavior in your installed client.
 The installed AI CLI has your operating-system rights, and the SQL reader is

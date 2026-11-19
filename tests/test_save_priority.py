@@ -10,7 +10,7 @@ from tests.test_records import STEPS
 from tfs.importer.session import rebuild_pending
 from tfs.persistence.migrations import migrate
 from tfs.persistence.sqlite import connect, save_intent, wait_for_saves
-from tfs.proposals.apply import save, undo
+from tfs.proposals.apply import save
 
 
 def hold_save(path, ready, release):
@@ -146,16 +146,13 @@ class SavePriorityTest(unittest.TestCase):
         self.assertEqual(self.conn.execute("SELECT count(*) FROM source_records").fetchone()[0], 4)
         self.assertEqual(self.conn.execute("SELECT count(*) FROM rebuild_dates").fetchone()[0], 0)
 
-    def test_save_undo_and_failed_save_leave_imports_unblocked(self):
+    def test_save_and_failed_save_leave_imports_unblocked(self):
         save(self.path, proposal(ADD), request_id="first", approved_by="chat", now=NOW)
-        undo(self.path, 1, request_id="undo", approved_by="chat", now=NOW)
         with self.assertRaises(ValueError):
             save(self.path, proposal(ADD), request_id="stale", approved_by="chat", now=NOW)
         ready, done = self.ctx.Event(), self.ctx.Event()
         importer = self.start(import_after_saves, ready, done)
         self.assertTrue(done.wait(10))
         self.finished(importer)
-        self.assertEqual(
-            self.conn.execute("SELECT status FROM plan_items").fetchone()[0], "removed"
-        )
-        self.assertEqual(self.conn.execute("SELECT count(*) FROM journal").fetchone()[0], 2)
+        self.assertEqual(self.conn.execute("SELECT status FROM plan_items").fetchone()[0], "saved")
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM journal").fetchone()[0], 1)

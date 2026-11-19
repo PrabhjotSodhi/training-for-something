@@ -9,7 +9,7 @@ from unittest import mock
 from tests.test_proposals import ADD, NOW, proposal
 from tfs.persistence.migrations import migrate
 from tfs.persistence.sqlite import connect
-from tfs.proposals.apply import preview, save, undo
+from tfs.proposals.apply import preview, save
 
 
 class DeliveryJobsTest(unittest.TestCase):
@@ -36,9 +36,6 @@ class DeliveryJobsTest(unittest.TestCase):
 
     def save(self, value: dict, request: str) -> dict:
         return save(self.path, value, request_id=request, approved_by="chat", now=NOW)
-
-    def undo(self, version: int) -> dict:
-        return undo(self.path, version, request_id=f"undo-{version}", approved_by="chat", now=NOW)
 
     def rows(self) -> list:
         return [dict(row) for row in self.conn.execute("SELECT * FROM jobs ORDER BY plan_version")]
@@ -73,7 +70,7 @@ class DeliveryJobsTest(unittest.TestCase):
         before = self.snapshot()
         self.assertEqual(self.save(value, "save-1"), receipt)
         self.assertEqual(self.snapshot(), before)
-        self.assertEqual(self.conn.execute("SELECT format_version FROM journal").fetchone()[0], 3)
+        self.assertEqual(self.conn.execute("SELECT format_version FROM journal").fetchone()[0], 5)
         with self.assertRaisesRegex(sqlite3.IntegrityError, "immutable"):
             self.conn.execute("UPDATE jobs SET payload_json = '{}' WHERE id = ?", (row["id"],))
 
@@ -104,49 +101,40 @@ class DeliveryJobsTest(unittest.TestCase):
             self.save(edit, "save-2")
         self.assertEqual(self.snapshot(), before)
 
-    def test_replace_undo_and_redo_preserve_original_ids_and_payloads(self) -> None:
+    def test_replace_cancels_old_job_and_queues_new_one(self) -> None:
         self.save(self.approve(proposal(ADD)), "save-1")
         self.conn.execute(
             "UPDATE jobs SET status='not_sent', next_attempt_at='2026-11-08T00:00:00Z'"
         )
-        first = self.rows()[0]
         edit = self.approve(
             proposal({"action": "change_session", "item": "p1", "label": "Lighter"}, version=1)
         )
         self.save(edit, "save-2")
-        second = self.rows()[1]
         self.assertEqual([r["status"] for r in self.rows()], ["cancelled", "pending"])
-        self.undo(2)
-        rows = self.rows()
-        self.assertEqual(rows[0], first)
-        self.assertEqual(rows[1], {**second, "status": "cancelled"})
-        self.assertEqual(self.conn.execute("SELECT label FROM plan_items").fetchone()[0], "Push")
-        self.undo(3)
-        self.assertEqual(self.rows(), [{**first, "status": "cancelled"}, second])
         self.assertEqual(self.conn.execute("SELECT label FROM plan_items").fetchone()[0], "Lighter")
 
-    def test_done_and_remove_cancel_pending_work_and_undo_restores_it(self) -> None:
-        self.save(self.approve(proposal(ADD)), "save-1")
-        first = self.rows()[0]
-        for version, action in ((1, "mark_done"), (3, "remove_session")):
-            value = self.approve(proposal({"action": action, "item": "p1"}, version=version))
-            self.assertEqual(value["delivery_targets"], {})
-            self.save(value, f"save-{version+1}")
-            self.assertEqual(self.rows(), [{**first, "status": "cancelled"}])
-            self.undo(version + 1)
-            self.assertEqual(self.rows(), [first])
+    def test_done_and_remove_cancel_pending_work(self) -> None:
+        self.save(self.approve(proposal(ADD, {**ADD, "item": "p2"})), "save-1")
+        value = self.approve(
+            proposal(
+                {"action": "mark_done", "item": "p1"},
+                {"action": "remove_session", "item": "p2"},
+                version=1,
+            )
+        )
+        self.assertEqual(value["delivery_targets"], {})
+        self.save(value, "save-2")
+        self.assertEqual([r["status"] for r in self.rows()], ["cancelled", "cancelled"])
 
     def test_add_then_remove_and_local_only_changes_enqueue_nothing(self) -> None:
         value = proposal(ADD, {"action": "remove_session", "item": "p1"})
         self.save(self.approve(value), "save-1")
         self.assertEqual(self.rows(), [])
-        self.undo(1)
-        self.assertEqual(self.rows(), [])
         self.conn.execute("UPDATE sources SET enabled=0")
-        self.save(proposal({**ADD, "item": "p2"}, version=2), "save-3")
+        self.save(proposal({**ADD, "item": "p2"}, version=1), "save-2")
         self.assertEqual(self.rows(), [])
 
-    def test_delivery_states_refuse_save_and_undo_without_partial_changes(self) -> None:
+    def test_delivery_states_refuse_save_without_partial_changes(self) -> None:
         self.save(self.approve(proposal(ADD)), "save-1")
         for status in ("sending", "in_doubt", "sent", "unknown", "conflict", "needs_you"):
             with self.subTest(status=status):
@@ -157,8 +145,6 @@ class DeliveryJobsTest(unittest.TestCase):
                     self.approve(value)
                 with self.assertRaisesRegex(ValueError, "reconciliation"):
                     self.save(value, "save-2")
-                with self.assertRaisesRegex(ValueError, "reconciliation"):
-                    self.undo(1)
                 self.assertEqual(self.snapshot(), before)
 
     def test_invalid_target_shapes_are_plain_errors(self) -> None:

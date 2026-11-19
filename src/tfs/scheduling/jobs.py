@@ -1,9 +1,8 @@
-"""Queue exact approved deliveries in the caller's Save or undo transaction."""
+"""Queue exact approved deliveries in the caller's Save transaction."""
 
 import json
 import sqlite3
 import uuid
-from collections.abc import Sequence
 from contextlib import closing
 from datetime import timedelta
 from pathlib import Path
@@ -39,44 +38,6 @@ def destinations(conn: sqlite3.Connection, items: dict) -> tuple[dict, dict]:
             targets[item] = names
     labels = {name: manifests[name]["label"] for names in targets.values() for name in names}
     return targets, labels
-
-
-def link_snapshot(conn: sqlite3.Connection, items: dict) -> dict:
-    """Record which remote copies exist at the instant a change is saved."""
-    result = {}
-    for item in items:
-        links = dict(
-            conn.execute("SELECT connector,remote_id FROM remote_links WHERE item_id=?", (item,))
-        )
-        if links:
-            result[item] = links
-    return result
-
-
-def undo_destinations(
-    conn: sqlite3.Connection, items: dict, prior_links: dict, *, completion: Sequence[str] = ()
-) -> tuple[dict, dict]:
-    """Require the same previously acknowledged copies before approving compensation."""
-    linked = link_snapshot(conn, items)
-    done = {item for item in completion if items[item]["status"] == "done"}
-    updating = {
-        item: names
-        for item, names in linked.items()
-        if items[item]["status"] != "removed" and item not in done
-    }
-    prior_updates = {
-        item: names
-        for item, names in prior_links.items()
-        if items[item]["status"] != "removed" and item not in done
-    }
-    if updating != prior_updates:
-        raise ValueError(
-            "This undo needs delivery reconciliation: prior remote copies are not established."
-        )
-    remote_items = {item: items[item] for item in linked if item not in completion}
-    _, labels = destinations(conn, remote_items)
-    targets = {item: sorted(linked[item]) for item in remote_items}
-    return targets, {name: labels[name] for names in targets.values() for name in names}
 
 
 def _resolved_history(conn: sqlite3.Connection, row: sqlite3.Row) -> bool:
@@ -162,7 +123,7 @@ def _state(row: dict) -> dict:
 def prepare(
     conn: sqlite3.Connection, items: dict, targets: dict, saved_at: str
 ) -> tuple[dict, dict]:
-    """Prepare cancellation and new jobs, retaining prior states for undo."""
+    """Prepare cancellation and new jobs, retaining prior states."""
     pending = _pending(conn, items, allow_sent=True)
     before = {key: _state(row) for key, row in pending.items()}
     after = {key: {**_state(row), "status": "cancelled"} for key, row in pending.items()}
@@ -178,66 +139,6 @@ def prepare(
                 "next_attempt_at": saved_at,
             }
     return before, after
-
-
-def restore(
-    conn: sqlite3.Connection,
-    items: dict,
-    prior: dict,
-    targets: dict,
-    saved_at: str,
-    *,
-    completion: Sequence[str] = (),
-) -> tuple[dict, dict]:
-    """Restore unsent jobs locally, or queue fresh updates to existing remote copies."""
-    _pending(
-        conn,
-        {
-            item: state
-            for item, state in items.items()
-            if item not in targets and item not in completion
-        },
-    )
-    done = {item for item in completion if items[item]["status"] == "done"}
-    _pending(conn, {item: items[item] for item in completion if item not in done}, allow_sent=True)
-    before, after = {}, {}
-    for key, state in prior.items():
-        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (key,)).fetchone()
-        if row is None or row["item_id"] not in items:
-            raise ValueError("The saved delivery history is missing or inconsistent.")
-        if row["item_id"] not in targets and row["item_id"] not in done:
-            if row["status"] not in ("pending", "not_sent", "cancelled") and not _replaceable(row):
-                raise ValueError(
-                    "An acknowledged or uncertain job cannot be restored from old history."
-                )
-            before[key] = _state(row)
-            after[key] = state or {**before[key], "status": "cancelled"}
-    remote_before, remote_after = prepare(
-        conn, {item: items[item] for item in set(targets) | done}, targets, saved_at
-    )
-    return before | remote_before, after | remote_after
-
-
-def restored_deliveries(conn: sqlite3.Connection, changes: dict) -> list[dict]:
-    """Show original approved jobs that an undo will resume, with their exact content."""
-    manifests = load_manifests()
-    result = []
-    for key, state in changes.items():
-        if "payload_json" in state or state["status"] not in ("pending", "not_sent"):
-            continue
-        row = conn.execute(
-            "SELECT item_id,connector,payload_json FROM jobs WHERE id=?", (key,)
-        ).fetchone()
-        result.append(
-            {
-                "op_id": key,
-                "connector": row["connector"],
-                "app": manifests.get(row["connector"], {}).get("label", row["connector"]),
-                "item": json.loads(row["payload_json"]),
-                **state,
-            }
-        )
-    return result
 
 
 def write(conn: sqlite3.Connection, changes: dict, version: int, saved_at: str) -> None:
