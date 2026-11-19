@@ -18,3 +18,7 @@ direction = -1
 [inputs.sleep_asleep]
 weight = 0.25
 direction = 1
+
+[load_strength]
+formula_version = "load-strength-1"
+baseline_days = 28

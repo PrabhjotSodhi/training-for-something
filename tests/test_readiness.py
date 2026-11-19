@@ -3,6 +3,7 @@ import unittest
 from datetime import date, timedelta
 
 from tests.helpers import open_database
+from tfs import scores
 from tfs.importer.session import rebuild_pending
 from tfs.scores import readiness
 
@@ -108,7 +109,7 @@ class ReadinessTest(unittest.TestCase):
         readiness.rebuild(self.conn)
         self.conn.execute("UPDATE scores SET formula_version = 'old'")
 
-        readiness.rebuild_if_outdated(self.conn)
+        scores.rebuild_if_outdated(self.conn)
 
         versions = {row[0] for row in self.conn.execute("SELECT formula_version FROM scores")}
         self.assertEqual(versions, {readiness.FORMULA_VERSION})
