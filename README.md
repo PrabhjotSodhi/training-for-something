@@ -18,7 +18,7 @@ Read more in the [high level design](docs/HLD.md), the [code map](docs/code-map.
 
 ## Ask about your data
 
-You need Python 3.12 or later and Claude Code or Codex on the same computer. Until the installer arrives in milestone 0.7, clone this repository and install from its folder, preferably in a virtual environment:
+You need Python 3.12 or later and Claude Code or Codex on the same computer. Until the installer arrives in the "Safe to live with" milestone, clone this repository and install from its folder, preferably in a virtual environment:
 
 ```sh
 git clone https://github.com/PrabhjotSodhi/training-for-something.git
