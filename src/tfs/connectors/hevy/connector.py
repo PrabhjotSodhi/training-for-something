@@ -1,7 +1,6 @@
 """Fetches Hevy workout pages and reads saved pages into session records and delete records."""
 
 import json
-from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
 from urllib.parse import quote
@@ -15,6 +14,8 @@ _API = "https://api.hevyapp.com/v1"
 _PAGE_SIZE = 10
 _OVERLAP = timedelta(minutes=5)
 _DEFAULT_WAIT_S = 300
+
+send = routines.send
 
 
 def connect(answers: dict) -> dict:
@@ -163,17 +164,3 @@ def _parts(exercises: list[dict]) -> list[dict]:
                 }
             )
     return parts
-
-
-def send(
-    item: dict,
-    op_id: str,
-    remote_id: str | None,
-    remote_version: str | None,
-    in_doubt: bool,
-    secrets: dict,
-    now: str,
-    http: Callable,
-) -> dict:
-    """Prepare routine delivery through the provider-verified write gate."""
-    return routines.send(item, op_id, remote_id, remote_version, in_doubt, secrets, now, http)
