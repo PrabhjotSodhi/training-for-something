@@ -42,6 +42,24 @@ def _proposal(conn: sqlite3.Connection, proposal: dict) -> None:
         raise ValueError("The proposal is stale. Read the current plan and propose again.")
 
 
+def _forecast(
+    conn: sqlite3.Connection, action: dict, today: date, sources: list, goals: dict
+) -> dict:
+    item = action["item"]
+    goal = goals[item] if item in goals else targets.load(conn, "goals", item)
+    if goal is None:
+        raise ValueError("Unknown goal.")
+    return {
+        "goal_id": item,
+        "low": action["low"],
+        "high": action["high"],
+        "unit": action["unit"],
+        "method": action["method"],
+        "sources": copy.deepcopy(sources),
+        "local_date": today.isoformat(),
+    }
+
+
 def _add(conn: sqlite3.Connection, action: dict, today: date, pending_goals: dict) -> dict:
     goals = action.get("goal_ids", [])
     for goal in goals:
@@ -135,6 +153,18 @@ def prepare(conn: sqlite3.Connection, proposal: dict, today: date) -> tuple[dict
             if item not in before[table]:
                 before[table][item] = targets.load(conn, table, item)
             after[table][item] = targets.validate(action, today)
+        elif name == "set_forecast":
+            if item not in before.setdefault("forecasts", {}):
+                row = conn.execute(
+                    "SELECT * FROM coach_forecasts WHERE goal_id = ?", (item,)
+                ).fetchone()
+                before["forecasts"][item] = row and {
+                    **dict(row),
+                    "sources": json.loads(row["sources_json"]),
+                }
+            after.setdefault("forecasts", {})[item] = _forecast(
+                conn, action, today, proposal["sources"], after["goals"]
+            )
         elif name == "unlink_plan_match":
             _unlink(conn, action, before, after)
         else:

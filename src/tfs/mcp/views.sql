@@ -112,6 +112,10 @@ SELECT coalesce(max(version), 0) AS plan_version FROM main.journal;
 CREATE TEMP VIEW coach_v1_goals AS
 SELECT id AS goal_id, type, local_date, target_json FROM main.goals;
 
+CREATE TEMP VIEW coach_v1_forecasts AS
+SELECT goal_id, low, high, unit, method, sources_json, local_date,
+  'Coach estimate' AS label FROM main.coach_forecasts;
+
 CREATE TEMP VIEW coach_v1_limits AS
 SELECT id AS limit_id, kind, values_json FROM main.limits;
 

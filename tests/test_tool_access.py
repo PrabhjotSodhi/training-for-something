@@ -175,6 +175,7 @@ class ToolAccessTest(unittest.TestCase):
                 "coach_v1_plan_parts",
                 "coach_v1_plan_state",
                 "coach_v1_goals",
+                "coach_v1_forecasts",
                 "coach_v1_limits",
             ],
         )
