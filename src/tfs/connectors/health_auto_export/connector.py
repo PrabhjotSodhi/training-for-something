@@ -17,6 +17,8 @@ _METRIC_BY_NAME = {
     "active_energy": "active_energy",
     "resting_heart_rate": "resting_hr",
     "weight_body_mass": "weight",
+    "body_fat_percentage": "body_fat",
+    "vo2_max": "vo2_max",
     "heart_rate_variability": "hrv_sdnn",
     "heart_rate": "heart_rate",
 }
