@@ -567,8 +567,6 @@ The phone page needs no sign-in. Tailscale is the sign-in: only devices on your 
 | Browser on the computer or phone | Nothing beyond the network. Tailscale limits the phone to your tailnet. |
 | Phone push app | A token in a header. It can only send data in. |
 
-TFS uses the `Tailscale-User-Login` header as an extra check when present. It never accepts the header as proof by itself. Any local program can reach 127.0.0.1 and set it.
-
 Python's built-in HTTP server provides only basic security checks. TFS adds checks for Host, Origin and request size. Pages escape displayed content. The engine closes the connection on any refused push.
 
 App tokens and API keys live in one `.env` file in the TFS data folder. Only the user can read it. Backups and exports leave it out.
@@ -700,7 +698,7 @@ Every connector test checks four rules.
 
 1. A UTC-only history import across a daylight saving change must keep each local date.
 2. The guarded reader must refuse or cap base table reads, writes, `ATTACH`, pragmas and huge results through `query`. View reads must pass.
-3. Request tests cover bad Host, bad Origin and a forged Tailscale header. They also cover oversized bodies and refused pushes.
+3. Request tests cover bad Host and bad Origin. They also cover oversized bodies and refused pushes.
 4. AI adapter tests replay each tool's recorded error outputs. These cover usage limits, signed out, missing tool, bad output and timeout.
 5. Before each release, each AI tool answers about 20 questions about the invented person. Proposal JSON must be valid, numbers must match exactly, and every link must open. Health answers must carry the disclaimer. Dose requests must receive no dose. Decoys include instructions injected into a workout title.
 
