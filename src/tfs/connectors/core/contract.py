@@ -68,7 +68,7 @@ METRICS = {
     "body_fat": Metric("%", "latest", False),
     "vo2_max": Metric("mL/kg/min", "latest", True),
     "heart_rate": Metric("bpm", "none", True),
-    "hrv_sdnn": Metric("ms", "none", True),
+    "hrv_sdnn": Metric("ms", "mean", True),
 }
 
 SESSION_VALUES = ("duration_s", "distance_m", "active_energy_kcal", "avg_hr", "max_hr")
