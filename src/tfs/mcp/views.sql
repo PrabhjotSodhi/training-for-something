@@ -128,3 +128,6 @@ SELECT j.id AS op_id, j.item_id AS plan_item_id, j.plan_version, j.connector,
   json_extract(j.result_json, '$.safe_to_replace') AS safe_to_replace
 FROM main.jobs j LEFT JOIN main.remote_links r
   ON r.item_id = j.item_id AND r.connector = j.connector;
+
+CREATE TEMP VIEW coach_v1_scores AS
+SELECT local_date, score, value, low, high, inputs_json, formula_version FROM main.scores;

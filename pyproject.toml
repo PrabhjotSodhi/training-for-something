@@ -20,4 +20,4 @@ version = { attr = "tfs.__version__" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-tfs = ["**/*.sql", "**/*.json"]
+tfs = ["**/*.sql", "**/*.json", "**/*.toml"]

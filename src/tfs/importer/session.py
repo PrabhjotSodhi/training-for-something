@@ -22,6 +22,7 @@ from tfs.importer import records
 from tfs.importer.raw_store import FileConflictError, SavedFile, save_raw
 from tfs.persistence.sqlite import transaction, wait_for_saves
 from tfs.proposals import matching
+from tfs.scores import readiness
 from tfs.source_priority import daily_totals
 
 logger = logging.getLogger(__name__)
@@ -329,6 +330,9 @@ def rebuild_pending(conn: sqlite3.Connection, *, tz: tzinfo | None = None) -> in
                 "DELETE FROM rebuild_dates WHERE substr(local_date, 1, 7) = ?", (month,)
             ).rowcount
             matching.rebuild(conn, tz=tz)
+    if rebuilt:
+        with transaction(conn):
+            readiness.rebuild(conn)
     return rebuilt
 
 

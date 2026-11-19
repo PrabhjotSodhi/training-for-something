@@ -1,0 +1,20 @@
+formula_version = "readiness-1"
+baseline_days = 42
+min_baseline_days = 21
+scale = 10
+low_clamp = 1
+high_clamp = 99
+range_width = 6
+range_widening = 0.5
+
+[inputs.hrv_sdnn]
+weight = 0.35
+direction = 1
+
+[inputs.resting_hr]
+weight = 0.25
+direction = -1
+
+[inputs.sleep_asleep]
+weight = 0.25
+direction = 1
