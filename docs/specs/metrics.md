@@ -29,7 +29,7 @@ Daily facts, scores and forecasts. Every formula carries a version. Coefficients
 | **Training load** | Three channels, never added together. Cardio: heart rate TRIMP. Strength: working sets x reps x weight, with RIR or RPE when logged. Perceived: RPE x minutes. | A workout with duration. Heart rate for cardio load. | Each channel against your own recent normal |
 | **Recovery time** | Each channel's load decays over time. Cardio and strength are kept apart. | Six weeks of history for a personal decay rate | A range, such as "18 to 30 h". Strength may say "unknown". |
 | **Workout heart rate** | Zones from heart rate reserve. Max heart rate measured, or estimated as 211 minus 0.64 x age and marked estimated. Heart rate recovery at 60 and 120 seconds. | A heart rate stream | Time in each zone, recovery |
-| **Cardio Fitness Age** | Your VO2 max against the HUNT study's age and sex reference curve. Never shown below or above the reference range. | Age, reference sex, VO2 max | "About 36", percentile, source, confidence. No decimals. |
+| **VO2 max** | Your device's latest VO2 max, placed on the HUNT study's age and sex reference curve. Never shown below or above the reference range. | Age, reference sex, VO2 max | "38, high for your age", percentile, source, confidence. No decimals. |
 
 ## Forecasts
 
@@ -42,7 +42,7 @@ The website promises a forecast range per goal. Two kinds exist.
 | Endurance race (marathon, half, Ironman legs) | Riegel's formula from recent best efforts at shorter distances, widened by how old and how far those efforts are | A finish time range |
 | Powerlifting | Estimated one-rep max (Epley) from recent top sets, per lift, summed | A total range |
 | Lean physique | Body weight trend over the last 4 weeks, extended to the goal date | A weight range on the date |
-| Longevity | Cardio Fitness Age now and its trend | Age and percentile |
+| Longevity | VO2 max now and its trend | VO2 max and percentile |
 
 Ironman adds a fixed transition estimate to the three leg forecasts.
 

@@ -132,7 +132,7 @@ All writes use short transactions in `tfs.db` with a busy timeout. SQLite allows
 
 Imports commit small batches of about 500 rows and run the write log's checkpoints themselves. A Save never does that work. After a file finishes, TFS rebuilds the days that it touches, a month per transaction. Until then, the dashboard and AI see those dates marked "importing, incomplete".
 
-Saves take priority over imports. TFS can store data on any disk, so the Save target cannot depend on disk speed. When a Save arrives, the import pauses before its next batch. It resumes after the Save commits. Save and undo announce their intent before opening tfs.db by holding a shared SQLite read lock on the empty sibling file tfs.db.save-priority. Imports yield before each record batch and monthly rebuild while that lock is held. This coordination file alone uses rollback journal mode; it stores no data and process exit releases its locks. Do not unlink it while TFS processes are running. An already-running batch finishes first. With batching alone, 99% of Saves took under 100 ms, but a rare Save still took about 2 s.
+Saves take priority over imports. TFS can store data on any disk, so the Save target cannot depend on disk speed. When a Save arrives, the import pauses before its next batch. It resumes after the Save commits. Save announces its intent before opening tfs.db by holding a shared SQLite read lock on the empty sibling file tfs.db.save-priority. Imports yield before each record batch and monthly rebuild while that lock is held. This coordination file alone uses rollback journal mode; it stores no data and process exit releases its locks. Do not unlink it while TFS processes are running. An already-running batch finishes first. With batching alone, 99% of Saves took under 100 ms, but a rare Save still took about 2 s.
 
 Only one engine runs. It binds its fixed port before starting other work. On Windows, Python's stock server lets a second process bind the same port. TFS sets `allow_reuse_address = os.name != "nt"` to prevent this. A Windows test confirmed that the second bind fails with WinError 10048. If another app holds the port, the message names that problem instead of saying "TFS is already running".
 
@@ -419,7 +419,7 @@ Options considered. General probabilistic matching with selection rules for ever
 
 Readiness shows your value against your normal band. Measured variance was too high to present it as a percentile.
 
-The metrics spec defines Cardio Fitness Age and its source.
+The metrics spec defines VO2 max and its source.
 
 ## 9. Coach
 
@@ -472,7 +472,7 @@ In your own AI chat, the AI calls the ask TFS save action. Your AI tool's permis
 
 In a TFS screen, you review the preview and tap Save.
 
-Save applies the change and writes a journal row in one transaction. It offers one-tap undo. If the plan or a required constraint changed after the proposal, Save refuses it and shows a fresh proposal.
+Save applies the change and writes a journal row in one transaction. To take a change back, the AI proposes the opposite change, such as `remove_session` or `move_session` back, and you approve it like any change. If the plan or a required constraint changed after the proposal, Save refuses it and shows a fresh proposal.
 
 ### 9.4 How the coach researches
 
@@ -560,17 +560,14 @@ Onboarding and Settings offer three phone data routes.
 
 Push apps resend recent days. Data sent at home fills gaps from time away.
 
-Each request type uses its own sign-in method.
+The phone page needs no sign-in. Tailscale is the sign-in: only devices on your tailnet can reach the computer. The engine refuses any request whose Host header is not the computer's own name. This blocks DNS rebinding, where a web page in your browser points a name at the engine.
 
 | Request | How it proves itself |
 |---|---|
-| Browser on the computer | `tfs open` opens the dashboard with a one-time link that sets a session cookie |
-| Phone browser | Pairs once with a code shown on the computer screen, which sets a session cookie |
+| Browser on the computer or phone | Nothing beyond the network. Tailscale limits the phone to your tailnet. |
 | Phone push app | A token in a header. It can only send data in. |
 
-TFS uses the `Tailscale-User-Login` header as an extra check when present. It never accepts the header as proof by itself. Any local program can reach 127.0.0.1 and set it.
-
-Python's built-in HTTP server provides only basic security checks. TFS adds checks for Host, Origin, session cookies and request size. Every change also requires a CSRF token, which protects against requests from other sites. Pages escape displayed content. The engine closes the connection on any refused push.
+Python's built-in HTTP server provides only basic security checks. TFS adds checks for Host, Origin and request size. Pages escape displayed content. The engine closes the connection on any refused push.
 
 App tokens and API keys live in one `.env` file in the TFS data folder. Only the user can read it. Backups and exports leave it out.
 
@@ -701,7 +698,7 @@ Every connector test checks four rules.
 
 1. A UTC-only history import across a daylight saving change must keep each local date.
 2. The guarded reader must refuse or cap base table reads, writes, `ATTACH`, pragmas and huge results through `query`. View reads must pass.
-3. Request tests cover bad Host, bad Origin, missing CSRF token, missing session and a forged Tailscale header without a session. They also cover oversized bodies and refused pushes.
+3. Request tests cover bad Host and bad Origin. They also cover oversized bodies and refused pushes.
 4. AI adapter tests replay each tool's recorded error outputs. These cover usage limits, signed out, missing tool, bad output and timeout.
 5. Before each release, each AI tool answers about 20 questions about the invented person. Proposal JSON must be valid, numbers must match exactly, and every link must open. Health answers must carry the disclaimer. Dose requests must receive no dose. Decoys include instructions injected into a workout title.
 

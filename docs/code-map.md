@@ -58,15 +58,15 @@ training-for-something/
       models.py               the shape of every proposal action, written once
       actions.py              validates proposals and calculates resulting state
       targets.py              validates and stores goals and training limits
-      apply.py                validates a proposal, applies it, undoes it
+      apply.py                validates a proposal and applies it
       journal.py              the append-only journal
       matching.py             matches workouts to plans, retaining approved exclusions and manual completion
     scheduling/
       scheduler.py            the 60 second loop, next_due
-      jobs.py                 atomic queue, undo, manual deletion reports, claim, finish and crash reconciliation
+      jobs.py                 atomic queue, manual deletion tasks, claim, finish and crash reconciliation
       triggers.py             the missed-session rule
     web/
-      server.py               HTTP server on 127.0.0.1, sessions, request checks
+      server.py               HTTP server on 127.0.0.1, request checks
       push.py                 the push endpoint for phone apps
       views/                  one file per screen
       templates/
@@ -118,7 +118,7 @@ Each milestone adds one numbered migration for the tables it needs. `0001_init.s
 | `remote_links` | Yours | Plan item, connector, remote id, remote version |
 | `source_order` | Yours | Your source list per data type |
 | `chat` | Yours | Visible chat turns |
-| `jobs` | Work | Approved send payloads with stable op id, item/journal version, status, next due, attempts, result and optional resolution-journal version; AI/trigger jobs follow later |
+| `jobs` | Work | Approved send payloads with stable op id, item/journal version, status, next due, attempts, and result; AI/trigger jobs follow later |
 
 "Derived" tables can be dropped and rebuilt from `source_records` and the journal. "Yours" tables are kept by backups.
 
@@ -139,7 +139,7 @@ scheduling/jobs.py  →  connectors/core/send.py  →  connector send() in runne
 
 1. Only `persistence/sqlite.py` opens the database. It sets WAL, `synchronous=FULL` and a busy timeout for `tfs.db`. It also opens the empty `tfs.db.save-priority` coordination file in rollback mode; this file holds locks only and must not be unlinked during operation.
 2. The Save path's connection never runs a checkpoint. Imports run checkpoints.
-3. Imports commit about 500 rows per transaction and pause before each batch and monthly rebuild while a Save or undo holds its intent lock.
+3. Imports commit about 500 rows per transaction and pause before each batch and monthly rebuild while a Save holds its intent lock.
 4. No module branches on an app's name. App knowledge lives in `connectors/<name>/`.
 5. Connectors run only through `connectors/core/runner.py`, never imported by the engine.
 6. The AI reads only through `mcp/tool_access.py`.
@@ -154,6 +154,6 @@ scheduling/jobs.py  →  connectors/core/send.py  →  connector send() in runne
 | Ask your coach | `mcp/`, `providers/briefing.py`, `plugins/`, `cli/mcp` |
 | Plans | `proposals/`, `scheduling/jobs.py`, `connectors/core/send.py`, Hevy `send`, `goals`, `plan_items`, `remote_links` |
 | Every morning | `scores/`, `scheduling/scheduler.py`, `scheduling/triggers.py`, food and document actions, `providers/` for runs TFS starts |
-| Dashboard and phone | The rest of `engine` and `web/`: screens, sign-in, phone pairing, `duplicates/review.py` |
+| Dashboard and phone | The rest of `engine` and `web/`: screens, `duplicates/review.py` |
 | More apps | `connectors/<name>/` for the rest |
 | Safe to live with | `backup_restore`, `export`, `delete_data`, the upgrade path (backup, then migrate), install and onboarding |
