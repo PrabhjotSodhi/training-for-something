@@ -2,7 +2,6 @@
 
 import copy
 import json
-import math
 import sqlite3
 from datetime import date
 
@@ -19,62 +18,25 @@ GOAL_TYPES = (
 )
 
 
-def _text(value: object) -> None:
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError("Expected non-empty text.")
-
-
-def _fields(value: object, required: set, optional: set = frozenset()) -> None:
-    if not isinstance(value, dict) or not required <= value.keys() <= required | optional:
-        raise ValueError("Missing or unknown goal/limit fields.")
-
-
-def _number(value: object) -> None:
-    if type(value) not in (int, float) or not 0 <= value <= 1e308 or not math.isfinite(value):
-        raise ValueError("A target must be a finite non-negative number.")
-
-
-def _day(value: object, today: date, future: bool = False) -> str:
-    _text(value)
+def _day(value: str, today: date, future: bool = False) -> str:
     parsed = date.fromisoformat(value)
-    if parsed.isoformat() != value or parsed < today or (future and parsed == today):
+    if parsed < today or (future and parsed == today):
         raise ValueError("Use a future YYYY-MM-DD date for a goal, or today or later for a limit.")
     return value
 
 
 def validate(action: dict, today: date) -> dict:
-    """Return a goal or limit state after validating its documented fields."""
+    """Return a goal or limit state. The proposal model has checked every field but the dates."""
     if action["action"] == "set_goal":
-        if action["type"] not in GOAL_TYPES:
-            raise ValueError("Unknown goal type; use custom for another goal.")
-        target = action["target"]
-        _fields(target, {"description"}, {"value", "unit"})
-        _text(target["description"])
-        if ("value" in target) != ("unit" in target):
-            raise ValueError("A numeric goal target needs both value and unit.")
-        if "value" in target:
-            _number(target["value"])
-            _text(target["unit"])
         return {
             "id": action["item"],
             "type": action["type"],
             "local_date": _day(action["date"], today, True),
-            "target": copy.deepcopy(target),
+            "target": copy.deepcopy(action["target"]),
         }
     kind, values = action["kind"], action["values"]
-    if kind == "injury":
-        _fields(values, {"description"})
-        _text(values["description"])
-    elif kind == "unavailable_day":
-        _fields(values, {"date"})
+    if kind == "unavailable_day":
         _day(values["date"], today)
-    elif kind == "max_session_length":
-        _fields(values, {"minutes"})
-        _number(values["minutes"])
-        if values["minutes"] == 0:
-            raise ValueError("Maximum session length must be positive.")
-    else:
-        raise ValueError("Unknown training limit kind.")
     return {"id": action["item"], "kind": kind, "values": copy.deepcopy(values)}
 
 
