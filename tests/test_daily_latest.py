@@ -23,7 +23,7 @@ class DailyLatestTest(unittest.TestCase):
         local_date: str = DAY,
         **fields,
     ) -> None:
-        unit = {"weight": "kg", "resting_hr": "bpm"}[metric]
+        unit = {"weight": "kg", "resting_hr": "bpm", "hrv_sdnn": "ms"}[metric]
         values = {"value": value, "unit": unit}
         insert_measurement(
             self.conn, key, connector, metric, start_utc, values, local_date=local_date, **fields
@@ -122,3 +122,37 @@ class DailyLatestTest(unittest.TestCase):
         rebuild_pending(self.conn)
 
         self.assertEqual([(fact[1], fact[2]) for fact in self.facts()], [("resting_hr", 55)])
+
+    def test_hrv_is_the_mean_of_the_days_readings_and_zero_is_missing(self) -> None:
+        # GIVEN readings of 40, 50 and 60 on one day, and 0 and 48 on another
+        for key, start_utc, value in [
+            ("a", "2026-10-01T01:00:00Z", 40),
+            ("b", "2026-10-01T02:00:00Z", 50),
+            ("c", "2026-10-01T03:00:00Z", 60),
+        ]:
+            self.add(key, "hrv_sdnn", start_utc, value)
+        self.add("d", "hrv_sdnn", "2026-10-02T01:00:00Z", 0, local_date="2026-10-02")
+        self.add("e", "hrv_sdnn", "2026-10-02T02:00:00Z", 48, local_date="2026-10-02")
+        self.add("f", "hrv_sdnn", "2026-10-03T01:00:00Z", 0, local_date="2026-10-03")
+
+        # WHEN the days are rebuilt
+        rebuild(self.conn, {DAY, "2026-10-02", "2026-10-03"})
+
+        # THEN the first day is the mean, the second ignores the 0 and the third has no row
+        self.assertEqual(
+            [(fact[0], fact[2]) for fact in self.facts()], [(DAY, 50), ("2026-10-02", 48)]
+        )
+
+    def test_hrv_of_one_day_comes_from_one_connector(self) -> None:
+        # GIVEN two connectors with readings on one day, one with more readings
+        self.add("a", "hrv_sdnn", "2026-10-01T01:00:00Z", 40)
+        self.add("b", "hrv_sdnn", "2026-10-01T02:00:00Z", 60)
+        self.add("c", "hrv_sdnn", "2026-10-01T03:00:00Z", 100, connector="health_auto_export")
+
+        # WHEN the day is rebuilt
+        rebuild(self.conn, {DAY})
+
+        # THEN only the connector with more readings counts
+        self.assertEqual(
+            [(fact[2], fact[4]) for fact in self.facts()], [(50, "apple_health/hrv_sdnn/-/-")]
+        )

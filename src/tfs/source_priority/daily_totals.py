@@ -29,6 +29,33 @@ SELECT local_date, :metric, value, :unit, source, 'full', :formula_version FROM 
 ) WHERE position = 1
 """
 
+# One connector per day: the one with the most readings, then the smaller name.
+_MEAN = """
+INSERT INTO day_facts (local_date, metric, value, unit, source, coverage, formula_version)
+WITH measured AS (
+  SELECT local_date, connector, json_extract(values_json, '$.value') AS value,
+         connector || '/' || stream || '/' || coalesce(origin_app, '-') || '/'
+           || coalesce(origin_device, '-') AS source
+  FROM source_records
+  WHERE kind = 'measurement' AND metric = :metric AND deleted_at IS NULL
+    AND local_date IN (SELECT value FROM json_each(:days))
+), daily AS (
+  SELECT local_date, connector, avg(value) AS value, count(*) AS readings,
+         (SELECT group_concat(source, ' + ') FROM (
+            SELECT DISTINCT source FROM measured AS other
+            WHERE other.local_date = measured.local_date AND other.connector = measured.connector
+            ORDER BY source)) AS source
+  FROM measured
+  WHERE NOT (:zero_is_missing AND value = 0)
+  GROUP BY local_date, connector
+)
+SELECT local_date, :metric, value, :unit, source, 'full', :formula_version FROM (
+  SELECT local_date, value, source,
+         row_number() OVER (PARTITION BY local_date ORDER BY readings DESC, connector) AS position
+  FROM daily
+) WHERE position = 1
+"""
+
 _SUMMED = """
 SELECT local_date, metric, connector, start_utc, end_utc,
        json_extract(values_json, '$.value'), coalesce(json_extract(values_json, '$.merged'), 0),
@@ -39,6 +66,8 @@ WHERE kind = 'measurement' AND deleted_at IS NULL
   AND metric IN (SELECT value FROM json_each(:metrics))
   AND local_date IN (SELECT value FROM json_each(:days))
 """
+
+_QUERIES = {"latest": _LATEST, "mean": _MEAN}
 
 
 def _uncovered_seconds(start: float, end: float, covered: list[tuple[float, float]]) -> float:
@@ -139,9 +168,9 @@ def rebuild(conn: sqlite3.Connection, dates: set[str], *, tz: tzinfo | None = No
         )
         written += 1
     for name, metric in daily.items():
-        if metric.daily == "latest":
+        if metric.daily in _QUERIES:
             written += conn.execute(
-                _LATEST,
+                _QUERIES[metric.daily],
                 {
                     "metric": name,
                     "unit": metric.unit,
