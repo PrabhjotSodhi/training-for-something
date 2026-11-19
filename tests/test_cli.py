@@ -32,13 +32,10 @@ class CliTest(unittest.TestCase):
     def setUp(self):
         self.addCleanup(os.umask, os.umask(0o022))
 
-    def test_version_constant(self):
-        self.assertEqual(tfs.__version__, "0.1.0.dev0")
-
     def test_version_flag_prints_version_and_exits_0(self):
         result = run_tfs("--version")
         self.assertEqual(result.returncode, 0)
-        self.assertEqual(result.stdout, "tfs 0.1.0.dev0\n")
+        self.assertEqual(result.stdout, f"tfs {tfs.__version__}\n")
 
     def test_no_command_prints_usage_and_exits_2(self):
         result = run_tfs()

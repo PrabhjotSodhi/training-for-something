@@ -41,6 +41,15 @@ Python 3.12. Tests use `unittest`. Hypothesis is allowed in tests only. Ruff lin
 3. Open one pull request using the template. Link the issue with `Closes #<number>`.
 4. Never push to `main`, force push, rebase a shared branch, merge, tag or release. The maintainer merges every pull request.
 
+## Releasing
+
+The maintainer cuts each release by hand when a milestone is done. Versions follow PEP 440: `0.1.0a1`, `0.1.0a2` and so on until `0.1.0`, the public beta. After that, the last digit goes up for fixes and the middle digit for new features.
+
+1. Run the tests and Ruff the way `.github/workflows/tests.yml` does.
+2. Set `__version__` in `src/tfs/__init__.py`.
+3. Give the top CHANGELOG section the version and date, and list the known gaps.
+4. Merge the pull request, tag the merge commit `v<version>` and publish a GitHub release with that CHANGELOG section. Mark alphas as pre-releases.
+
 ## When to stop
 
 Stop, label the issue `agent:blocked`, and comment with the command you ran, the failure, and what you think causes it, when:

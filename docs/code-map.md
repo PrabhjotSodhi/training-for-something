@@ -96,7 +96,7 @@ Module names are short and lowercase, as PEP 8 asks. The folder carries the cont
 
 ## 2. Database tables
 
-Each milestone adds one numbered migration for the tables it needs. `0001_init.sql` creates the 0.1 tables: `files`, `sources`, `source_records`, `source_deletes`, `session_parts`, `session_groups`, `session_group_members`, `day_facts` and `rebuild_dates`. `0002_plans.sql` adds `journal`, `goals`, `limits` and `plan_items`, and lets `session_parts` belong to a plan item. A merged migration is never edited. Later changes are new numbered files.
+Each milestone adds one numbered migration for the tables it needs. `0001_init.sql` creates the "Your data in" tables: `files`, `sources`, `source_records`, `source_deletes`, `session_parts`, `session_groups`, `session_group_members`, `day_facts` and `rebuild_dates`. `0002_plans.sql` adds `journal`, `goals`, `limits` and `plan_items`, and lets `session_parts` belong to a plan item. A merged migration is never edited. Later changes are new numbered files.
 
 | Table | Kind | Holds |
 |---|---|---|
@@ -148,12 +148,12 @@ scheduling/jobs.py  →  connectors/core/send.py  →  connector send() in runne
 
 ## 5. What each milestone builds
 
-| Version | Builds |
+| Milestone | Builds |
 |---|---|
-| 0.1 Your data in | `config`, `persistence/`, `importer/`, `connectors/core/` (contract, runner), `connectors/testing/`, `apple_health`, `health_auto_export`, `hevy` (read), `duplicates/workouts`, `source_priority/` (day facts for steps, active energy, sleep, resting heart rate and weight. HRV records are stored from 0.1, and day facts for HRV, total energy, body fat and VO2 max follow in 0.4 with scores), a minimal `engine` with `web/server.py` serving only `web/push.py` (one instance, push endpoint over Tailscale or home Wi-Fi), `cli/` (`start`, `connect`, `import`, `sync`, `status`), `diagnostics`, `password_store` |
-| 0.2 Ask your coach | `mcp/`, `providers/briefing.py`, `plugins/`, `cli/mcp` |
-| 0.3 Plans | `proposals/`, `scheduling/jobs.py`, `connectors/core/send.py`, Hevy `send`, `goals`, `plan_items`, `remote_links` |
-| 0.4 Every morning | `scores/`, `scheduling/scheduler.py`, `scheduling/triggers.py`, food and document actions, `providers/` for runs TFS starts |
-| 0.5 Dashboard and phone | The rest of `engine` and `web/`: screens, sign-in, phone pairing, `duplicates/review.py` |
-| 0.6 More apps | `connectors/<name>/` for the rest |
-| 0.7 Safe to live with | `backup_restore`, `export`, `delete_data`, the upgrade path (backup, then migrate), install and onboarding |
+| Your data in | `config`, `persistence/`, `importer/`, `connectors/core/` (contract, runner), `connectors/testing/`, `apple_health`, `health_auto_export`, `hevy` (read), `duplicates/workouts`, `source_priority/` (day facts for steps, active energy, sleep, resting heart rate and weight. HRV records are stored from the start, and day facts for HRV, total energy, body fat and VO2 max follow with scores in "Every morning"), a minimal `engine` with `web/server.py` serving only `web/push.py` (one instance, push endpoint over Tailscale or home Wi-Fi), `cli/` (`start`, `connect`, `import`, `sync`, `status`), `diagnostics`, `password_store` |
+| Ask your coach | `mcp/`, `providers/briefing.py`, `plugins/`, `cli/mcp` |
+| Plans | `proposals/`, `scheduling/jobs.py`, `connectors/core/send.py`, Hevy `send`, `goals`, `plan_items`, `remote_links` |
+| Every morning | `scores/`, `scheduling/scheduler.py`, `scheduling/triggers.py`, food and document actions, `providers/` for runs TFS starts |
+| Dashboard and phone | The rest of `engine` and `web/`: screens, sign-in, phone pairing, `duplicates/review.py` |
+| More apps | `connectors/<name>/` for the rest |
+| Safe to live with | `backup_restore`, `export`, `delete_data`, the upgrade path (backup, then migrate), install and onboarding |
