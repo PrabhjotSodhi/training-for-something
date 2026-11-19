@@ -110,15 +110,6 @@ class RestoreSession(_Action):
     start_hint: StartHint = None
 
 
-class ReportDeliveryDeleted(_Action):
-    """Record that the user deleted a sent copy in the app. The only action in its proposal."""
-
-    action: Literal["report_delivery_deleted"]
-    connector: Text
-    op_id: Text
-    remote_id: Text
-
-
 class MarkDone(_Action):
     """Mark a planned session done by hand."""
 
@@ -206,7 +197,6 @@ Action = Annotated[
     | ChangeSession
     | RemoveSession
     | RestoreSession
-    | ReportDeliveryDeleted
     | MarkDone
     | UnlinkPlanMatch
     | SetGoal

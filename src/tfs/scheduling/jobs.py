@@ -40,51 +40,6 @@ def destinations(conn: sqlite3.Connection, items: dict) -> tuple[dict, dict]:
     return targets, labels
 
 
-def _resolved_history(conn: sqlite3.Connection, row: sqlite3.Row) -> bool:
-    if row["resolved_by_version"] is not None:
-        return True
-    return (
-        row["status"] == "sent"
-        and conn.execute(
-            "SELECT 1 FROM jobs d WHERE d.item_id=? AND d.connector=?"
-            " AND d.resolved_by_version>? AND d.status='needs_you'"
-            " AND json_extract(d.result_json,'$.manual_action')='delete'"
-            " AND json_extract(d.result_json,'$.remote_id')=json_extract(?,'$.remote_id')",
-            (row["item_id"], row["connector"], row["plan_version"], row["result_json"]),
-        ).fetchone()
-        is not None
-    )
-
-
-def prepare_report(conn: sqlite3.Connection, action: dict) -> dict:
-    """Validate the exact unresolved deletion task and its still-linked remote copy."""
-    row = conn.execute(
-        "SELECT j.id FROM jobs j JOIN remote_links r ON r.item_id=j.item_id AND r.connector=j.connector"
-        " JOIN plan_items p ON p.id=j.item_id WHERE j.id=:op_id AND j.item_id=:item AND j.connector=:connector"
-        " AND r.remote_id=:remote_id AND p.status='removed' AND j.status='needs_you'"
-        " AND j.resolved_by_version IS NULL AND json_extract(j.payload_json,'$.status')='removed'"
-        " AND json_extract(j.result_json,'$.manual_action')='delete'"
-        " AND json_extract(j.result_json,'$.remote_id')=:remote_id",
-        action,
-    ).fetchone()
-    if row is None:
-        raise ValueError("The manual deletion task changed or is not eligible. Read it again.")
-    return {
-        **{key: action[key] for key in ("item", "connector", "op_id", "remote_id")},
-        "verification": "user_reported",
-    }
-
-
-def resolve_reports(conn: sqlite3.Connection, reports: dict, version: int) -> None:
-    """Record an approved user report and retire only its explicitly identified link."""
-    for report in reports.values():
-        conn.execute("UPDATE jobs SET resolved_by_version=? WHERE id=?", (version, report["op_id"]))
-        conn.execute(
-            "DELETE FROM remote_links WHERE item_id=:item AND connector=:connector AND remote_id=:remote_id",
-            report,
-        )
-
-
 def _replaceable(row: sqlite3.Row) -> bool:
     return (
         row["status"] == "needs_you"
@@ -96,7 +51,7 @@ def _pending(conn: sqlite3.Connection, items: dict, *, allow_sent: bool = False)
     rows = {}
     for item in items:
         for row in conn.execute("SELECT * FROM jobs WHERE item_id = ?", (item,)):
-            if _resolved_history(conn, row):
+            if json.loads(row["result_json"] or "{}").get("manual_action") == "delete":
                 continue
             if (
                 allow_sent
@@ -104,8 +59,10 @@ def _pending(conn: sqlite3.Connection, items: dict, *, allow_sent: bool = False)
                 and items[item]["status"] in ("saved", "sent", "done", "removed")
             ):
                 linked = conn.execute(
-                    "SELECT 1 FROM remote_links WHERE item_id = ? AND connector = ?",
-                    (item, row["connector"]),
+                    "SELECT 1 FROM remote_links WHERE item_id = ? AND connector = ?"
+                    " UNION ALL SELECT 1 FROM jobs WHERE item_id = ? AND connector = ?"
+                    " AND plan_version > ? AND json_extract(result_json, '$.manual_action') = 'delete'",
+                    (item, row["connector"], item, row["connector"], row["plan_version"]),
                 ).fetchone()
                 if linked:
                     continue
@@ -205,6 +162,11 @@ def _finish(conn: sqlite3.Connection, job: dict, outcome: dict, now: str) -> Non
         ).rowcount
         if changed != 1:
             raise ValueError("The delivery job is no longer sending.")
+        if status == "needs_you" and outcome.get("manual_action") == "delete":
+            conn.execute(
+                "DELETE FROM remote_links WHERE item_id = ? AND connector = ?",
+                (job["item_id"], job["connector"]),
+            )
         if status == "sent":
             conn.execute(
                 "INSERT INTO remote_links(item_id, connector, remote_id, remote_version, last_job_id)"
@@ -220,7 +182,7 @@ def _finish(conn: sqlite3.Connection, job: dict, outcome: dict, now: str) -> Non
             )
             conn.execute(
                 "UPDATE plan_items SET status = 'sent' WHERE id = ? AND status = 'saved'"
-                " AND NOT EXISTS (SELECT 1 FROM jobs WHERE item_id = ? AND status NOT IN ('sent', 'cancelled') AND resolved_by_version IS NULL)",
+                " AND NOT EXISTS (SELECT 1 FROM jobs WHERE item_id = ? AND status NOT IN ('sent', 'cancelled') AND json_extract(result_json, '$.manual_action') IS NOT 'delete')",
                 (job["item_id"], job["item_id"]),
             )
             matching.rebuild(conn)
