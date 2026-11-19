@@ -88,12 +88,3 @@ def rebuild(conn: sqlite3.Connection) -> int:
             (day.isoformat(), SCORE, value, low, high, json.dumps(inputs), FORMULA_VERSION),
         )
     return len(days)
-
-
-def rebuild_if_outdated(conn: sqlite3.Connection) -> None:
-    """Recompute the scores when any stored row has another formula version. The caller owns the transaction."""
-    if conn.execute(
-        "SELECT 1 FROM scores WHERE score = ? AND formula_version != ? LIMIT 1",
-        (SCORE, FORMULA_VERSION),
-    ).fetchone():
-        rebuild(conn)

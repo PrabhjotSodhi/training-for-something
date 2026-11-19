@@ -2,6 +2,7 @@ import json
 import unittest
 
 from tests.helpers import FIRST_FILE, insert_file, insert_workout, open_database
+from tfs import scores
 from tfs.importer.session import rebuild_pending
 
 
@@ -92,3 +93,17 @@ class StrengthLoadTest(unittest.TestCase):
         self.assertEqual(value, 500)
         self.assertEqual((inputs["normal"], inputs["normal_days"]), (200, 3))
         self.assertEqual((inputs["mean_rpe"], inputs["note"]), (8, "body weight sets not counted"))
+
+    def test_a_stored_row_with_an_older_formula_version_is_rebuilt(self) -> None:
+        # GIVEN a workout whose load row carries an old formula version
+        self.workout("a", "2026-03-02", [(5, 100, "normal")])
+        self.load_rows()
+        self.conn.execute("UPDATE scores SET formula_version = 'old'")
+
+        # WHEN the outdated check runs
+        scores.rebuild_if_outdated(self.conn)
+
+        # THEN the row is recomputed
+        self.assertNotEqual(
+            self.conn.execute("SELECT formula_version FROM scores").fetchone()[0], "old"
+        )
