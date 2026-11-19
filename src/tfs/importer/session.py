@@ -22,7 +22,7 @@ from tfs.importer import records
 from tfs.importer.raw_store import FileConflictError, SavedFile, save_raw
 from tfs.persistence.sqlite import transaction, wait_for_saves
 from tfs.proposals import matching
-from tfs.scores import readiness
+from tfs.scores import load, readiness
 from tfs.source_priority import daily_totals
 
 logger = logging.getLogger(__name__)
@@ -333,6 +333,7 @@ def rebuild_pending(conn: sqlite3.Connection, *, tz: tzinfo | None = None) -> in
     if rebuilt:
         with transaction(conn):
             readiness.rebuild(conn)
+            load.rebuild(conn)
     return rebuilt
 
 
