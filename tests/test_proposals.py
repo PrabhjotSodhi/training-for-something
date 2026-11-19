@@ -373,14 +373,6 @@ class ProposalsTest(unittest.TestCase):
         # THEN only the newest estimate shows
         self.assertEqual([row[1:3] for row in self.forecasts()], [[80, 90]])
 
-    def test_a_goal_with_a_code_forecast_refuses_a_coach_forecast(self) -> None:
-        # GIVEN a marathon goal
-        self.save(proposal(self.goal("marathon")))
-        # WHEN Save gets set_forecast THEN it refuses
-        with self.assertRaisesRegex(ValueError, "this goal has a code forecast"):
-            self.save(proposal(self.forecast(85, 95), version=1), "forecast")
-        self.assertEqual(self.forecasts(), [])
-
     def test_an_unknown_goal_or_backwards_range_is_refused(self) -> None:
         # GIVEN no goal
         # WHEN Save gets a forecast for it THEN it refuses

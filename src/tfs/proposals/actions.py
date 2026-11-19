@@ -8,8 +8,6 @@ from datetime import date
 from tfs.proposals import journal, matching, targets
 from tfs.proposals.models import Proposal
 
-CODE_FORECAST_GOAL_TYPES = ("marathon", "ironman", "powerlifting", "lean_physique", "longevity")
-
 
 def _day(value: str, today: date) -> str:
     if date.fromisoformat(value) < today:
@@ -51,8 +49,6 @@ def _forecast(
     goal = goals[item] if item in goals else targets.load(conn, "goals", item)
     if goal is None:
         raise ValueError("Unknown goal.")
-    if goal["type"] in CODE_FORECAST_GOAL_TYPES:
-        raise ValueError("this goal has a code forecast")
     return {
         "goal_id": item,
         "low": action["low"],
