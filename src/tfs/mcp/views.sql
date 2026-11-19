@@ -125,8 +125,6 @@ SELECT j.id AS op_id, j.item_id AS plan_item_id, j.plan_version, j.connector,
   CASE WHEN json_extract(j.result_json, '$.remote_id') IS NOT NULL
     THEN json_extract(j.result_json, '$.remote_version') ELSE r.remote_version END AS remote_version,
   json_extract(j.result_json, '$.manual_action') AS manual_action,
-  json_extract(j.result_json, '$.safe_to_replace') AS safe_to_replace,
-  j.resolved_by_version,
-  CASE WHEN j.resolved_by_version IS NOT NULL THEN 'user_reported_deleted' END AS resolution
+  json_extract(j.result_json, '$.safe_to_replace') AS safe_to_replace
 FROM main.jobs j LEFT JOIN main.remote_links r
   ON r.item_id = j.item_id AND r.connector = j.connector;

@@ -7,7 +7,6 @@ from datetime import date
 
 from tfs.proposals import journal, matching, targets
 from tfs.proposals.models import Proposal
-from tfs.scheduling import jobs
 
 
 def _day(value: str, today: date) -> str:
@@ -86,8 +85,6 @@ def _edit(state: dict | None, action: dict, today: date) -> None:
 def _restore(conn: sqlite3.Connection, state: dict | None, action: dict, today: date) -> None:
     if state is None or state["status"] != "removed":
         raise ValueError("Only a removed plan item can be restored.")
-    if conn.execute("SELECT 1 FROM remote_links WHERE item_id=?", (state["id"],)).fetchone():
-        raise ValueError("Resolve the existing deletion task before restoring a new copy.")
     state["local_date"] = _day(action["to"], today)
     if "start_hint" in action:
         state["start_hint"] = action["start_hint"]
@@ -126,12 +123,6 @@ def _unlink(conn: sqlite3.Connection, action: dict, before: dict, after: dict) -
     )
 
 
-def _report(conn: sqlite3.Connection, action: dict, count: int) -> dict:
-    if count != 1:
-        raise ValueError("Report a deletion separately before proposing another change.")
-    return {action["op_id"]: jobs.prepare_report(conn, action)}
-
-
 def prepare(conn: sqlite3.Connection, proposal: dict, today: date) -> tuple[dict, dict]:
     """Validate a batch in order, returning original and resulting user states."""
     _proposal(conn, proposal)
@@ -146,8 +137,6 @@ def prepare(conn: sqlite3.Connection, proposal: dict, today: date) -> tuple[dict
             after[table][item] = targets.validate(action, today)
         elif name == "unlink_plan_match":
             _unlink(conn, action, before, after)
-        elif name == "report_delivery_deleted":
-            after["reports"] = _report(conn, action, len(proposal["actions"]))
         else:
             _session(conn, action, today, before, after)
             after["items"][item]["why"] = proposal["why"]

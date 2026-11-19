@@ -40,8 +40,6 @@ def _summary(version: int, states: dict, delivery: dict, labels: dict) -> dict:
         result["match_exclusions"] = [
             {"item": item, "record_ids": ids} for item, ids in states["exclusions"].items()
         ]
-    if states.get("reports"):
-        result["reported_deletions"] = list(states["reports"].values())
     return result
 
 
@@ -125,7 +123,6 @@ def _save(
         for state in items["items"].values():
             _write(conn, state, version)
         jobs.write(conn, job_after, version, saved_at)
-        jobs.resolve_reports(conn, items.get("reports", {}), version)
         matching.write_exclusions(conn, items.get("exclusions", {}))
         if items["items"] or items.get("exclusions"):
             matching.rebuild(conn)
