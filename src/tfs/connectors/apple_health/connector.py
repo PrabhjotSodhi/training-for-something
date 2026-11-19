@@ -21,6 +21,8 @@ _METRIC_BY_TYPE = {
     "HKQuantityTypeIdentifierActiveEnergyBurned": "active_energy",
     "HKQuantityTypeIdentifierRestingHeartRate": "resting_hr",
     "HKQuantityTypeIdentifierBodyMass": "weight",
+    "HKQuantityTypeIdentifierBodyFatPercentage": "body_fat",
+    "HKQuantityTypeIdentifierVO2Max": "vo2_max",
     "HKQuantityTypeIdentifierHeartRate": "heart_rate",
     "HKQuantityTypeIdentifierHeartRateVariabilitySDNN": "hrv_sdnn",
 }
@@ -149,6 +151,9 @@ def _measurement(element: ElementTree.Element) -> dict | None:
         value, unit = round((end - start).total_seconds() / 3600, 7), "h"
     else:
         value, unit = _quantity(raw_value, element.get("unit"))
+        if metric == "body_fat":
+            # Apple stores body fat as a fraction, 0.21 for 21 percent.
+            value = round(value * 100, 7)
         start, end = _times(element)
     if unit != METRICS[metric].unit:
         raise _SkipError(_UNREADABLE_FIELD)

@@ -65,6 +65,8 @@ METRICS = {
     "sleep_asleep": Metric("h", "sum", True),
     "resting_hr": Metric("bpm", "latest", True),
     "weight": Metric("kg", "latest", False),
+    "body_fat": Metric("%", "latest", False),
+    "vo2_max": Metric("mL/kg/min", "latest", True),
     "heart_rate": Metric("bpm", "none", True),
     "hrv_sdnn": Metric("ms", "none", True),
 }
@@ -99,6 +101,10 @@ _UNITS = {
     "bpm": ("bpm", lambda value: value),
     "count": ("count", lambda value: value),
     "ms": ("ms", lambda value: value),
+    "%": ("%", lambda value: value),
+    "mL/min·kg": ("mL/kg/min", lambda value: value),
+    "mL/(kg·min)": ("mL/kg/min", lambda value: value),
+    "ml/(kg·min)": ("mL/kg/min", lambda value: value),
 }
 
 

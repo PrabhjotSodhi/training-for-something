@@ -114,6 +114,30 @@ class ImportFileTest(ImportTest):
         self.assertEqual((first.status, again.status, again.skipped), ("failed", "ok", False))
         self.assertEqual(self.count("SELECT COUNT(*) FROM day_facts"), 2)
 
+    def test_the_latest_body_fat_of_the_day_is_stored_as_a_percent_and_a_day_without_vo2_max_has_none(
+        self,
+    ) -> None:
+        # GIVEN an export with two body fat readings on one day, as fractions
+        reading = (
+            ' <Record type="HKQuantityTypeIdentifierBodyFatPercentage" sourceName="Ana iPhone"'
+            ' unit="%" creationDate="{time}" startDate="{time}" endDate="{time}" value="{value}"/>\n'
+        )
+        morning = reading.format(time="2026-03-02 07:00:00 +1300", value="0.21")
+        evening = reading.format(time="2026-03-02 19:00:00 +1300", value="0.20")
+        self.export.write_text(
+            EXPORT.replace("</HealthData>", morning + evening + "</HealthData>"), encoding="utf-8"
+        )
+
+        # WHEN it imports
+        import_file(self.conn, config.data_dir(), self.export, now=NOW)
+
+        # THEN the day has the later reading in percent and no VO2 max row exists
+        rows = self.conn.execute(
+            "SELECT local_date, metric, value, unit FROM day_facts"
+            " WHERE metric IN ('body_fat', 'vo2_max')"
+        ).fetchall()
+        self.assertEqual([tuple(row) for row in rows], [("2026-03-02", "body_fat", 20, "%")])
+
 
 class RouteFileTest(unittest.TestCase):
     def test_a_name_with_no_matching_connector_is_refused(self) -> None:

@@ -77,6 +77,39 @@ class HealthAutoExportReadTest(unittest.TestCase):
         self.assertFalse([key for key in records if "dietary_water" in key])
         self.assertEqual(result["status"], "ok")
 
+    def test_vo2_max_keeps_its_value_and_unit(self) -> None:
+        # GIVEN a push with one VO2 max sample
+        body = json.dumps(
+            {
+                "data": {
+                    "metrics": [
+                        {
+                            "name": "vo2_max",
+                            "units": "ml/(kg·min)",
+                            "data": [{"date": "2026-03-02 08:00:00 +1300", "qty": 41.3}],
+                        },
+                        {
+                            "name": "body_fat_percentage",
+                            "units": "%",
+                            "data": [{"date": "2026-03-02 08:00:00 +1300", "qty": 21}],
+                        },
+                    ]
+                }
+            }
+        )
+
+        # WHEN it is read
+        _, records = self._read_body(body)
+
+        # THEN both become measurements in TFS units
+        self.assertEqual(
+            [(record["metric"], record["values"], record["local_date"]) for record in records],
+            [
+                ("vo2_max", {"value": 41.3, "unit": "mL/kg/min"}, "2026-03-02"),
+                ("body_fat", {"value": 21.0, "unit": "%"}, "2026-03-02"),
+            ],
+        )
+
     def test_other_json_is_unreadable(self) -> None:
         result, records = self._read_body('{"foo": 1}')
 
