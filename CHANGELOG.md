@@ -2,6 +2,12 @@
 
 Versions follow Python's PEP 440. Each release starts with "Breaking changes". Each breaking change says what to use instead. Changes to `coach_v1` views and the ask TFS tool come first.
 
+## Unreleased
+
+### Breaking changes
+
+- The `preview_undo` and `undo` tools are gone. To take back a saved change, approve a new change that does the opposite, such as `remove_session` for an added session or `move_session` back to the old date.
+
 ## 0.1.0a1, 2026-11-19
 
 The first alpha of 0.1.0, the first public version. Expect bugs and breaking changes before 0.1.0.

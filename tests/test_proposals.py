@@ -9,7 +9,7 @@ from pathlib import Path
 from tests.test_schema import insert
 from tfs.persistence.migrations import migrate
 from tfs.persistence.sqlite import connect
-from tfs.proposals.apply import preview, save, undo
+from tfs.proposals.apply import preview, save
 
 NOW = datetime(2026, 11, 7, 12, tzinfo=timezone(timedelta(hours=13)))
 ADD = {
@@ -79,7 +79,7 @@ class ProposalsTest(unittest.TestCase):
         )
         self.assertEqual(row["saved_at"], "2026-11-06T23:00:00Z")
 
-    def test_start_time_add_move_clear_retry_and_undo(self) -> None:
+    def test_start_time_add_move_clear_and_retry(self) -> None:
         first = proposal({**ADD, "start_hint": "07:30"})
         self.assertEqual(preview(self.path, first, now=NOW)["items"][0]["start_hint"], "07:30")
         self.save(first)
@@ -101,14 +101,10 @@ class ProposalsTest(unittest.TestCase):
             "clear",
         )
         self.assertIsNone(self.conn.execute("SELECT start_hint FROM plan_items").fetchone()[0])
-        undo(self.path, 4, request_id="undo-time", approved_by="chat", now=NOW)
-        self.assertEqual(
-            self.conn.execute("SELECT start_hint FROM plan_items").fetchone()[0], "23:59"
-        )
         self.save(
             proposal(
                 {"action": "move_session", "item": "p1", "to": "2026-11-11", "start_hint": "00:00"},
-                version=5,
+                version=4,
             ),
             "midnight",
         )
@@ -225,118 +221,7 @@ class ProposalsTest(unittest.TestCase):
                 save(self.path, proposal(ADD), request_id="s1", approved_by=route, now=now)
         self.assertEqual(self.counts(), (0, 0, 0))
 
-    def undo(self, version: int, request: str = "undo-1") -> dict:
-        return undo(self.path, version, request_id=request, approved_by="chat", now=NOW)
-
-    def test_undo_add_and_retry_preserve_history(self) -> None:
-        self.save(proposal(ADD))
-        original = tuple(self.conn.execute("SELECT * FROM journal").fetchone())
-        self.assertEqual(self.undo(1), {"request_id": "undo-1", "plan_version": 2})
-        self.assertEqual(self.undo(1), {"request_id": "undo-1", "plan_version": 2})
-        self.assertEqual(
-            tuple(
-                self.conn.execute("SELECT status, version, plan_version FROM plan_items").fetchone()
-            ),
-            ("removed", 2, 2),
-        )
-        self.assertEqual(
-            tuple(self.conn.execute("SELECT * FROM journal WHERE version=1").fetchone()), original
-        )
-        with self.assertRaisesRegex(ValueError, "different content"):
-            self.undo(2)
-        self.assertEqual(self.counts(), (2, 1, 1))
-        self.undo(2, "undo-2")
-        self.assertEqual(
-            tuple(
-                self.conn.execute("SELECT status, version, plan_version FROM plan_items").fetchone()
-            ),
-            ("saved", 3, 3),
-        )
-
-    def test_undo_restores_exact_prior_fields_and_parts(self) -> None:
-        insert(self.conn, "files")
-        insert(self.conn, "source_records")
-        insert(self.conn, "session_parts", reps=12)
-        initial = proposal(ADD)
-        initial["sources"] = [{"url": "https://example.org/study", "type": "trial"}]
-        self.save(initial)
-        original = dict(self.conn.execute("SELECT * FROM plan_items").fetchone())
-        original_parts = [
-            tuple(row)
-            for row in self.conn.execute("SELECT * FROM session_parts ORDER BY plan_item_id")
-        ]
-        value = proposal(
-            {"action": "move_session", "item": "p1", "to": "2026-11-12"},
-            {
-                "action": "change_session",
-                "item": "p1",
-                "label": "Changed",
-                "parts": [{"part_kind": "set", "reps": 5, "weight_kg": 40}],
-            },
-            version=1,
-        )
-        value["why"] = "New explanation"
-        self.save(value, "save-2")
-        self.undo(2)
-        restored = dict(self.conn.execute("SELECT * FROM plan_items").fetchone())
-        self.assertEqual(restored, {**original, "version": 3, "plan_version": 3})
-        self.assertEqual(
-            [
-                tuple(row)
-                for row in self.conn.execute("SELECT * FROM session_parts ORDER BY plan_item_id")
-            ],
-            original_parts,
-        )
-        inverse_before = json.loads(
-            self.conn.execute("SELECT before_json FROM journal WHERE version=3").fetchone()[0]
-        )
-        self.assertEqual(inverse_before["items"]["p1"]["label"], "Changed")
-        self.assertEqual(inverse_before["items"]["p1"]["parts"][0]["weight_kg"], 40)
-
-    def test_undo_completion_and_removal_and_refuse_stale(self) -> None:
-        self.save(proposal(ADD, {**ADD, "item": "p2"}))
-        self.save(
-            proposal(
-                {"action": "mark_done", "item": "p1"},
-                {"action": "remove_session", "item": "p2"},
-                version=1,
-            ),
-            "save-2",
-        )
-        with self.assertRaisesRegex(ValueError, "stale"):
-            self.undo(1)
-        self.undo(2)
-        self.assertEqual(
-            [row[0] for row in self.conn.execute("SELECT status FROM plan_items")],
-            ["saved", "saved"],
-        )
-        self.assertEqual(self.counts(), (3, 2, 2))
-
-    def test_undo_write_failure_rolls_back_and_delivery_state_is_refused(self) -> None:
-        self.save(proposal(ADD))
-        self.conn.executescript(
-            "CREATE TRIGGER refuse_restore BEFORE UPDATE ON plan_items BEGIN SELECT RAISE(ABORT, 'invented failure'); END;"
-        )
-        with self.assertRaisesRegex(sqlite3.IntegrityError, "invented failure"):
-            self.undo(1)
-        self.assertEqual(self.counts(), (1, 1, 1))
-        self.assertEqual(self.conn.execute("SELECT status FROM plan_items").fetchone()[0], "saved")
-        self.conn.execute("DROP TRIGGER refuse_restore")
-        self.conn.execute("UPDATE plan_items SET status='sent'")
-        with self.assertRaisesRegex(ValueError, "reconciliation"):
-            self.undo(1)
-        self.assertEqual(self.counts(), (1, 1, 1))
-
-    def test_undo_refuses_unsupported_journal_operation(self) -> None:
-        self.conn.execute(
-            "INSERT INTO journal (request_id, proposal_json, before_json, approved_by, saved_at) VALUES ('future', ?, '{}', 'chat', '2026-11-07T00:00:00Z')",
-            (json.dumps({"actions": [{"action": "set_goal"}]}),),
-        )
-        with self.assertRaisesRegex(ValueError, "does not support"):
-            self.undo(1)
-        self.assertEqual(self.counts(), (1, 0, 0))
-
-    def test_goal_limit_and_session_save_and_undo_together(self) -> None:
+    def test_goal_limit_and_session_save_together(self) -> None:
         goal = {
             "action": "set_goal",
             "item": "p1",
@@ -369,14 +254,7 @@ class ProposalsTest(unittest.TestCase):
                 '{"description":"Finish comfortably","unit":"s","value":14400}',
             ),
         )
-        self.assertEqual(self.conn.execute("SELECT format_version FROM journal").fetchone()[0], 2)
-        self.undo(1)
-        self.assertEqual(self.conn.execute("SELECT count(*) FROM goals").fetchone()[0], 0)
-        self.assertEqual(self.conn.execute("SELECT count(*) FROM limits").fetchone()[0], 0)
-        self.assertEqual(
-            self.conn.execute("SELECT status FROM plan_items").fetchone()[0], "removed"
-        )
-        self.undo(2, "redo")
+        self.assertEqual(self.conn.execute("SELECT format_version FROM journal").fetchone()[0], 5)
         self.assertEqual(
             json.loads(self.conn.execute("SELECT target_json FROM goals").fetchone()[0]),
             goal["target"],
@@ -386,39 +264,6 @@ class ProposalsTest(unittest.TestCase):
             {"minutes": 60},
         )
         self.assertEqual(self.conn.execute("SELECT status FROM plan_items").fetchone()[0], "saved")
-
-    def test_edit_goal_and_limit_then_restore_exact_previous_values(self) -> None:
-        goal = {
-            "action": "set_goal",
-            "item": "g1",
-            "type": "custom",
-            "date": "2027-04-01",
-            "target": {"description": "Complete a trail event"},
-        }
-        limit = {
-            "action": "set_limit",
-            "item": "l1",
-            "kind": "injury",
-            "values": {"description": "User reports sore ankle"},
-        }
-        self.save(proposal(goal, limit))
-        self.save(
-            proposal(
-                {**goal, "date": "2027-05-01", "target": {"description": "Walk the event"}},
-                {**limit, "kind": "unavailable_day", "values": {"date": "2026-11-10"}},
-                version=1,
-            ),
-            "edit",
-        )
-        self.undo(2)
-        self.assertEqual(
-            tuple(self.conn.execute("SELECT type, local_date, target_json FROM goals").fetchone()),
-            ("custom", "2027-04-01", '{"description":"Complete a trail event"}'),
-        )
-        self.assertEqual(
-            tuple(self.conn.execute("SELECT kind, values_json FROM limits").fetchone()),
-            ("injury", '{"description":"User reports sore ankle"}'),
-        )
 
     def test_malformed_goals_limits_and_forward_reference_save_nothing(self) -> None:
         goal = {
@@ -495,24 +340,4 @@ class ProposalsTest(unittest.TestCase):
         self.assertEqual(self.counts(), (2, 1, 1))
         self.assertEqual(
             self.conn.execute("SELECT local_date FROM plan_items").fetchone()[0], "2026-11-08"
-        )
-
-    def test_old_format_one_journal_remains_undoable_and_unchanged(self) -> None:
-        self.conn.execute(
-            "INSERT INTO journal(request_id, proposal_json, before_json, approved_by, saved_at) VALUES ('old', ?, ?, 'chat', '2026-11-07T00:00:00Z')",
-            (json.dumps(proposal(ADD)), '{"p1":null}'),
-        )
-        self.conn.execute(
-            "INSERT INTO plan_items(id, version, plan_version, local_date, family, label, why) VALUES ('p1', 1, 1, '2026-11-08', 'strength', 'Push', 'Goal')"
-        )
-        old = tuple(self.conn.execute("SELECT * FROM journal").fetchone())
-        self.undo(1)
-        self.assertEqual(
-            tuple(self.conn.execute("SELECT * FROM journal WHERE version=1").fetchone()), old
-        )
-        self.assertEqual(
-            self.conn.execute("SELECT status FROM plan_items").fetchone()[0], "removed"
-        )
-        self.assertEqual(
-            self.conn.execute("SELECT format_version FROM journal WHERE version=2").fetchone()[0], 2
         )

@@ -16,7 +16,7 @@ from tfs.mcp.tool_access import open_reader, query
 from tfs.persistence.migrations import migrate
 from tfs.persistence.sqlite import transaction
 from tfs.proposals import matching
-from tfs.proposals.apply import preview, save, undo
+from tfs.proposals.apply import preview, save
 
 
 class PlanMatchingTest(unittest.TestCase):
@@ -94,7 +94,7 @@ class PlanMatchingTest(unittest.TestCase):
         records = next(json.loads(row[1]) for row in rows if row[0] == item)
         return {"action": "unlink_plan_match", "item": item, "record_ids": records}
 
-    def test_unlink_duplicate_match_preview_and_undo_preserve_delivery_history(self):
+    def test_unlink_duplicate_match_preview_and_save_preserve_delivery_history(self):
         self.save(self.plan())
         self.link("p1", "invented", "routine-1")
         self.import_records([self.workout(plan_ref="routine-1")])
@@ -114,16 +114,8 @@ class PlanMatchingTest(unittest.TestCase):
         self.save(action)
         self.assertEqual(self.visible(), [["p1", "saved", None, None]])
         self.assertEqual(matching.exclusions(self.conn, "p1"), action["record_ids"])
-        undo(self.path, 2, request_id="undo-unlink", approved_by="chat", now=NOW)
-        self.assertEqual(self.visible()[0][1], "done")
-        undo(self.path, 3, request_id="redo-unlink", approved_by="chat", now=NOW)
-        self.assertEqual(self.visible(), [["p1", "saved", None, None]])
         self.assertEqual([tuple(row) for row in self.conn.execute("SELECT * FROM jobs")], history)
         self.assertEqual(self.conn.execute("SELECT count(*) FROM remote_links").fetchone()[0], 1)
-        self.assertEqual(
-            [row[0] for row in self.conn.execute("SELECT format_version FROM journal")],
-            [2, 4, 4, 4],
-        )
 
     def test_changed_match_refuses_unlink_without_partial_write(self):
         self.save(self.plan())
@@ -152,9 +144,6 @@ class PlanMatchingTest(unittest.TestCase):
             self.conn.execute("SELECT local_date FROM plan_items").fetchone()[0], "2026-11-09"
         )
         self.assertEqual(self.matches(), [])
-        undo(self.path, 2, request_id="undo-edit", approved_by="chat", now=NOW)
-        self.assertEqual(self.visible()[0][1], "done")
-        self.assertEqual(matching.exclusions(self.conn, "p1"), [])
 
     def test_nearest_time_duplicate_group_and_rebuild_are_deterministic(self):
         self.save(self.plan("early", "07:30"), self.plan("late", "17:30"))
@@ -238,13 +227,9 @@ class PlanMatchingTest(unittest.TestCase):
         self.import_records([self.workout()])
         self.assertEqual(self.matches(), [])
 
-    def test_save_undo_matches_existing_workout_and_ties_use_item_id(self):
+    def test_save_matches_existing_workout_and_ties_use_item_id(self):
         self.import_records([self.workout()])
         self.save(self.plan("b"), self.plan("a"))
-        self.assertEqual([r[0] for r in self.matches()], ["a"])
-        undo(self.path, 1, request_id="undo", approved_by="chat", now=NOW)
-        self.assertEqual(self.matches(), [])
-        undo(self.path, 2, request_id="redo", approved_by="chat", now=NOW)
         self.assertEqual([r[0] for r in self.matches()], ["a"])
 
     def test_offsets_and_utc_only_local_zone_choose_nearest_time(self):

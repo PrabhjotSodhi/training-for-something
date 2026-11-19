@@ -16,7 +16,7 @@ from tfs.proposals.apply import save
 
 SRC = str(Path(__file__).resolve().parent.parent / "src")
 NO_DATA = "TFS has no data yet. Run tfs import or tfs start first."
-TOOLS = ["describe", "query", "propose", "save", "preview_undo", "undo"]
+TOOLS = ["describe", "query", "propose", "save"]
 
 
 def make_database(folder: str) -> Path:
@@ -90,17 +90,16 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
             )
         self.assertIn(result.protocol_version, HANDSHAKE_PROTOCOL_VERSIONS)
 
-    async def test_tools_list_names_the_six_tools_and_their_hints(self) -> None:
+    async def test_tools_list_names_the_four_tools_and_their_hints(self) -> None:
         async with Client(tfs_mcp(self.folder)) as client:
             tools = {tool.name: tool.annotations for tool in (await client.list_tools()).tools}
         self.assertEqual(list(tools), TOOLS)
         self.assertEqual(
             [name for name, hints in tools.items() if hints.read_only_hint],
-            ["describe", "query", "propose", "preview_undo"],
+            ["describe", "query", "propose"],
         )
-        for name in ("save", "undo"):
-            self.assertTrue(tools[name].destructive_hint)
-            self.assertTrue(tools[name].idempotent_hint)
+        self.assertTrue(tools["save"].destructive_hint)
+        self.assertTrue(tools["save"].idempotent_hint)
         self.assertEqual({hints.open_world_hint for hints in tools.values()}, {False})
 
     async def test_query_reads_the_views_and_no_database_is_an_error(self) -> None:
@@ -110,8 +109,6 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
             "query": {"sql": sql},
             "propose": {"proposal": plan()},
             "save": {"proposal": plan(), "request_id": "s1"},
-            "preview_undo": {"target_version": 1},
-            "undo": {"target_version": 1, "request_id": "u1"},
         }
         async with Client(tfs_mcp(self.folder)) as client:
             for name in TOOLS:
@@ -149,7 +146,7 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
             preview = await self.data(client, "propose", {"proposal": plan(reps=10)})
             self.assertEqual(preview["items"][0]["parts"], [{"part_kind": "interval", "reps": 10}])
 
-    async def test_preview_save_retry_query_and_undo(self) -> None:
+    async def test_preview_save_retry_and_query(self) -> None:
         db_path = make_database(self.folder)
         proposal = plan(distance_m=6001)
         proposal["actions"][0]["start_hint"] = "07:30"
@@ -185,26 +182,16 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await rows("SELECT distance_km FROM coach_v1_plan_parts"), [[6.001]])
             self.assertEqual(await rows("SELECT start_hint FROM coach_v1_plan_items"), [["07:30"]])
 
-            undone = await self.data(client, "preview_undo", {"target_version": 1})
-            self.assertEqual(undone["items"][0]["status"], "removed")
-            self.assertEqual(undone["delivery_targets"], {})
-            self.assertEqual(await rows("SELECT status FROM coach_v1_plan_items"), [["saved"]])
             self.assertIn(
                 "stale",
                 await self.refused(client, "save", {"proposal": proposal, "request_id": "s2"}),
             )
-            await self.refused(client, "undo", {"target_version": True, "request_id": "u1"})
-            self.assertEqual(
-                await self.data(client, "undo", {"target_version": 1, "request_id": "u1"}),
-                {"request_id": "u1", "plan_version": 2},
-            )
-            self.assertEqual(await rows("SELECT status FROM coach_v1_plan_items"), [["removed"]])
 
         conn = connect(db_path)
         self.addCleanup(conn.close)
         self.assertEqual(
             [tuple(row) for row in conn.execute("SELECT approved_by, format_version FROM journal")],
-            [("chat", 2), ("chat", 2)],
+            [("chat", 5)],
         )
 
 

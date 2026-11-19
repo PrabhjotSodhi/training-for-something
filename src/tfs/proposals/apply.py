@@ -45,31 +45,6 @@ def _summary(version: int, states: dict, delivery: dict, labels: dict) -> dict:
     return result
 
 
-def preview_undo(db_path: Path, target_version: int, *, now: datetime) -> dict:
-    """Show the exact restored state and existing remote destinations without writing."""
-    saved_at = to_utc_text(now)
-    with closing(connect(db_path, "read_only")) as conn:
-        conn.execute("BEGIN")
-        _, states = actions.prepare_undo(conn, target_version)
-        delivery, labels = jobs.undo_destinations(
-            conn,
-            states["items"],
-            states.get("delivery_links", {}),
-            completion=states["completion_items"],
-        )
-        _, changes = jobs.restore(
-            conn,
-            states["items"],
-            states.get("jobs", {}),
-            delivery,
-            saved_at,
-            completion=states["completion_items"],
-        )
-        result = _summary(target_version, states, delivery, labels)
-        result["restored_deliveries"] = jobs.restored_deliveries(conn, changes)
-    return result
-
-
 def _write(conn: sqlite3.Connection, state: dict, version: int) -> None:
     row = {
         **state,
@@ -111,38 +86,14 @@ def _write(conn: sqlite3.Connection, state: dict, version: int) -> None:
 
 
 def _prepare_change(
-    conn: sqlite3.Connection, proposal: dict, now: datetime, restoring: bool
+    conn: sqlite3.Connection, proposal: dict, now: datetime
 ) -> tuple[dict, dict, dict]:
     saved_at = to_utc_text(now)
-    if restoring:
-        before, items = actions.prepare_undo(conn, proposal["undo_version"])
-        delivery, _ = jobs.undo_destinations(
-            conn,
-            items["items"],
-            items.get("delivery_links", {}),
-            completion=items["completion_items"],
-        )
-    else:
-        before, items = actions.prepare(conn, proposal, now.date())
-        delivery, _ = jobs.destinations(conn, items["items"])
+    before, items = actions.prepare(conn, proposal, now.date())
+    delivery, _ = jobs.destinations(conn, items["items"])
     if proposal.get("delivery_targets", {}) != delivery:
-        raise ValueError(
-            "Delivery targets changed or need approval. Preview again before saving or undoing."
-        )
-    if restoring:
-        job_before, job_after = jobs.restore(
-            conn,
-            items["items"],
-            items.get("jobs", {}),
-            delivery,
-            saved_at,
-            completion=items["completion_items"],
-        )
-    else:
-        job_before, job_after = jobs.prepare(conn, items["items"], delivery, saved_at)
-    linked = jobs.link_snapshot(conn, items["items"])
-    if linked:
-        before["delivery_links"] = linked
+        raise ValueError("Delivery targets changed or need approval. Preview again before saving.")
+    job_before, job_after = jobs.prepare(conn, items["items"], delivery, saved_at)
     if job_before:
         before["jobs"] = job_before
     return before, items, job_after
@@ -155,7 +106,6 @@ def _save(
     request_id: str,
     approved_by: str,
     now: datetime,
-    restoring: bool = False,
 ) -> dict:
     saved_at = to_utc_text(now)
     if not isinstance(request_id, str) or not request_id.strip():
@@ -169,7 +119,7 @@ def _save(
         previous = journal.receipt(conn, request_id, encoded)
         if previous is not None:
             return previous
-        before, items, job_after = _prepare_change(conn, proposal, now, restoring)
+        before, items, job_after = _prepare_change(conn, proposal, now)
         version = journal.append(conn, request_id, encoded, before, approved_by, saved_at)
         targets.write(conn, items)
         for state in items["items"].values():
@@ -192,26 +142,3 @@ def save(
 ) -> dict:
     """Apply an approved batch once, or roll back every change on failure."""
     return _save(db_path, proposal, request_id=request_id, approved_by=approved_by, now=now)
-
-
-def undo(
-    db_path: Path,
-    target_version: int,
-    *,
-    request_id: str,
-    approved_by: str,
-    now: datetime,
-    delivery_targets: dict | None = None,
-) -> dict:
-    """Undo the latest supported save with explicitly approved remote destinations."""
-    proposal = {"undo_version": target_version}
-    if delivery_targets is not None:
-        proposal["delivery_targets"] = delivery_targets
-    return _save(
-        db_path,
-        proposal,
-        request_id=request_id,
-        approved_by=approved_by,
-        now=now,
-        restoring=True,
-    )

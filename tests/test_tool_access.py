@@ -7,7 +7,7 @@ from pathlib import Path
 from tfs.mcp.tool_access import VIEWS, describe, open_reader, query
 from tfs.persistence.migrations import migrate
 from tfs.persistence.sqlite import connect
-from tfs.proposals.apply import save, undo
+from tfs.proposals.apply import save
 
 
 class ToolAccessTest(unittest.TestCase):
@@ -609,7 +609,7 @@ class ToolAccessTest(unittest.TestCase):
             query(self.reader, "SELECT count(*) FROM coach_v1_workout_parts")["rows"], [[6]]
         )
 
-    def test_goal_and_limit_views_follow_save_and_undo(self) -> None:
+    def test_goal_and_limit_views_follow_save(self) -> None:
         meanings = describe(self.reader)
         self.assertEqual(
             meanings["coach_v1_goals"]["columns"], ["goal_id", "type", "local_date", "target_json"]
@@ -656,10 +656,7 @@ class ToolAccessTest(unittest.TestCase):
             query(self.reader, "SELECT * FROM coach_v1_limits")["rows"],
             [["l1", "max_session_length", '{"minutes":60}']],
         )
-        undo(self.path, 1, request_id="undo-goals", approved_by="chat", now=now)
-        self.assertEqual(query(self.reader, "SELECT * FROM coach_v1_goals")["rows"], [])
-        self.assertEqual(query(self.reader, "SELECT * FROM coach_v1_limits")["rows"], [])
-        self.assertEqual(query(self.reader, "SELECT * FROM coach_v1_plan_state")["rows"], [[2]])
+        self.assertEqual(query(self.reader, "SELECT * FROM coach_v1_plan_state")["rows"], [[1]])
 
 
 if __name__ == "__main__":

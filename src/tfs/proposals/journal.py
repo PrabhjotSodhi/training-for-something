@@ -3,6 +3,8 @@
 import json
 import sqlite3
 
+FORMAT_VERSION = 5
+
 
 def encode(value: object) -> str:
     """Encode finite JSON consistently so a retry can compare its content."""
@@ -38,12 +40,6 @@ def append(
     saved_at: str,
 ) -> int:
     """Append a receipt inside the caller's transaction and return its version."""
-    if "delivery_links" in before:
-        format_version = 5
-    elif "exclusions" in before:
-        format_version = 4
-    else:
-        format_version = 3 if "jobs" in before else 2
     return conn.execute(
         "INSERT INTO journal (request_id, proposal_json, before_json, approved_by, saved_at, format_version)"
         " VALUES (?, ?, ?, ?, ?, ?) RETURNING version",
@@ -53,6 +49,6 @@ def append(
             encode(before),
             approved_by,
             saved_at,
-            format_version,
+            FORMAT_VERSION,
         ),
     ).fetchone()[0]
