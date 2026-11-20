@@ -7,7 +7,6 @@ from urllib.parse import urlsplit
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, WithJsonSchema, model_validator
 
 from tfs.connectors.core.contract import FAMILIES
-from tfs.proposals.targets import GOAL_TYPES
 
 
 def _iso_day(value: str) -> str:
@@ -140,7 +139,7 @@ class SetGoal(_Action):
     """Record a goal with a future target date."""
 
     action: Literal["set_goal"]
-    type: Literal[*GOAL_TYPES]
+    type: Text
     date: Day
     target: MeasuredGoal | GoalDescription
 

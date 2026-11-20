@@ -281,7 +281,8 @@ class ProposalsTest(unittest.TestCase):
             "values": {"minutes": 60},
         }
         bad = [
-            {**goal, "type": "unknown"},
+            {**goal, "type": ""},
+            {**goal, "type": "   "},
             {**goal, "date": "2026-11-07"},
             {**goal, "target": {"description": "Goal", "value": 5}},
             {**goal, "target": {"description": "Goal", "value": True, "unit": "s"}},
@@ -300,6 +301,19 @@ class ProposalsTest(unittest.TestCase):
             self.assertEqual(self.conn.execute("SELECT count(*) FROM limits").fetchone()[0], 0)
         with self.assertRaisesRegex(ValueError, "Unknown goal"):
             self.save(proposal({**ADD, "goal_ids": ["g1"]}, goal))
+
+    def test_goal_type_takes_free_text(self) -> None:
+        goal = {
+            "action": "set_goal",
+            "item": "g1",
+            "type": "Climb Kilimanjaro",
+            "date": "2027-04-01",
+            "target": {"description": "Reach the summit"},
+        }
+        self.save(proposal(goal))
+        self.assertEqual(
+            self.conn.execute("SELECT type FROM goals").fetchone()[0], "Climb Kilimanjaro"
+        )
 
     def test_limit_only_save_invalidates_proposal(self) -> None:
         self.save(proposal(ADD))
