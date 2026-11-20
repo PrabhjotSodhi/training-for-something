@@ -7,16 +7,6 @@ from datetime import date
 
 from tfs.proposals import journal
 
-GOAL_TYPES = (
-    "marathon",
-    "ironman",
-    "hyrox",
-    "powerlifting",
-    "lean_physique",
-    "longevity",
-    "custom",
-)
-
 
 def _day(value: str, today: date, future: bool = False) -> str:
     parsed = date.fromisoformat(value)
