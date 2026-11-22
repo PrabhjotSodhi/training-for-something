@@ -34,5 +34,5 @@ Test first, or tests in the same pull request.
 ## Done when
 
 ```bash
-PYTHONPATH=src python -m unittest ...
+uv run python -m unittest ...
 ```
