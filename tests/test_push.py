@@ -4,7 +4,6 @@ import json
 import os
 import socket
 import tempfile
-import threading
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
@@ -46,17 +45,13 @@ class PushTest(unittest.TestCase):
             now_fn=lambda: NOW,
             on_saved=self.saved.append,
         )
-        server = make_server(config.SCREEN_HOST, 0, push_handler=handler, read_timeout_s=5)
-        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01})
-        thread.start()
-        self.server = server
-        self.addCleanup(thread.join)
-        self.addCleanup(server.server_close)
-        self.addCleanup(server.shutdown)
+        self.server = make_server(config.SCREEN_HOST, 0, push_handler=handler, read_timeout_s=0.5)
+        self.server.start()
+        self.addCleanup(self.server.stop)
 
     def post(self, path: str, body: bytes, token: str | None = TOKEN) -> tuple[int, dict]:
         headers = {} if token is None else {"Authorization": f"Bearer {token}"}
-        host, port = self.server.server_address
+        host, port = self.server.sock.getsockname()
         client = http.client.HTTPConnection(host, port, timeout=SAFETY_TIMEOUT_S)
         self.addCleanup(client.close)
         client.request("POST", path, body=body, headers=headers)
@@ -105,16 +100,26 @@ class PushTest(unittest.TestCase):
                 self.assertEqual(status, 404)
         self.assert_nothing_saved()
 
-    def test_body_that_stops_early_saves_nothing(self):
-        with socket.create_connection(self.server.server_address, timeout=SAFETY_TIMEOUT_S) as s:
-            s.sendall(
-                b"POST /push/health_auto_export HTTP/1.1\r\nHost: tfs.test\r\n"
-                b"Authorization: Bearer " + TOKEN.encode() + b"\r\nContent-Length: 5\r\n\r\nab"
-            )
-            s.shutdown(socket.SHUT_WR)
-            while s.recv(65536):
-                pass
-        self.assert_nothing_saved()
+    def test_body_that_stops_early_saves_nothing_and_leaves_no_partial_file(self):
+        for closes in (True, False):
+            with self.subTest(closes_its_sending_side=closes):
+                # GIVEN a phone that sends half a body with the right token
+                with socket.create_connection(
+                    self.server.sock.getsockname(), timeout=SAFETY_TIMEOUT_S
+                ) as s:
+                    s.sendall(
+                        b"POST /push/health_auto_export HTTP/1.1\r\nHost: localhost\r\n"
+                        b"Authorization: Bearer "
+                        + TOKEN.encode()
+                        + b"\r\nContent-Length: 5\r\n\r\nab"
+                    )
+                    # WHEN it hangs up, or goes quiet until the read timeout passes
+                    if closes:
+                        s.shutdown(socket.SHUT_WR)
+                    while s.recv(65536):
+                        pass
+                # THEN no file, row or temporary file is left
+                self.assert_nothing_saved()
 
     def test_the_same_body_twice_answers_200_and_keeps_one_row(self):
         body = (FIXTURES / "metrics.json").read_bytes()

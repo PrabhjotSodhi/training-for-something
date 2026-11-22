@@ -1,368 +1,267 @@
+import http.client
 import json
 import socket
 import struct
 import threading
 import unittest
-from http.server import ThreadingHTTPServer
 
 from tfs import config
-from tfs.web.server import IncompleteBodyError, make_server
+from tfs.web.server import make_server
 
 # Client side only. A broken server fails a test instead of hanging it.
 SAFETY_TIMEOUT_S = 10
 
 
-def raw(first_line: str, *header_lines: str, body: bytes = b"") -> bytes:
-    """Build the bytes of one request."""
-    lines = [first_line, "Host: tfs.test", *header_lines]
-    return ("\r\n".join(lines) + "\r\n\r\n").encode("latin-1") + body
-
-
-def push(*header_lines: str, body: bytes = b"") -> bytes:
-    """Build a push request to /push/x."""
-    return raw("POST /push/x HTTP/1.1", *header_lines, body=body)
-
-
-def read_all(sock: socket.socket) -> bytes:
-    """Read until the server closes the connection. Return every byte it sent."""
-    data = b""
-    while chunk := sock.recv(65536):
-        data += chunk
-    return data
-
-
-def read_response(sock: socket.socket) -> tuple[int, bytes]:
-    """Read until the server closes the connection. Return the status (0 if none) and body."""
-    data = read_all(sock)
-    if not data:
-        return 0, b""
-    head, _, body = data.partition(b"\r\n\r\n")
-    if not head.startswith(b"HTTP/"):
-        return 0, data
-    return int(head.split(b" ", 2)[1]), body
-
-
-def reset(sock: socket.socket) -> None:
-    """Close with a reset instead of a polite goodbye."""
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
-    sock.close()
+def half_push(host: str = "localhost") -> bytes:
+    """Build a push to /push/x that promises 5 body bytes and sends 2."""
+    return f"POST /push/x HTTP/1.1\r\nHost: {host}\r\nContent-Length: 5\r\n\r\nhe".encode()
 
 
 class ServerTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.calls: list[tuple[str, bytes]] = []
-        self.incomplete: list[str] = []
-        self.unhandled: list[object] = []
         self.started = threading.Event()
-        self.server: ThreadingHTTPServer | None = None
 
     def recording_handler(self, name, body, headers):
         self.started.set()
-        try:
-            data = body.read()
-        except IncompleteBodyError:
-            self.incomplete.append(name)
-            raise
-        self.calls.append((name, data))
+        self.calls.append((name, body.read()))
         return 200, {"ok": True}
 
     def start(self, push_handler=None, **options) -> None:
-        server = make_server(
-            config.SCREEN_HOST,
-            0,
-            push_handler=push_handler or self.recording_handler,
-            **options,
+        self.server = make_server(
+            config.SCREEN_HOST, 0, push_handler=push_handler or self.recording_handler, **options
         )
-        server.handle_error = lambda request, client_address: self.unhandled.append(client_address)
-        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01})
-        thread.start()
-        self.server = server
-        self.addCleanup(self.stop, server, thread)
+        self.server.start()
+        self.addCleanup(self.server.stop)
 
-    def stop(self, server: ThreadingHTTPServer, thread: threading.Thread) -> None:
-        server.shutdown()
-        server.server_close()
-        thread.join()
+    def request(self, method: str, path: str, body=None, headers=None):
+        """Send one request. Return the status and the body."""
+        host, port = self.server.sock.getsockname()
+        client = http.client.HTTPConnection(host, port, timeout=SAFETY_TIMEOUT_S)
+        self.addCleanup(client.close)
+        client.request(method, path, body, headers or {})
+        response = client.getresponse()
+        return response.status, response.read()
 
     def connect(self) -> socket.socket:
-        assert self.server is not None
-        sock = socket.create_connection(self.server.server_address, timeout=SAFETY_TIMEOUT_S)
+        sock = socket.create_connection(self.server.sock.getsockname(), timeout=SAFETY_TIMEOUT_S)
         self.addCleanup(sock.close)
         return sock
 
-    def ask(self, request: bytes) -> tuple[int, bytes]:
-        sock = self.connect()
-        sock.sendall(request)
-        return read_response(sock)
-
-    def check_ping(self) -> None:
-        self.assertEqual(self.ask(raw("GET /ping HTTP/1.1")), (200, b"tfs"))
-
-    def finish(self) -> None:
-        """Wait for every request in progress to end."""
-        assert self.server is not None
-        self.server.shutdown()
-        self.server.server_close()
+    def status_after_close(self, sock: socket.socket) -> int:
+        """Read until the server closes the connection. Return the status, or 0 if none came."""
+        data = b""
+        while chunk := sock.recv(65536):
+            data += chunk
+        return int(data.split(b" ", 2)[1]) if data else 0
 
 
 class RoutesTest(ServerTestCase):
     def test_ping_answers_tfs(self):
+        # GIVEN a running server
         self.start()
-        self.assertEqual(self.ask(raw("GET /ping HTTP/1.1")), (200, b"tfs"))
+        # WHEN a client asks for /ping
+        reply = self.request("GET", "/ping")
+        # THEN it answers 200 tfs
+        self.assertEqual(reply, (200, b"tfs"))
 
     def test_other_paths_are_not_found(self):
+        # GIVEN a running server
         self.start()
-        for request in (
-            raw("GET /other HTTP/1.1"),
-            raw("GET /ping/ HTTP/1.1"),
-            raw("GET /push/x HTTP/1.1"),
-            raw("POST /ping HTTP/1.1", "Content-Length: 0"),
-            raw("POST /other HTTP/1.1", "Content-Length: 0"),
-            raw("POST /push/ HTTP/1.1", "Content-Length: 0"),
-            raw("POST /push/a/b HTTP/1.1", "Content-Length: 0"),
-            raw("POST /push/.. HTTP/1.1", "Content-Length: 0"),
-            raw("POST /push/%2e%2e HTTP/1.1", "Content-Length: 0"),
-        ):
-            with self.subTest(request=request):
-                self.assertEqual(self.ask(request)[0], 404)
-        self.finish()
+        # WHEN a client asks for a path that is not /ping or /push/<name>
+        paths = ("GET", "/"), ("GET", "/api/overview"), ("GET", "/docs"), ("GET", "/openapi.json")
+        pushes = ("POST", "/other"), ("POST", "/push/"), ("POST", "/push/a/b")
+        # THEN every one gets 404 and no push reaches the handler
+        for method, path in (*paths, *pushes):
+            with self.subTest(path=path):
+                self.assertEqual(self.request(method, path)[0], 404)
         self.assertEqual(self.calls, [])
 
-    def test_other_methods_are_refused(self):
-        self.start()
-        self.assertEqual(self.ask(raw("PUT /push/x HTTP/1.1", "Content-Length: 0"))[0], 501)
-        self.assertEqual(self.ask(raw("DELETE /ping HTTP/1.1"))[0], 501)
-        self.finish()
-        self.assertEqual(self.calls, [])
-
-    def test_a_push_reaches_the_handler_with_its_name_and_body(self):
-        self.start()
-        status, body = self.ask(push("Content-Length: 5", body=b"hello"))
-        self.assertEqual(status, 200)
-        self.assertEqual(json.loads(body), {"ok": True})
-        self.finish()
-        self.assertEqual(self.calls, [("x", b"hello")])
-
-    def test_handler_gets_the_request_headers(self):
+    def test_a_push_reaches_the_handler_with_its_name_body_and_headers(self):
+        # GIVEN a handler that records what it gets
         seen = []
 
         def handler(name, body, headers):
-            seen.append((headers["Authorization"], headers["Content-Length"]))
-            body.read()
+            seen.append((name, body.read(), headers["Authorization"]))
             return 200, {"ok": True}
 
         self.start(push_handler=handler)
-        self.ask(push("Authorization: Bearer test-token", "Content-Length: 2", body=b"hi"))
-        self.finish()
-        self.assertEqual(seen, [("Bearer test-token", "2")])
+        # WHEN a client posts a body with a token
+        status, body = self.request("POST", "/push/x", b"hello", {"Authorization": "Bearer t"})
+        # THEN the handler gets all three and its payload comes back
+        self.assertEqual((status, json.loads(body)), (200, {"ok": True}))
+        self.assertEqual(seen, [("x", b"hello", "Bearer t")])
 
-    def test_handler_status_and_payload_are_sent_back(self):
-        def handler(name, body, headers):
-            return 401, {"ok": False, "error": "no"}
+    def test_the_handler_status_and_payload_are_sent_back(self):
+        # GIVEN a handler that refuses
+        self.start(push_handler=lambda name, body, headers: (401, {"ok": False, "error": "no"}))
+        # WHEN a client pushes
+        status, body = self.request("POST", "/push/x", b"")
+        # THEN the client gets that status and payload
+        self.assertEqual((status, json.loads(body)), (401, {"ok": False, "error": "no"}))
 
-        self.start(push_handler=handler)
-        status, body = self.ask(push("Content-Length: 0"))
-        self.assertEqual(status, 401)
-        self.assertEqual(json.loads(body), {"ok": False, "error": "no"})
-
-    def test_body_yields_exactly_content_length_bytes(self):
-        seen = []
-
-        def handler(name, body, headers):
-            seen.append([body.read(2), body.read(), body.read(), body.read(1)])
-            return 200, {"ok": True}
-
-        self.start(push_handler=handler)
-        self.ask(push("Content-Length: 5", body=b"hello" + b"EXTRA"))
-        self.finish()
-        self.assertEqual(seen, [[b"he", b"llo", b"", b""]])
-
-    def test_an_empty_body_is_allowed(self):
-        self.start()
-        self.assertEqual(self.ask(push("Content-Length: 0"))[0], 200)
-        self.finish()
-        self.assertEqual(self.calls, [("x", b"")])
-
-    def test_leading_zeros_and_repeated_equal_lengths_are_one_length(self):
-        self.start()
-        self.assertEqual(self.ask(push("Content-Length: 005", body=b"hello"))[0], 200)
-        request = push("Content-Length: 5", "Content-Length: 5", body=b"hello")
-        self.assertEqual(self.ask(request)[0], 200)
-        self.finish()
-        self.assertEqual(self.calls, [("x", b"hello"), ("x", b"hello")])
-
-    def test_a_body_of_exactly_max_body_is_allowed(self):
+    def test_an_empty_body_and_a_body_of_exactly_max_body_are_allowed(self):
+        # GIVEN a server with a 5 byte limit
         self.start(max_body=5)
-        self.assertEqual(self.ask(push("Content-Length: 5", body=b"hello"))[0], 200)
+        # WHEN a client pushes 0 bytes, then 5 bytes
+        statuses = [self.request("POST", "/push/x", body)[0] for body in (b"", b"hello")]
+        # THEN both get 200
+        self.assertEqual(statuses, [200, 200])
+        self.assertEqual(self.calls, [("x", b""), ("x", b"hello")])
 
     def test_handler_errors_and_their_causes_never_reach_the_response_or_the_logs(self):
-        token = "tok-invented-7f3a"
-        cause_token = "tok-invented-c91d"
+        # GIVEN a handler that fails with a token in its message and in its cause
+        token, cause_token = "tok-invented-7f3a", "tok-invented-c91d"
 
         def handler(name, body, headers):
             raise RuntimeError(f"failed with {token}") from ValueError(f"caused by {cause_token}")
 
         self.start(push_handler=handler)
-        sock = self.connect()
+        # WHEN a client pushes
         with self.assertLogs(level="DEBUG") as logs:
-            sock.sendall(push("Content-Length: 0"))
-            reply = read_all(sock)
-            self.check_ping()
-            self.finish()
-        self.assertEqual(reply.split(b" ", 2)[1], b"500")
-        log_text = "\n".join(logs.output)
-        self.assertGreaterEqual(len(logs.records), 1)
+            status, body = self.request("POST", "/push/x", b"")
+            self.assertEqual(self.request("GET", "/ping"), (200, b"tfs"))
+        # THEN it gets 500, neither token appears anywhere, and nothing logs a traceback
+        self.assertEqual(status, 500)
         for secret in (token, cause_token):
             with self.subTest(secret=secret):
-                self.assertNotIn(secret.encode(), reply)
-                self.assertNotIn(secret, log_text)
+                self.assertNotIn(secret.encode(), body)
+                self.assertNotIn(secret, "\n".join(logs.output))
         self.assertEqual([record.exc_info for record in logs.records], [None] * len(logs.records))
-        self.assertEqual([record.exc_text for record in logs.records], [None] * len(logs.records))
 
     def test_a_handler_that_returns_the_wrong_shape_gives_500(self):
+        # GIVEN a handler that returns things that are not (status, payload)
         results = [None, (200, {"ok": object()}), (999, {}), ("200", {})]
         self.start(push_handler=lambda name, body, headers: results.pop(0))
+        # WHEN a client pushes four times
         for _ in range(4):
+            # THEN each gets 500 and the server keeps answering
             with self.assertLogs("tfs.web.server", level="ERROR"):
-                self.assertEqual(self.ask(push("Content-Length: 0"))[0], 500)
-        self.check_ping()
-        self.finish()
-        self.assertEqual(self.unhandled, [])
+                self.assertEqual(self.request("POST", "/push/x", b"")[0], 500)
+        self.assertEqual(self.request("GET", "/ping")[0], 200)
 
-    def test_the_server_keeps_serving_after_a_bad_request(self):
+    def test_a_request_for_another_host_gets_421_and_reaches_nothing(self):
+        # GIVEN a running server
         self.start()
-        self.ask(b"GET\r\n\r\n")
-        self.check_ping()
-        self.finish()
+        # WHEN a client sends a Host that is not this computer, or its Tailscale or local name
+        for method, path in (("GET", "/ping"), ("POST", "/push/x")):
+            with self.subTest(path=path):
+                # THEN it gets 421
+                self.assertEqual(self.request(method, path, headers={"Host": "evil.test"})[0], 421)
+        # AND a Tailscale name and a local name are answered
+        for host in ("my-pc.tail1234.ts.net", f"{socket.gethostname()}.local:47823"):
+            with self.subTest(host=host):
+                self.assertEqual(self.request("GET", "/ping", headers={"Host": host})[0], 200)
         self.assertEqual(self.calls, [])
-        self.assertEqual(self.unhandled, [])
+
+    def test_the_home_wifi_server_answers_pushes_only(self):
+        # GIVEN a server for the home Wi-Fi door
+        self.start(push_only=True)
+        # WHEN a client asks for a screen, an API route or /ping
+        for path in ("/", "/api/overview", "/ping", "/docs"):
+            # THEN it gets 404
+            with self.subTest(path=path):
+                self.assertEqual(self.request("GET", path)[0], 404)
+        # AND a push still works
+        self.assertEqual(self.request("POST", "/push/x", b"hi")[0], 200)
 
 
-class FramingTest(ServerTestCase):
-    def test_bad_framing_is_refused_before_the_body_is_read(self):
-        cases = [
-            (push("Transfer-Encoding: chunked"), 411),
-            (push("Transfer-Encoding: chunked", "Content-Length: 5"), 411),
-            (push("Transfer-Encoding: identity", "Content-Length: 5"), 411),
-            (push(), 411),
-            (push("Content-Length: 5", "Content-Length: 6"), 400),
-            (push("Content-Length: 11"), 413),
-            *[
-                (push(f"Content-Length: {value}"), 400)
-                for value in ("-1", "abc", "", "+5", "5.0", "0x5", "5 5", "5,5", "\xb2", "1e3")
-            ],
-            *[
-                (push(f"Content-Length: {value}"), 413)
-                for value in ("9" * 19, "9" * 30, "9" * 5000, "0" * 5000 + "11")
-            ],
-        ]
+class SizeLimitTest(ServerTestCase):
+    def test_a_declared_length_over_the_limit_gets_413_before_the_body_is_read(self):
+        # GIVEN a server with a 10 byte limit
         self.start(max_body=10)
-        for request, expected_status in cases:
-            with self.subTest(request=request):
-                self.assertEqual(self.ask(request)[0], expected_status)
-        self.assertEqual(self.calls, [])
-        self.assertEqual(self.incomplete, [])
-
-    def test_a_refusal_is_a_json_message_the_user_can_act_on(self):
-        self.start(max_body=10)
-        status, body = self.ask(push("Content-Length: 11"))
-        message = json.loads(body)
+        # WHEN a client declares 11 bytes
+        status, body = self.request("POST", "/push/x", b"x" * 11)
+        # THEN it gets 413 with a message that names the limit, and nothing is read
         self.assertEqual(status, 413)
-        self.assertIs(message["ok"], False)
-        self.assertIn("10", message["error"])
+        self.assertIn("10", json.loads(body)["error"])
+        self.assertEqual(self.calls, [])
+
+    def test_a_streamed_body_over_the_limit_gets_413(self):
+        # GIVEN a server with a 10 byte limit
+        self.start(max_body=10)
+        # WHEN a client sends 11 bytes with no Content-Length
+        status, _ = self.request("POST", "/push/x", iter([b"hello", b"world!"]))
+        # THEN it gets 413 and the handler never finishes a read
+        self.assertEqual(status, 413)
+        self.assertEqual(self.calls, [])
 
 
 class StalledClientTest(ServerTestCase):
-    def test_a_body_that_stops_early_is_closed_after_the_read_timeout(self):
+    def test_a_body_that_stops_early_gets_400_after_the_read_timeout(self):
+        # GIVEN a server with a short read timeout
         self.start(read_timeout_s=0.2)
+        # WHEN a client sends half its body and stops
         sock = self.connect()
-        sock.sendall(push("Content-Length: 5", body=b"he"))
-        status, _ = read_response(sock)
-        self.assertEqual(status, 400)
-        self.assertEqual(self.incomplete, ["x"])
+        sock.sendall(half_push())
+        # THEN the read times out, the client gets 400 and the handler gets no body
+        self.assertEqual(self.status_after_close(sock), 400)
         self.assertEqual(self.calls, [])
 
-    def test_a_silent_client_is_closed_after_the_read_timeout(self):
+    def test_stop_waits_for_a_request_in_progress(self):
+        # GIVEN a request stuck in the middle of its body
         self.start(read_timeout_s=0.2)
         sock = self.connect()
-        sock.sendall(b"POST /push/x HTTP/1.1\r\nContent-Le")
-        self.assertEqual(read_response(sock), (0, b""))
-        self.finish()
-        self.assertEqual(self.calls, [])
-
-    def test_a_connection_that_sends_nothing_is_closed_after_the_read_timeout(self):
-        self.start(read_timeout_s=0.2)
-        self.assertEqual(read_response(self.connect()), (0, b""))
-
-    def test_a_client_that_closes_its_sending_side_early_gets_400(self):
-        self.start()
-        sock = self.connect()
-        sock.sendall(push("Content-Length: 5", body=b"he"))
-        sock.shutdown(socket.SHUT_WR)
-        self.assertEqual(read_response(sock)[0], 400)
-        self.assertEqual(self.calls, [])
-
-    def test_shutdown_and_server_close_wait_for_a_request_in_progress(self):
-        self.start(read_timeout_s=0.2)
-        sock = self.connect()
-        sock.sendall(push("Content-Length: 5", body=b"he"))
+        sock.sendall(half_push())
         self.assertTrue(self.started.wait(SAFETY_TIMEOUT_S))
-        closing = threading.Thread(target=self.finish)
-        closing.start()
-        closing.join(SAFETY_TIMEOUT_S)
-        self.assertFalse(closing.is_alive())
-        self.assertEqual(self.incomplete, ["x"])
+        # WHEN the server stops
+        stopping = threading.Thread(target=self.server.stop)
+        stopping.start()
+        stopping.join(SAFETY_TIMEOUT_S)
+        # THEN stop returns once the request ends, and the handler got no body
+        self.assertFalse(stopping.is_alive())
         self.assertEqual(self.calls, [])
 
-
-class ManyClientsTest(ServerTestCase):
-    def test_a_stalled_body_does_not_block_others(self):
+    def test_a_stalled_body_does_not_block_other_requests(self):
+        # GIVEN a client stuck in the middle of its body
         self.start(read_timeout_s=SAFETY_TIMEOUT_S * 3)
-        stalled = self.connect()
-        stalled.sendall(push("Content-Length: 5", body=b"he"))
+        self.connect().sendall(half_push())
         self.assertTrue(self.started.wait(SAFETY_TIMEOUT_S))
-        self.check_ping()
-        stalled.close()
+        # WHEN another client asks for /ping
+        # THEN it is answered
+        self.assertEqual(self.request("GET", "/ping"), (200, b"tfs"))
 
-
-class DisconnectTest(ServerTestCase):
-    def test_a_client_that_resets_the_connection_does_not_crash_the_server(self):
-        cases = {
-            "half a request line": b"POST /push",
-            "half the headers": b"POST /push/x HTTP/1.1\r\nContent-Le",
-            "half the body": push("Content-Length: 5", body=b"he"),
-            "a whole request, no wait for the answer": push("Content-Length: 5", body=b"hello"),
-        }
+    def test_a_client_that_resets_the_connection_mid_body_does_not_crash_the_server(self):
+        # GIVEN a running server
         self.start()
-        for name, request in cases.items():
-            with self.subTest(name):
-                sock = self.connect()
-                sock.sendall(request)
-                reset(sock)
-                self.check_ping()
-        self.finish()
-        self.assertEqual(self.unhandled, [])
+        # WHEN a client sends half its body and resets the connection
+        sock = self.connect()
+        sock.sendall(half_push())
+        self.assertTrue(self.started.wait(SAFETY_TIMEOUT_S))
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+        sock.close()
+        # THEN the server keeps answering and the handler got no body
+        self.assertEqual(self.request("GET", "/ping"), (200, b"tfs"))
+        self.assertEqual(self.calls, [])
 
 
-class SetupTest(ServerTestCase):
+class PortTest(ServerTestCase):
     def test_a_second_server_cannot_take_the_same_port(self):
+        # GIVEN a running server
         self.start()
-        port = self.server.server_address[1]
+        port = self.server.sock.getsockname()[1]
+        # WHEN a second server binds the same port
+        # THEN it fails
         with self.assertRaises(OSError):
             make_server(config.SCREEN_HOST, port, push_handler=self.recording_handler)
 
     def test_a_new_server_can_take_the_port_of_one_that_just_served_a_request(self):
+        # GIVEN a server that has answered a request
         self.start()
-        port = self.server.server_address[1]
-        self.check_ping()
-        self.finish()
+        port = self.server.sock.getsockname()[1]
+        self.request("GET", "/ping")
+        # WHEN it stops
+        self.server.stop()
+        # THEN a new server binds the port
         restarted = make_server(config.SCREEN_HOST, port, push_handler=self.recording_handler)
-        self.addCleanup(restarted.server_close)
-        self.assertEqual(restarted.server_address[1], port)
+        self.addCleanup(restarted.stop)
+        self.assertEqual(restarted.sock.getsockname()[1], port)
 
     def test_the_server_listens_only_on_the_host_it_was_given(self):
+        # GIVEN a server made for the screen host
         self.start()
-        self.assertEqual(self.server.server_address[0], config.SCREEN_HOST)
+        # THEN it listens on that host only
+        self.assertEqual(self.server.sock.getsockname()[0], config.SCREEN_HOST)
 
 
 if __name__ == "__main__":

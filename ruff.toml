@@ -45,8 +45,6 @@ known-first-party = ["tfs"]
 "src/tfs/engine.py" = ["S104"]
 # Connectors fetch only https URLs they build themselves.
 "src/tfs/connectors/core/runner.py" = ["S310"]
-# http.server calls request handlers by the fixed names do_GET and do_POST.
-"src/tfs/web/server.py" = ["N802"]
 "tests/**" = ["S101", "S105", "S106", "S108"]
 
 [format]
