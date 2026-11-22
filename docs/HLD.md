@@ -111,7 +111,7 @@ Other journeys include adding a blood test in section 6.5 and rewriting the week
 
 1. The engine is one Python process. It runs the web server, scheduler and job worker as threads.
 2. The engine starts a short-lived Python connector helper for each operation, such as fetching new data. It kills the helper at its deadline. Raw data moves by file path, never through a pipe. A stuck parser, endless loop or crash in compiled code stops only the helper.
-3. For TFS screens and triggers, the engine starts the AI tool through its adapter. The adapter connects the ask TFS tool and web search. It switches every other tool off through the AI tool's flags. Claude Code uses `--tools ""` with `--strict-mcp-config` and `--mcp-config`. The process runs in an empty temporary folder. A crash returns an unfinished AI run to the queue.
+3. For TFS screens and triggers, the engine starts the AI tool through its adapter. The adapter connects the ask TFS tool and web search. It switches every other tool off through the AI tool's flags. Claude Code uses `--tools "WebSearch"` with `--strict-mcp-config`, `--mcp-config` and `--allowedTools` set to the ask TFS read tools and `WebSearch`. `--tools ""` would switch web search off too. The process runs in an empty temporary folder. A crash returns an unfinished AI run to the queue.
 4. In your own AI chat, your AI tool starts the ask TFS tool through the TFS plugin.
 5. Start at login uses the OS mechanism, launchd, Task Scheduler or systemd, with restart on failure. A crashed engine restarts by itself.
 
