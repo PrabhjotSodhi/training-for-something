@@ -567,7 +567,7 @@ The phone page needs no sign-in. Tailscale is the sign-in: only devices on your 
 | Browser on the computer or phone | Nothing beyond the network. Tailscale limits the phone to your tailnet. |
 | Phone push app | A token in a header. It can only send data in. |
 
-Python's built-in HTTP server provides only basic security checks. TFS adds checks for Host, Origin and request size. Pages escape displayed content. The engine closes the connection on any refused push.
+Uvicorn parses each request, and FastAPI routes it. TFS adds checks for Host, Origin, request size and a body that stops arriving. Pages escape displayed content. The engine closes the connection on any refused push.
 
 App tokens and API keys live in one `.env` file in the TFS data folder. Only the user can read it. Backups and exports leave it out.
 
