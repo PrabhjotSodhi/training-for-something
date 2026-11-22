@@ -1,180 +1,139 @@
-"""A small HTTP server that answers /ping and passes well-framed pushes to a handler."""
+"""The web server: FastAPI served by uvicorn. It answers /ping and passes pushes to a handler."""
 
-import contextlib
+import asyncio
 import io
-import json
 import logging
-import os
-import re
-from collections.abc import Callable
+import socket
+import threading
+from collections.abc import AsyncIterator, Callable, Mapping
 from http import HTTPStatus
-from http.client import HTTPMessage
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import BinaryIO
 
-PushHandler = Callable[[str, BinaryIO, HTTPMessage], tuple[int, dict]]
+import uvicorn
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi.responses import JSONResponse, PlainTextResponse
+from starlette.concurrency import run_in_threadpool
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.requests import ClientDisconnect
 
-PUSH_PATH = re.compile(r"/push/(?P<name>[A-Za-z0-9_-]+)")
-JSON_TYPE = "application/json"
-# Lengths with more digits than this are far above any body this server will take.
-MAX_LENGTH_DIGITS = 18
+PushHandler = Callable[[str, BinaryIO, Mapping[str, str]], tuple[int, dict]]
+
+# A refused push may leave body bytes unread, so no reply keeps the connection open.
+CLOSE = {"Connection": "close"}
 
 logger = logging.getLogger(__name__)
 
 
-class IncompleteBodyError(Exception):
-    """The client stopped sending before Content-Length bytes arrived."""
-
-
-class _RefusalError(Exception):
-    """A request the server turns away. The message goes to the client."""
-
-    def __init__(self, status: int, message: str) -> None:
-        super().__init__(message)
-        self.status = status
-
-
 class _Body(io.RawIOBase):
-    """Exactly `length` bytes of the request body, read straight from the socket."""
+    """The request body as a file. Reads run in a thread and pull chunks from the event loop."""
 
-    def __init__(self, source: BinaryIO, length: int) -> None:
+    def __init__(
+        self,
+        chunks: AsyncIterator[bytes],
+        loop: asyncio.AbstractEventLoop,
+        max_body: int,
+        read_timeout_s: float,
+    ) -> None:
         super().__init__()
-        self._source = source
-        self._remaining = length
-        self.stopped_early = False
+        self._chunks = chunks
+        self._loop = loop
+        self._max_body = max_body
+        self._read_timeout_s = read_timeout_s
+        self._received = 0
+        self._pending = b""
 
     def readable(self) -> bool:
         """Say that the body can be read."""
         return True
 
     def readinto(self, buffer: bytearray | memoryview) -> int:
-        """Fill buffer with body bytes. Raise IncompleteBodyError if the client stops early."""
-        view = memoryview(buffer)[: self._remaining]
-        if not view:
-            return 0
-        try:
-            count = self._source.readinto1(view)
-        except OSError as error:
-            self.stopped_early = True
-            raise IncompleteBodyError(
-                "The client stopped sending before the whole body arrived."
-            ) from error
-        if count == 0:
-            self.stopped_early = True
-            raise IncompleteBodyError(
-                "The client closed the connection before the whole body arrived."
-            )
-        self._remaining -= count
+        """Fill buffer with body bytes. Raise HTTPException if the body stops or grows too big."""
+        if not self._pending:
+            self._pending = self._next_chunk()
+        count = min(len(buffer), len(self._pending))
+        buffer[:count] = self._pending[:count]
+        self._pending = self._pending[count:]
         return count
 
+    def _next_chunk(self) -> bytes:
+        async def pull() -> bytes:
+            return await asyncio.wait_for(anext(self._chunks, b""), self._read_timeout_s)
 
-def _content_length(headers: HTTPMessage, max_body: int) -> int:
-    """Return the one valid Content-Length, or raise the refusal the request earns."""
-    if headers.get_all("Transfer-Encoding") is not None:
-        raise _RefusalError(
-            411, "Send the body with a Content-Length. Chunked bodies are not accepted."
-        )
-    values = {value.strip(" \t") for value in headers.get_all("Content-Length", [])}
-    if not values:
-        raise _RefusalError(411, "Send a Content-Length header.")
-    if len(values) > 1:
-        raise _RefusalError(400, "Send Content-Length once, with one value.")
-    (value,) = values
-    if not (value.isascii() and value.isdigit()):
-        raise _RefusalError(400, "Content-Length must be a whole number of bytes.")
-    digits = value.lstrip("0")
-    length = int(digits or "0") if len(digits) <= MAX_LENGTH_DIGITS else None
-    if length is None or length > max_body:
-        raise _RefusalError(
-            413, f"The body is larger than the {max_body} bytes this server accepts."
-        )
-    return length
-
-
-class _Handler(BaseHTTPRequestHandler):
-    server: "_PushServer"
-    # HTTP/1.0 closes every connection. A refused request never leaves unread body bytes
-    # behind to be read as the next request.
-    protocol_version = "HTTP/1.0"
-
-    def setup(self) -> None:
-        """Apply the server's read timeout to this connection."""
-        self.timeout = self.server.read_timeout_s
-        super().setup()
-
-    def handle(self) -> None:
-        """Serve one request. A client that goes away mid-request ends it quietly."""
-        with contextlib.suppress(OSError):
-            super().handle()
-
-    def log_message(self, format: str, *args) -> None:
-        """Write no log lines. They would carry client addresses and request lines."""
-
-    def do_GET(self) -> None:
-        """Answer /ping."""
-        if self.path == "/ping":
-            self._send(200, b"tfs", "text/plain; charset=utf-8")
-        else:
-            self._refuse(404, "Nothing is served at this address.")
-
-    def do_POST(self) -> None:
-        """Pass a well-framed push to the push handler."""
-        match = PUSH_PATH.fullmatch(self.path)
-        if match is None:
-            self._refuse(404, "Nothing is served at this address.")
-            return
         try:
-            length = _content_length(self.headers, self.server.max_body)
-        except _RefusalError as refusal:
-            self._refuse(refusal.status, str(refusal))
-            return
-        body = _Body(self.rfile, length)
-        reply = self._ask_push_handler(match["name"], body)
-        if reply is not None:
-            self._send(*reply, JSON_TYPE)
-        elif body.stopped_early:
-            self._refuse(400, "The body stopped before all Content-Length bytes arrived.")
-        else:
+            chunk = asyncio.run_coroutine_threadsafe(pull(), self._loop).result()
+        except (TimeoutError, ClientDisconnect) as error:
+            raise HTTPException(400, "The body stopped before all of it arrived.") from error
+        self._received += len(chunk)
+        if self._received > self._max_body:
+            raise _too_large(self._max_body)
+        return chunk
+
+
+def _too_large(max_body: int) -> HTTPException:
+    return HTTPException(413, f"The body is larger than the {max_body} bytes this server accepts.")
+
+
+def _make_app(
+    push_handler: PushHandler, push_only: bool, max_body: int, read_timeout_s: float
+) -> FastAPI:
+    own_names = {"localhost", "127.0.0.1", socket.gethostname().lower()}
+
+    async def check_host(request: Request) -> None:
+        host = request.headers.get("host", "").rsplit(":", 1)[0].lower()
+        if host.removesuffix(".local") not in own_names and not host.endswith(".ts.net"):
+            raise HTTPException(421, "This server answers only to this computer's own name.")
+
+    app = FastAPI(
+        docs_url=None, redoc_url=None, openapi_url=None, dependencies=[Depends(check_host)]
+    )
+
+    @app.exception_handler(StarletteHTTPException)
+    async def refuse(request: Request, error: StarletteHTTPException) -> Response:
+        return JSONResponse({"ok": False, "error": error.detail}, error.status_code, CLOSE)
+
+    if not push_only:
+
+        @app.get("/ping")
+        async def ping() -> Response:
+            return PlainTextResponse("tfs")
+
+    @app.post("/push/{name}")
+    async def push(name: str, request: Request) -> Response:
+        if int(request.headers.get("content-length", 0)) > max_body:
+            raise _too_large(max_body)
+        loop = asyncio.get_running_loop()
+        body = io.BufferedReader(_Body(request.stream(), loop, max_body, read_timeout_s))
+        try:
+            status, payload = await run_in_threadpool(push_handler, name, body, request.headers)
+            return JSONResponse(payload, HTTPStatus(status), CLOSE)
+        except HTTPException:
+            raise
+        except Exception as error:
+            # Handler errors may echo a token. Only this fixed line is logged.
             logger.error("The push handler failed.")
-            self._refuse(500, "The push could not be handled. See the TFS log.")
+            raise HTTPException(500, "The push could not be handled. See the TFS log.") from error
 
-    def _ask_push_handler(self, name: str, body: _Body) -> tuple[HTTPStatus, bytes] | None:
-        # Handler errors may echo a token or header. Nothing is logged or raised from inside
-        # the block, so no message, cause or traceback leaves it.
-        with contextlib.suppress(Exception):
-            status, payload = self.server.push_handler(name, body, self.headers)
-            return HTTPStatus(status), json.dumps(payload).encode()
-        return None
-
-    def _refuse(self, status: int, message: str) -> None:
-        self._send(status, json.dumps({"ok": False, "error": message}).encode(), JSON_TYPE)
-
-    def _send(self, status: int, body: bytes, content_type: str) -> None:
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+    return app
 
 
-class _PushServer(ThreadingHTTPServer):
-    # On Windows a second process can bind a port that is already in use unless this is off.
-    allow_reuse_address = os.name != "nt"
-    daemon_threads = False
-    block_on_close = True
+class WebServer(uvicorn.Server):
+    """A uvicorn server that holds its port from creation until stop()."""
 
-    def __init__(
-        self,
-        address: tuple[str, int],
-        *,
-        push_handler: PushHandler,
-        max_body: int,
-        read_timeout_s: float,
-    ) -> None:
-        self.push_handler = push_handler
-        self.max_body = max_body
-        self.read_timeout_s = read_timeout_s
-        super().__init__(address, _Handler)
+    def __init__(self, app: FastAPI, sock: socket.socket) -> None:
+        super().__init__(uvicorn.Config(app, lifespan="off", log_config=None, access_log=False))
+        self.sock = sock
+        self._thread = threading.Thread(target=self.run, args=([sock],))
+
+    def start(self) -> None:
+        """Serve in a thread."""
+        self._thread.start()
+
+    def stop(self) -> None:
+        """Finish the requests in progress, then release the port."""
+        self.should_exit = True
+        if self._thread.is_alive():
+            self._thread.join()
+        self.sock.close()
 
 
 def make_server(
@@ -182,10 +141,12 @@ def make_server(
     port: int,
     *,
     push_handler: PushHandler,
+    push_only: bool = False,
     max_body: int = 1 << 30,
     read_timeout_s: float = 30,
-) -> ThreadingHTTPServer:
-    """Bind the server to host and port. The caller runs serve_forever() and closes it."""
-    return _PushServer(
-        (host, port), push_handler=push_handler, max_body=max_body, read_timeout_s=read_timeout_s
+) -> WebServer:
+    """Bind host and port, or raise OSError. push_only drops /ping. The caller starts and stops it."""
+    return WebServer(
+        _make_app(push_handler, push_only, max_body, read_timeout_s),
+        socket.create_server((host, port)),
     )

@@ -1,4 +1,5 @@
 import contextlib
+import http.client
 import json
 import os
 import socket
@@ -125,6 +126,26 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(len(started), 5)
         running.stop()
         self.assertFalse(any(thread.is_alive() for thread in started))
+
+    def test_the_home_wifi_port_answers_pushes_only_and_the_screen_port_answers_ping(self):
+        # GIVEN an engine with the home Wi-Fi door on
+        screen_port, home_wifi_port = free_port(), free_port()
+        self.new_engine(
+            home_wifi=True, screen_port=screen_port, home_wifi_port=home_wifi_port
+        ).start()
+
+        def status(port: int, path: str) -> int:
+            client = http.client.HTTPConnection(config.SCREEN_HOST, port, timeout=5)
+            self.addCleanup(client.close)
+            client.request("GET", path)
+            return client.getresponse().status
+
+        # WHEN a client asks the screen port for /ping, and the home Wi-Fi port for more
+        # THEN /ping answers on the screen port only, and the home Wi-Fi port gives 404
+        self.assertEqual(status(screen_port, "/ping"), 200)
+        for path in ("/", "/api/overview", "/ping"):
+            with self.subTest(path=path):
+                self.assertEqual(status(home_wifi_port, path), 404)
 
     def test_delivery_worker_picks_up_a_save_from_another_process(self) -> None:
         delivered = threading.Event()

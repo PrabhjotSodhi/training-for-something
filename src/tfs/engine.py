@@ -9,7 +9,6 @@ import sqlite3
 import threading
 from collections.abc import Callable
 from datetime import UTC, datetime, tzinfo
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 from tfs import password_store, scores
@@ -21,7 +20,7 @@ from tfs.persistence.migrations import migrate
 from tfs.persistence.sqlite import connect, transaction
 from tfs.scheduling import jobs, scheduler
 from tfs.web.push import make_push_handler
-from tfs.web.server import PushHandler, make_server
+from tfs.web.server import PushHandler, WebServer, make_server
 
 HOME_WIFI_HOST = "0.0.0.0"
 PING_TIMEOUT_S = 1
@@ -57,7 +56,7 @@ class Engine:
         self._home_wifi_port = home_wifi_port
         self._now_fn = now_fn or (lambda: datetime.now(UTC))
         self._tz = tz
-        self._running: list[tuple[ThreadingHTTPServer, threading.Thread]] = []
+        self._running: list[WebServer] = []
         # Each job is the retry_failed flag for one process_pending run. None ends the worker.
         self._jobs: queue.Queue[bool | None] = queue.Queue()
         self._stopping = threading.Event()
@@ -75,26 +74,21 @@ class Engine:
             now_fn=self._now_fn,
             on_saved=lambda sha256: self._jobs.put(False),
         )
-        servers: list[ThreadingHTTPServer] = []
-        running: list[tuple[ThreadingHTTPServer, threading.Thread]] = []
+        servers: list[WebServer] = []
         try:
-            servers.append(_bind(SCREEN_HOST, self._screen_port, handler, ask_ping=True))
+            servers.append(_bind(SCREEN_HOST, self._screen_port, handler, home_wifi=False))
             if self._home_wifi:
-                servers.append(_bind(HOME_WIFI_HOST, self._home_wifi_port, handler, ask_ping=False))
+                servers.append(_bind(HOME_WIFI_HOST, self._home_wifi_port, handler, home_wifi=True))
             self._prepare_data(db_path)
             for server in servers:
-                thread = threading.Thread(target=server.serve_forever)
-                thread.start()
-                running.append((server, thread))
+                server.start()
             worker = threading.Thread(target=self._work)
             worker.start()
         except BaseException:
-            _stop(running)
-            # shutdown() waits forever on a server whose thread never started.
-            for server in servers[len(running) :]:
-                server.server_close()
+            for server in servers:
+                server.stop()
             raise
-        self._running = running
+        self._running = servers
         self._worker = worker
         self._jobs.put(True)
         self._delivery_worker = threading.Thread(target=self._deliver)
@@ -116,7 +110,8 @@ class Engine:
         scheduler_thread, self._scheduler = self._scheduler, None
         if scheduler_thread is not None:
             scheduler_thread.join()
-        _stop(running)
+        for server in running:
+            server.stop()
 
     def drain(self) -> None:
         """Block until the startup import and queued file reads have finished."""
@@ -167,20 +162,12 @@ class Engine:
             password_store.set("push_token", secrets.token_urlsafe(32))
 
 
-def _stop(running: list[tuple[ThreadingHTTPServer, threading.Thread]]) -> None:
-    for server, _ in running:
-        server.shutdown()
-    for server, thread in running:
-        server.server_close()
-        thread.join()
-
-
-def _bind(host: str, port: int, handler: PushHandler, *, ask_ping: bool) -> ThreadingHTTPServer:
+def _bind(host: str, port: int, handler: PushHandler, *, home_wifi: bool) -> WebServer:
     """Bind a server. A taken port raises PortInUseError, or EngineAlreadyRunningError if TFS holds it."""
     try:
-        return make_server(host, port, push_handler=handler)
+        return make_server(host, port, push_handler=handler, push_only=home_wifi)
     except OSError as error:
-        if ask_ping and _tfs_answers_ping(port):
+        if not home_wifi and _tfs_answers_ping(port):
             raise EngineAlreadyRunningError("TFS is already running.") from error
         raise PortInUseError(
             f"Port {port} is used by another app. Close it and try again."
