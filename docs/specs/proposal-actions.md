@@ -27,7 +27,7 @@ A proposal holds one or more actions. Save applies all of them in one transactio
 | `change_session` | An item's targets or label | Item exists and is not done | Yes, as an update |
 | `remove_session` | Marks an item removed | Item exists and is not done | Delete, or a `needs_you` to-do |
 | `restore_session` | Restores a removed plan on an explicit date | Item is removed; date not past | Create a new copy in approved apps |
-| `set_goal` | Adds or edits a goal: type, date, target | Date in the future, known goal type | No |
+| `set_goal` | Adds or edits a goal: type, date, target | Date in the future, non-empty goal type | No |
 | `set_limit` | A constraint, such as an injury, a day you cannot train, or a maximum session length | Known limit kind | No |
 | `log_meal` | A meal with foods, portions, how sure, and sources | Values in plausible ranges | No |
 | `accept_document_values` | Values read from a lab PDF or record, each with its page | Document exists, units known | No |
@@ -109,9 +109,8 @@ restore_session is the explicit route for a removed item.
 ## Goals, limits and combined history
 
 `set_goal` requires `action`, `item`, `type`, `date` and `target`. The date is
-strictly future. Types are `marathon`, `ironman`, `hyrox`, `powerlifting`,
-`lean_physique`, `longevity` and `custom`. Use custom for another goal; the
-engine does not need sport-specific code. A target has a non-empty
+strictly future. The type is any non-empty text, such as `marathon` or
+`mountain climb`; the engine does not need sport-specific code. A target has a non-empty
 `description` and optionally a finite, non-negative `value` together with a
 non-empty `unit`. Units are preserved as supplied, not converted or used for
 forecasts here. These fields do not authorize diagnosis or clinician-target changes.
