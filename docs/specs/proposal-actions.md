@@ -72,7 +72,7 @@ does not make a Save tool available.
 ## Local session proposal API
 
 The local application API currently supports `set_goal`, `set_limit`,
-`add_session`, `move_session`, `change_session`, `remove_session`, `restore_session`, `mark_done` and `unlink_plan_match`. Other actions are refused
+`add_session`, `move_session`, `change_session`, `remove_session`, `restore_session`, `mark_done`, `unlink_plan_match` and `set_forecast`. Other actions are refused
 until their handlers arrive. The MCP tools below expose this same API.
 
 Every proposal supplies `plan_version`, `why`, `sources` and a non-empty

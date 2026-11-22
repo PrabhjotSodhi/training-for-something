@@ -409,7 +409,7 @@ Options considered. General probabilistic matching with selection rules for ever
 
 ## 8. Scores
 
-`rebuild_pending()` builds day facts and scores for the dates in `rebuild_dates`. Live imports and full rebuilds call the same function, after the records commit, one month of dates per transaction. The dates waiting for a rebuild are saved in the same transaction as their records, so a crash cannot skip them. Separate code paths produced different live and replay numbers in testing.
+`rebuild_pending()` builds day facts for the dates in `rebuild_dates`, one month of dates per transaction, then rebuilds every score once in its own transaction. Live imports and full rebuilds call the same function, after the records commit. The dates waiting for a rebuild are saved in the same transaction as their records, so a crash cannot skip their day facts. Separate code paths produced different live and replay numbers in testing.
 
 1. Day facts hold one row per day per metric, with source, coverage and formula version.
 2. TFS recomputes scores from day facts each time. A test dataset covers about 1,200 days. Scores include readiness from HRV, resting heart rate and sleep against your normal, plus training load, recovery and forecast ranges.
