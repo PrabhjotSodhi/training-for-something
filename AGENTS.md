@@ -13,13 +13,13 @@ Training For Something (TFS) is a free, open source, local-first coach. A small 
 ## Commands
 
 ```bash
-python -m pip install -e . hypothesis ruff==0.6.9   # once, after pyproject.toml exists
-ruff check . && ruff format --check .                # lint and format, as CI runs them
-PYTHONPATH=src python -m unittest discover -s tests -t .           # all tests
-PYTHONPATH=src python -m unittest tests.test_raw_store             # one file
+uv sync                                               # once, and after pyproject.toml changes
+uv run ruff check . && uv run ruff format --check .   # lint and format, as CI runs them
+uv run python -m unittest discover -s tests -t .      # all tests
+uv run python -m unittest tests.test_raw_store        # one file
 ```
 
-Python 3.12. Tests use `unittest`. Hypothesis is allowed in tests only. Ruff lints and formats. CI fails on any Ruff finding.
+Python 3.12. uv installs everything, and `uv.lock` pins every version. Add a package with `uv add`, never with pip. Tests use `unittest`. Hypothesis is allowed in tests only. Ruff lints and formats. CI fails on any Ruff finding.
 
 ## Rules
 

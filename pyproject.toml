@@ -21,3 +21,6 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 tfs = ["**/*.sql", "**/*.json", "**/*.toml"]
+
+[dependency-groups]
+dev = ["hypothesis==6.112.0", "ruff==0.6.9"]

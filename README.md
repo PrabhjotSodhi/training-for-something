@@ -18,21 +18,19 @@ Read more in the [high level design](docs/HLD.md), the [code map](docs/code-map.
 
 ## Ask about your data
 
-You need Python 3.12 or later and Claude Code or Codex on the same computer. Until the installer arrives in the "Safe to live with" milestone, clone this repository and install from its folder, preferably in a virtual environment:
+You need [uv](https://docs.astral.sh/uv/getting-started/installation/) and Claude Code or Codex on the same computer. uv brings Python 3.12 or later if you do not have it. Until the installer arrives in the "Safe to live with" milestone, install TFS from this repository:
 
 ```sh
-git clone https://github.com/PrabhjotSodhi/training-for-something.git
-cd training-for-something
-python -m pip install -e .
+uv tool install git+https://github.com/PrabhjotSodhi/training-for-something
 ```
 
-Both clients need `tfs` on PATH. Open a new terminal, activate the same virtual environment if you used one, and check:
+Both clients need `tfs` on PATH. Open a new terminal and check:
 
 ```sh
 tfs --version
 ```
 
-Start your AI client from that terminal so it can find `tfs`. Import data first, for example with `tfs import /path/to/export.zip` for an Apple Health export. The tool reports a missing database until you import data or start TFS.
+If the terminal cannot find `tfs`, run `uv tool update-shell` and open a new terminal. Get a newer version with `uv tool upgrade training-for-something`. Import data first, for example with `tfs import /path/to/export.zip` for an Apple Health export. The tool reports a missing database until you import data or start TFS.
 
 ### Claude Code
 

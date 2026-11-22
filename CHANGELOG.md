@@ -9,6 +9,10 @@ Versions follow Python's PEP 440. Each release starts with "Breaking changes". E
 - The `preview_undo` and `undo` tools are gone. To take back a saved change, approve a new change that does the opposite, such as `remove_session` for an added session or `move_session` back to the old date.
 - The `report_delivery_deleted` action is gone. When a removed session cannot be deleted in an app, TFS gives the person a task to delete it there and forgets the link. TFS does not check the app. The `resolved_by_version` and `resolution` columns are gone from `coach_v1_deliveries`. Read `manual_action=delete` for the open task.
 
+### Changed
+
+- Install with `uv tool install git+https://github.com/PrabhjotSodhi/training-for-something`. It puts `tfs` on PATH with no virtual environment to activate. Contributors run `uv sync`, and `uv.lock` pins every version.
+
 ## 0.1.0a1, 2026-11-19
 
 The first alpha of 0.1.0, the first public version. Expect bugs and breaking changes before 0.1.0.
