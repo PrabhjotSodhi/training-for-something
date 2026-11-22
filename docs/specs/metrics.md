@@ -16,7 +16,7 @@ Daily facts, scores and forecasts. Every formula carries a version. Coefficients
 |---|---|---|
 | Sleep | Hours asleep, on the day you wake up | 0 hours is missing |
 | Resting heart rate | The device's daily value | 0 is missing |
-| HRV | The device's nightly value, with its type | 0 is missing |
+| HRV | The day mean of one app's readings, with its type | 0 is missing |
 | Steps, active energy, total energy | One source per day (HLD section 7.3) | A partial day says partial |
 | Weight, body fat | Latest reading that day | None that day is missing |
 | VO2 max | Latest device estimate, with its source | Older than 30 days shows its age |
@@ -35,9 +35,9 @@ Daily facts, scores and forecasts. Every formula carries a version. Coefficients
 
 The website promises a forecast range per goal. Two kinds exist.
 
-**1. Code forecasts**, for goal types with a known formula. Exact and repeatable.
+**1. Code forecasts**, for goals with a known formula. Exact and repeatable.
 
-| Goal type | Method | Shows |
+| Goal | Method | Shows |
 |---|---|---|
 | Endurance race (marathon, half, Ironman legs) | Riegel's formula from recent best efforts at shorter distances, widened by how old and how far those efforts are | A finish time range |
 | Powerlifting | Estimated one-rep max (Epley) from recent top sets, per lift, summed | A total range |

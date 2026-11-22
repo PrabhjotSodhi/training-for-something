@@ -45,7 +45,11 @@ training-for-something/
     source_priority/
       priority.py             which app's number shows, from your source list
       daily_totals.py         one app's total per day and data type
-    scores/                   readiness.py, load.py, recovery.py, zones.py, fitness_age.py, forecasts.py
+    scores/
+      __init__.py             score versions and the rebuild of every score
+      readiness.py            the readiness score
+      load.py                 load per day
+      coefficients.toml       every score's coefficients and formula version
     mcp/
       views.sql               the coach_v1_* views
       tool_access.py          the guarded read-only reader
@@ -96,7 +100,7 @@ Module names are short and lowercase, as PEP 8 asks. The folder carries the cont
 
 ## 2. Database tables
 
-Each milestone adds one numbered migration for the tables it needs. `0001_init.sql` creates the "Your data in" tables: `files`, `sources`, `source_records`, `source_deletes`, `session_parts`, `session_groups`, `session_group_members`, `day_facts` and `rebuild_dates`. `0002_plans.sql` adds `journal`, `goals`, `limits` and `plan_items`, and lets `session_parts` belong to a plan item. A merged migration is never edited. Later changes are new numbered files.
+Each milestone adds one numbered migration for the tables it needs. `0001_init.sql` creates the "Your data in" tables: `files`, `sources`, `source_records`, `source_deletes`, `session_parts`, `session_groups`, `session_group_members`, `day_facts` and `rebuild_dates`. `0002_plans.sql` adds `journal`, `goals`, `limits` and `plan_items`, and lets `session_parts` belong to a plan item. `0008_scores.sql` adds `scores`, `0009_coach_forecasts.sql` adds `coach_forecasts`, and `0010_rules.sql` adds `rules` and `rule_runs`. A merged migration is never edited. Later changes are new numbered files.
 
 | Table | Kind | Holds |
 |---|---|---|
@@ -110,6 +114,8 @@ Each milestone adds one numbered migration for the tables it needs. `0001_init.s
 | `rebuild_dates` | Work | Dates whose groups and day facts must be rebuilt, saved with the records that changed them and cleared by the rebuild |
 | `day_facts` | Derived | One row per day, metric and chosen source: value, coverage, formula version |
 | `scores` | Derived | Readiness, load, recovery and forecasts per day, with inputs, range and formula version |
+| `coach_forecasts` | Yours | One coach estimate per goal: low, high, unit, method, sources and date |
+| `rules`, `rule_runs` | Work | Scheduler rules with their next due time and hourly cap, and one row per run they started |
 | `journal` | Yours | Append-only. One row per saved proposal or user action: actions JSON, who approved, time, format version |
 | `goals`, `limits` | Yours | Current goals and limits, kept in step with the journal |
 | `plan_items` | Yours | Current plan, as in the plan items spec |
