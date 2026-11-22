@@ -38,6 +38,8 @@ def _summary(version: int, states: dict, delivery: dict, labels: dict) -> dict:
     }
     if states.get("forecasts"):
         result["forecasts"] = list(states["forecasts"].values())
+    if "overview" in states:
+        result["overview"] = states["overview"]
     if states.get("exclusions"):
         result["match_exclusions"] = [
             {"item": item, "record_ids": ids} for item, ids in states["exclusions"].items()
@@ -95,6 +97,17 @@ def _write_forecasts(conn: sqlite3.Connection, forecasts: dict) -> None:
         )
 
 
+def _write_overview(conn: sqlite3.Connection, states: dict) -> None:
+    if "overview" not in states:
+        return
+    conn.execute("DELETE FROM overview_layout")
+    if states["overview"] is not None:
+        conn.execute(
+            "INSERT INTO overview_layout (id, layout_json) VALUES (1, ?)",
+            (journal.encode(states["overview"]),),
+        )
+
+
 def _prepare_change(
     conn: sqlite3.Connection, proposal: dict, now: datetime
 ) -> tuple[dict, dict, dict]:
@@ -133,6 +146,7 @@ def _save(
         version = journal.append(conn, request_id, encoded, before, approved_by, saved_at)
         targets.write(conn, items)
         _write_forecasts(conn, items.get("forecasts", {}))
+        _write_overview(conn, items)
         for state in items["items"].values():
             _write(conn, state, version)
         jobs.write(conn, job_after, version, saved_at)

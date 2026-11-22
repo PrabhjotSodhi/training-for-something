@@ -8,10 +8,12 @@ To take back a saved change, propose the opposite change, such as `remove_sessio
 
 The client permission prompt is the consent boundary. An AI-generated approval flag is not consent, and always-allow client settings can skip the prompt. The installed AI CLI is trusted software with the person's operating-system access; TFS tools are not an OS sandbox. Keep save configured to require approval. Do not edit files or use another route to change the person's data.
 
-Supported local changes are set_goal, set_limit, add_session, move_session, change_session, remove_session, restore_session, mark_done and unlink_plan_match. Sending plans to apps, corrections and other action types are not available through these tools yet.
+Supported local changes are set_goal, set_limit, add_session, move_session, change_session, remove_session, restore_session, mark_done, unlink_plan_match and set_overview. Sending plans to apps, corrections and other action types are not available through these tools yet.
 
 For a wrong automatic match, read `matched_record_ids_json` from the plan view. Propose `unlink_plan_match` with the item and that complete sorted list as `record_ids`. Explain that this prevents those workouts from completing this plan, survives replay, and leaves manual completion intact. If the match changes before Save, read and preview again.
 
 For a manual deletion task, show the exact app and remote ID from `coach_v1_deliveries`. TFS has not deleted it and no longer tracks it. The person deletes it in the app by hand, and TFS does not check.
 
 To bring a removed plan back, propose `restore_session` with an explicit `to` date and optional start_hint. Show that this creates a new copy in the previewed apps. Tell the person to delete the old copy in the app first, or the app holds two. Provider writes remain disabled until their separate verification.
+
+To change the Overview, read `coach_v1_overview`, then propose `set_overview` with the whole layout, or `layout: null` for the default. Pick the plate rows and cards from the catalogue in the tool schema only. Never invent a card or metric. When nothing fits, say so in chat.
