@@ -158,6 +158,26 @@ export interface components {
             value: string;
         };
         /**
+         * SleepData
+         * @description The last 7 nights, oldest first, with the saved sleep goal.
+         */
+        SleepData: {
+            /** Nights */
+            nights: components["schemas"]["SleepNight"][];
+            /** Target H */
+            target_h: number | null;
+        };
+        /**
+         * SleepNight
+         * @description One night: hours asleep on the day the person woke up, or null with no data.
+         */
+        SleepNight: {
+            /** Date */
+            date: string;
+            /** Hours */
+            hours: number | null;
+        };
+        /**
          * SleepOverviewCard
          * @description The sleep card with its numbers.
          */
@@ -169,8 +189,7 @@ export interface components {
             type: "sleep";
             /** Target H */
             target_h?: number;
-            /** Data */
-            data?: null;
+            data?: components["schemas"]["SleepData"] | null;
         };
         /**
          * TrendOverviewCard
