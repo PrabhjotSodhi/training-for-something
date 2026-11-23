@@ -4,6 +4,18 @@ Versions follow Python's PEP 440. Each release starts with "Breaking changes". E
 
 ## Unreleased
 
+## 0.1.0a2, 2026-11-24
+
+The second alpha of 0.1.0. It adds the dashboard and the morning scores. Expect bugs and breaking changes before 0.1.0.
+
+### Added
+
+- Dashboard: `tfs start` serves the Overview on this computer. It shows your goal plate, this week's sessions, the last 7 nights of sleep, and trend cards for resting heart rate, HRV, weight, VO2 max and training load against your own normal range. Your AI tool saves the layout, so changing it needs no rebuild.
+- Scores: readiness, and training load per day from strength, cardio and effort. Effort load reads workout effort from Health Auto Export.
+- Day facts for HRV, body fat and VO2 max.
+- Your AI tool can save a forecast for each goal, and goals take any type, such as a mountain climb.
+- A 60 second scheduler. The morning rules it will run come next (#211, #212).
+
 ### Breaking changes
 
 - The `preview_undo` and `undo` tools are gone. To take back a saved change, approve a new change that does the opposite, such as `remove_session` for an added session or `move_session` back to the old date.
@@ -12,6 +24,13 @@ Versions follow Python's PEP 440. Each release starts with "Breaking changes". E
 ### Changed
 
 - Install with `uv tool install <wheel URL>`, using the command on the release page. The wheel includes the built dashboard, so you need no Node and no git. It puts `tfs` on PATH with no virtual environment to activate. CI builds each release wheel and attaches it to the release. Contributors run `uv sync`, and `uv.lock` pins every version.
+
+### Known gaps
+
+- Sending plans to Hevy is built but turned off until it passes a check on a real account (#185).
+- Effort load does not yet read the Apple Health export (#208).
+- Not yet checked on real devices: a full Apple Health export (#26), Health Auto Export through Tailscale Serve with the phone locked (#24), a phone reaching the computer by name on Windows and Linux (#25), the plugin in Claude Code and Codex (#27), a yes in the AI tool's permission prompt saving a change (#28), and background AI runs on a Mac (#30).
+- The home Wi-Fi listener has no limit on total request time or requests in progress (#69).
 
 ## 0.1.0a1, 2026-11-19
 
