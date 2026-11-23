@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { components } from "./api";
 import { catalogue } from "./catalogue";
+import { Plate } from "./cards/Plate";
 
 type Overview = components["schemas"]["Overview"];
 
@@ -29,19 +30,22 @@ export function Overview() {
     );
 
   return (
-    <div className="cards">
-      {overview.cards.map((card, index) => {
-        const entry = catalogue[card.type];
-        if (!entry) {
-          console.warn(`Overview skips the unknown card type "${card.type}"`);
-          return null;
-        }
-        return (
-          <div key={index} className={entry.full ? "card full" : "card"}>
-            {entry.draw(card)}
-          </div>
-        );
-      })}
-    </div>
+    <>
+      {overview.plate && <Plate plate={overview.plate} />}
+      <div className="cards">
+        {overview.cards.map((card, index) => {
+          const entry = catalogue[card.type];
+          if (!entry) {
+            console.warn(`Overview skips the unknown card type "${card.type}"`);
+            return null;
+          }
+          return (
+            <div key={index} className={entry.full ? "card full" : "card"}>
+              {entry.draw(card)}
+            </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
