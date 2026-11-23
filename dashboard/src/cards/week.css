@@ -1,0 +1,140 @@
+.week-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.week-day {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-height: 170px;
+}
+
+.week-label {
+  margin-bottom: 6px;
+  font: var(--caption);
+  font-weight: 700;
+}
+
+.week-label span {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.week-day.now .week-label,
+.week-day.now .week-label span {
+  color: var(--ink);
+}
+
+.week-day.now .week-label::after {
+  content: "";
+  display: block;
+  height: 3px;
+  margin-top: 4px;
+  border-radius: 2px;
+  background: var(--ink);
+}
+
+.week-rest {
+  padding: 6px 2px;
+  color: var(--muted);
+  font: var(--caption);
+}
+
+.week-tile {
+  position: relative;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  border-radius: 10px;
+  font: var(--caption);
+}
+
+.week-tile.done {
+  background: var(--ink);
+  color: var(--card);
+}
+
+.week-tile.planned {
+  background: var(--active);
+  color: var(--muted);
+}
+
+.week-name,
+.week-amount {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.week-name {
+  font-weight: 700;
+}
+
+.week-hover {
+  display: none;
+  position: absolute;
+  z-index: 1;
+  top: 100%;
+  left: 0;
+  width: max-content;
+  min-width: 140px;
+  margin-top: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--ink);
+}
+
+.week-hover b,
+.week-hover span {
+  display: block;
+}
+
+.week-hover span {
+  color: var(--muted);
+}
+
+.week-tile:hover .week-hover,
+.week-tile:focus .week-hover {
+  display: block;
+}
+
+.week-day:nth-child(n + 6) .week-hover {
+  left: auto;
+  right: 0;
+}
+
+.week-totals {
+  display: flex;
+  gap: 32px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.week-total {
+  flex: 1;
+}
+
+.week-total-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.week-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--active);
+}
+
+.week-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--ink);
+}
