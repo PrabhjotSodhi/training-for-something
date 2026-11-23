@@ -13,6 +13,7 @@
 }
 
 .week-label {
+  position: relative;
   margin-bottom: 6px;
   font: var(--caption);
   font-weight: 700;
@@ -30,9 +31,9 @@
 
 .week-day.now .week-label::after {
   content: "";
-  display: block;
+  position: absolute;
+  inset: auto 0 -6px;
   height: 3px;
-  margin-top: 4px;
   border-radius: 2px;
   background: var(--ink);
 }
