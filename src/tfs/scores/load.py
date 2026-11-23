@@ -1,4 +1,4 @@
-"""Strength load: reps x weight over working sets per day, against the user's own normal (metrics spec)."""
+"""Training load per day, against the user's own normal: strength (reps x weight) and cardio (heart rate TRIMP). Metrics spec."""
 
 import json
 import sqlite3
@@ -6,13 +6,18 @@ import tomllib
 from collections import defaultdict
 from datetime import date, timedelta
 from importlib import resources
+from math import exp
 from statistics import mean, median
 
 SCORE = "load_strength"
-_COEFFICIENTS = tomllib.loads(
+CARDIO_SCORE = "load_cardio"
+_ALL_COEFFICIENTS = tomllib.loads(
     resources.files("tfs.scores").joinpath("coefficients.toml").read_text("utf-8")
-)["load_strength"]
+)
+_COEFFICIENTS = _ALL_COEFFICIENTS["load_strength"]
+_CARDIO = _ALL_COEFFICIENTS["load_cardio"]
 FORMULA_VERSION = _COEFFICIENTS["formula_version"]
+CARDIO_FORMULA_VERSION = _CARDIO["formula_version"]
 
 # Each workout counts once: its parts come from the member with the most parts, as in coach_v1_workout_parts.
 _WORKING_SETS = """
@@ -58,5 +63,93 @@ def rebuild(conn: sqlite3.Connection) -> int:
         conn.execute(
             "INSERT INTO scores VALUES (?, ?, ?, NULL, NULL, ?, ?)",
             (day.isoformat(), SCORE, round(loads[day]), json.dumps(inputs), FORMULA_VERSION),
+        )
+    return len(loads)
+
+
+def rebuild_cardio(conn: sqlite3.Connection) -> int:
+    """Recompute every cardio load row and return how many rows that wrote.
+
+    Each workout group counts once, from its chosen duration and heart rates. Resting is the
+    median resting heart rate of the previous days, not today. Max is the highest workout max
+    heart rate up to and including today. A day without both has no row. The caller owns the
+    transaction.
+    """
+    workouts: dict[date, list[tuple]] = defaultdict(list)
+    for local_date, duration_s, avg_hr, max_hr in conn.execute(
+        "SELECT local_date, json_extract(chosen_json, '$.duration_s.value'),"
+        " json_extract(chosen_json, '$.avg_hr.value'), json_extract(chosen_json, '$.max_hr.value')"
+        " FROM session_groups"
+    ):
+        workouts[date.fromisoformat(local_date)].append((duration_s, avg_hr, max_hr))
+    resting = {
+        date.fromisoformat(local_date): value
+        for local_date, value in conn.execute(
+            "SELECT local_date, value FROM day_facts WHERE metric = 'resting_hr'"
+        )
+    }
+    max_by_day = {
+        day: max((max_hr for _, _, max_hr in found if max_hr), default=None)
+        for day, found in workouts.items()
+    }
+    loads: dict[date, float] = {}
+    rows: dict[date, dict] = {}
+    for day in sorted(workouts):
+        with_heart_rate = [(d, a) for d, a, _ in workouts[day] if d and a]
+        if not with_heart_rate:
+            continue
+        resting_values = [
+            resting[past]
+            for offset in range(1, _CARDIO["resting_days"] + 1)
+            if (past := day - timedelta(days=offset)) in resting
+        ]
+        max_values = [
+            found
+            for offset in range(_CARDIO["max_days"])
+            if (found := max_by_day.get(day - timedelta(days=offset)))
+        ]
+        if not resting_values or not max_values:
+            continue
+        resting_hr, max_hr = median(resting_values), max(max_values)
+        if max_hr <= resting_hr:
+            continue
+        total = 0.0
+        for duration_s, avg_hr in with_heart_rate:
+            reserve = min(1, max(0, (avg_hr - resting_hr) / (max_hr - resting_hr)))
+            total += (
+                duration_s
+                / 60
+                * reserve
+                * _CARDIO["trimp_factor"]
+                * exp(_CARDIO["trimp_exponent"] * reserve)
+            )
+        loads[day] = total
+        rows[day] = {
+            "workouts": len(with_heart_rate),
+            "resting_hr": resting_hr,
+            "max_hr": max_hr,
+        }
+        if without := len(workouts[day]) - len(with_heart_rate):
+            rows[day]["note"] = f"{without} workout{'s' * (without > 1)} without heart rate"
+    conn.execute("DELETE FROM scores WHERE score = ?", (CARDIO_SCORE,))
+    for day in sorted(loads):
+        previous = [
+            loads[past]
+            for offset in range(1, _CARDIO["baseline_days"] + 1)
+            if (past := day - timedelta(days=offset)) in loads
+        ]
+        rows[day] |= {
+            "normal": round(median(previous)) if previous else None,
+            "normal_days": len(previous),
+        }
+        conn.execute(
+            "INSERT INTO scores VALUES (?, ?, ?, NULL, NULL, ?, ?)",
+            (
+                day.isoformat(),
+                CARDIO_SCORE,
+                round(loads[day]),
+                json.dumps(rows[day]),
+                CARDIO_FORMULA_VERSION,
+            ),
         )
     return len(loads)
