@@ -72,6 +72,7 @@ training-for-something/
     web/
       server.py               HTTP server on 127.0.0.1, request checks
       push.py                 the push endpoint for phone apps
+      catalogue.py            the cards, trend metrics and plate rows the Overview can show
       views/                  one file per screen
       templates/
       static/
@@ -100,7 +101,7 @@ Module names are short and lowercase, as PEP 8 asks. The folder carries the cont
 
 ## 2. Database tables
 
-Each milestone adds one numbered migration for the tables it needs. `0001_init.sql` creates the "Your data in" tables: `files`, `sources`, `source_records`, `source_deletes`, `session_parts`, `session_groups`, `session_group_members`, `day_facts` and `rebuild_dates`. `0002_plans.sql` adds `journal`, `goals`, `limits` and `plan_items`, and lets `session_parts` belong to a plan item. `0008_scores.sql` adds `scores`, `0009_coach_forecasts.sql` adds `coach_forecasts`, and `0010_rules.sql` adds `rules` and `rule_runs`. A merged migration is never edited. Later changes are new numbered files.
+Each milestone adds one numbered migration for the tables it needs. `0001_init.sql` creates the "Your data in" tables: `files`, `sources`, `source_records`, `source_deletes`, `session_parts`, `session_groups`, `session_group_members`, `day_facts` and `rebuild_dates`. `0002_plans.sql` adds `journal`, `goals`, `limits` and `plan_items`, and lets `session_parts` belong to a plan item. `0008_scores.sql` adds `scores`, `0009_coach_forecasts.sql` adds `coach_forecasts`, `0010_rules.sql` adds `rules` and `rule_runs`, and `0011_overview_layout.sql` adds `overview_layout`. A merged migration is never edited. Later changes are new numbered files.
 
 | Table | Kind | Holds |
 |---|---|---|
@@ -115,6 +116,7 @@ Each milestone adds one numbered migration for the tables it needs. `0001_init.s
 | `day_facts` | Derived | One row per day, metric and chosen source: value, coverage, formula version |
 | `scores` | Derived | Readiness, load, recovery and forecasts per day, with inputs, range and formula version |
 | `coach_forecasts` | Yours | One coach estimate per goal: low, high, unit, method, sources and date |
+| `overview_layout` | Yours | At most one row: the saved Overview layout as JSON. No row means the default layout. |
 | `rules`, `rule_runs` | Work | Scheduler rules with their next due time and hourly cap, and one row per run they started |
 | `journal` | Yours | Append-only. One row per saved proposal or user action: actions JSON, who approved, time, format version |
 | `goals`, `limits` | Yours | Current goals and limits, kept in step with the journal |

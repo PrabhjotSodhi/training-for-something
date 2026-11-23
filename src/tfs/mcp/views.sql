@@ -116,6 +116,9 @@ CREATE TEMP VIEW coach_v1_forecasts AS
 SELECT goal_id, low, high, unit, method, sources_json, local_date,
   'Coach estimate' AS label FROM main.coach_forecasts;
 
+CREATE TEMP VIEW coach_v1_overview AS
+SELECT layout_json FROM main.overview_layout;
+
 CREATE TEMP VIEW coach_v1_limits AS
 SELECT id AS limit_id, kind, values_json FROM main.limits;
 

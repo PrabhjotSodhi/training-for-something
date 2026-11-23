@@ -165,6 +165,10 @@ def prepare(conn: sqlite3.Connection, proposal: dict, today: date) -> tuple[dict
             after.setdefault("forecasts", {})[item] = _forecast(
                 conn, action, today, proposal["sources"], after["goals"]
             )
+        elif name == "set_overview":
+            row = conn.execute("SELECT layout_json FROM overview_layout").fetchone()
+            before["overview"] = row and json.loads(row["layout_json"])
+            after["overview"] = action["layout"]
         elif name == "unlink_plan_match":
             _unlink(conn, action, before, after)
         else:

@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, WithJsonSchema, model_validator
 
 from tfs.connectors.core.contract import FAMILIES
+from tfs.web.catalogue import PLATE_ROWS, TREND_METRICS
 
 
 def _iso_day(value: str) -> str:
@@ -160,6 +161,49 @@ class SetForecast(_Action):
         return self
 
 
+class Plate(_Model):
+    """The goal plate at the top of the Overview."""
+
+    goal_id: Text
+    colour: Literal["orange", "blue", "green", "purple"]
+    rows: list[Literal[*PLATE_ROWS]]
+
+
+class WeekCard(_Model):
+    """The week card."""
+
+    type: Literal["week"]
+
+
+class SleepCard(_Model):
+    """The sleep card, with the person's own sleep goal in hours."""
+
+    type: Literal["sleep"]
+    target_h: Minutes = None
+
+
+class TrendCard(_Model):
+    """A trend card for one metric."""
+
+    type: Literal["trend"]
+    metric: Literal[*TREND_METRICS]
+    first: Literal["cardio", "strength", "effort"] = None
+
+
+class Layout(_Model):
+    """The plate and the cards below it."""
+
+    plate: Plate
+    cards: list[Annotated[WeekCard | SleepCard | TrendCard, Field(discriminator="type")]]
+
+
+class SetOverview(_Action):
+    """Save the Overview layout, or null to go back to the default."""
+
+    action: Literal["set_overview"]
+    layout: Layout | None
+
+
 class Injury(_Model):
     """An injury in the user's own words."""
 
@@ -216,6 +260,7 @@ Action = Annotated[
     | UnlinkPlanMatch
     | SetGoal
     | SetForecast
+    | SetOverview
     | SetLimit,
     Field(discriminator="action"),
 ]

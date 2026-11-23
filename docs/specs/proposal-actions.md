@@ -37,6 +37,7 @@ A proposal holds one or more actions. Save applies all of them in one transactio
 | `unlink_plan_match` | Rejects one workout match for a plan item | Exact current source-record IDs | No |
 | `mark_done` | "I did this" for a plan item | Item exists | No |
 | `set_forecast` | A coach estimate for a goal with no code forecast: a range, the method, sources and date | Goal exists and has no code forecast | No |
+| `set_overview` | The Overview layout: the plate rows and the cards below it, or `null` for the default | Every card type, metric and plate row is in `web/catalogue.py` | No |
 
 Building a whole plan is a proposal made of many `add_session` actions and a `set_goal`.
 
@@ -72,7 +73,7 @@ does not make a Save tool available.
 ## Local session proposal API
 
 The local application API currently supports `set_goal`, `set_limit`,
-`add_session`, `move_session`, `change_session`, `remove_session`, `restore_session`, `mark_done`, `unlink_plan_match` and `set_forecast`. Other actions are refused
+`add_session`, `move_session`, `change_session`, `remove_session`, `restore_session`, `mark_done`, `unlink_plan_match`, `set_forecast` and `set_overview`. Other actions are refused
 until their handlers arrive. The MCP tools below expose this same API.
 
 Every proposal supplies `plan_version`, `why`, `sources` and a non-empty
