@@ -11,6 +11,7 @@ PLATE_ROWS = (
     "load_strength",
     "load_effort",
 )
+SPORT_UNITS = {"run": "km", "ride": "km", "swim": "m", "strength": "sets"}
 LOAD_SCORES = ("load_cardio", "load_strength", "load_effort")
 DEFAULT_CARDS = (
     {"type": "week"},

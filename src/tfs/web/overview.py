@@ -5,14 +5,14 @@ from contextlib import closing
 from datetime import date, timedelta
 from math import ceil
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from tfs.mcp.tool_access import open_reader, query
 from tfs.proposals.models import Plate, SleepCard, TrendCard, WeekCard
-from tfs.web.catalogue import DEFAULT_CARDS, LOAD_SCORES, PLATE_ROWS
+from tfs.web.catalogue import DEFAULT_CARDS, LOAD_SCORES, PLATE_ROWS, SPORT_UNITS
 
 WINDOW_DAYS = 28
 
@@ -55,10 +55,45 @@ class PlateOverview(Plate):
     data: PlateData | None = None
 
 
+class WeekSession(BaseModel):
+    """One tile: a planned or done session in its sport's unit."""
+
+    name: str
+    sport: str
+    minutes: float | None
+    amount: float
+    unit: str
+    state: Literal["done", "planned"]
+
+
+class WeekDay(BaseModel):
+    """One day of the week with its sessions."""
+
+    date: str
+    sessions: list[WeekSession]
+
+
+class WeekTotal(BaseModel):
+    """What is done of what is planned for one sport."""
+
+    sport: str
+    unit: str
+    done: float
+    planned: float
+
+
+class WeekData(BaseModel):
+    """Monday to Sunday with the totals per sport."""
+
+    today: str
+    days: list[WeekDay]
+    totals: list[WeekTotal]
+
+
 class WeekOverviewCard(WeekCard):
     """The week card with its numbers."""
 
-    data: None = None
+    data: WeekData | None = None
 
 
 class SleepOverviewCard(SleepCard):
@@ -188,6 +223,102 @@ def _plate_data(connection, plate: dict, today: date) -> PlateData | None:
     )
 
 
+def _amount(sport: str, km: float | None, sets: int, minutes: float | None) -> tuple[float, str]:
+    unit = SPORT_UNITS.get(sport)
+    value = {"km": km, "m": (km or 0) * 1000, "sets": sets}.get(unit)
+    if value:
+        return round(value, 2), unit
+    return round(minutes or 0, 1), "min"
+
+
+def _week_data(connection, today: date) -> WeekData:
+    monday = today - timedelta(days=today.weekday())
+    days = [(monday + timedelta(days=offset)).isoformat() for offset in range(7)]
+    plan_sums = {
+        row[0]: row[1:]
+        for row in _rows(
+            connection,
+            "SELECT plan_item_id, sum(part_kind = 'set'), sum(distance_km), sum(duration_min)"
+            " FROM coach_v1_plan_parts GROUP BY plan_item_id",
+        )
+    }
+    set_counts = dict(
+        _rows(
+            connection,
+            "SELECT workout_id, sum(part_kind = 'set') FROM coach_v1_workout_parts"
+            " GROUP BY workout_id",
+        )
+    )
+    workouts = {
+        row[0]: row[1:]
+        for row in _rows(
+            connection,
+            "SELECT workout_id, local_date, family, label, duration_min, distance_km"
+            " FROM coach_v1_workouts",
+        )
+        if row[1] in days
+    }
+    sessions: dict[str, list[WeekSession]] = {day: [] for day in days}
+    totals: dict[tuple[str, str], list[float]] = {}
+
+    def add(day: str, name: str, sport: str, minutes, done, planned) -> None:
+        amount, unit = done or planned
+        sessions[day].append(
+            WeekSession(
+                name=name,
+                sport=sport,
+                minutes=minutes,
+                amount=amount,
+                unit=unit,
+                state="done" if done else "planned",
+            )
+        )
+        total = totals.setdefault((sport, unit), [0, 0])
+        total[0] += amount if done else 0
+        total[1] += planned[0] if planned and planned[1] == unit else 0
+
+    def workout_amount(workout_id: str, sport: str) -> tuple[tuple[float, str], float | None]:
+        minutes, km = workouts[workout_id][3:]
+        return _amount(sport, km, set_counts.get(workout_id) or 0, minutes), minutes
+
+    matched = set()
+    for item_id, day, sport, label, status, workout_id in _rows(
+        connection,
+        "SELECT plan_item_id, local_date, family, label, status, matched_workout_id"
+        " FROM coach_v1_plan_items ORDER BY local_date, plan_item_id",
+    ):
+        if day not in days or status in ("removed", "replaced", "skipped"):
+            continue
+        sets, km, minutes = plan_sums.get(item_id, (0, None, None))
+        planned = _amount(sport, km, sets or 0, minutes)
+        if workout_id in workouts:
+            matched.add(workout_id)
+            done, minutes = workout_amount(workout_id, sport)
+            add(day, label, sport, minutes, done, planned)
+        else:
+            add(day, label, sport, minutes, planned if status == "done" else None, planned)
+    for workout_id, (day, family, label, *_) in workouts.items():
+        if workout_id not in matched:
+            sport = family or "other"
+            done, minutes = workout_amount(workout_id, sport)
+            add(day, label or sport, sport, minutes, done, None)
+    return WeekData(
+        today=today.isoformat(),
+        days=[WeekDay(date=day, sessions=sessions[day]) for day in days],
+        totals=[
+            WeekTotal(sport=sport, unit=unit, done=round(done, 2), planned=round(planned, 2))
+            for (sport, unit), (done, planned) in sorted(totals.items())
+        ],
+    )
+
+
+def _cards(connection, cards: list[dict], today: date) -> list[dict]:
+    return [
+        {**card, "data": _week_data(connection, today) if card["type"] == "week" else None}
+        for card in cards
+    ]
+
+
 def read_overview(db_path: Path, today: date) -> Overview:
     """Return the saved layout, or the default one built from the last 28 days of data."""
     since = (today - timedelta(days=WINDOW_DAYS - 1)).isoformat()
@@ -199,7 +330,7 @@ def read_overview(db_path: Path, today: date) -> Overview:
             return Overview.model_validate(
                 {
                     "plate": plate,
-                    "cards": [{**card, "data": None} for card in layout["cards"]],
+                    "cards": _cards(connection, layout["cards"], today),
                 }
             )
         goals = _rows(
@@ -221,5 +352,5 @@ def read_overview(db_path: Path, today: date) -> Overview:
                 "rows": [r for r in PLATE_ROWS if r in have],
             }
             plate["data"] = _plate_data(connection, plate, today)
-    cards = [{**card, "data": None} for card in DEFAULT_CARDS if _has_data(card, have)]
+        cards = _cards(connection, [card for card in DEFAULT_CARDS if _has_data(card, have)], today)
     return Overview.model_validate({"plate": plate, "cards": cards})

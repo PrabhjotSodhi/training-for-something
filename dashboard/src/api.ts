@@ -209,6 +209,28 @@ export interface components {
             ctx?: Record<string, never>;
         };
         /**
+         * WeekData
+         * @description Monday to Sunday with the totals per sport.
+         */
+        WeekData: {
+            /** Today */
+            today: string;
+            /** Days */
+            days: components["schemas"]["WeekDay"][];
+            /** Totals */
+            totals: components["schemas"]["WeekTotal"][];
+        };
+        /**
+         * WeekDay
+         * @description One day of the week with its sessions.
+         */
+        WeekDay: {
+            /** Date */
+            date: string;
+            /** Sessions */
+            sessions: components["schemas"]["WeekSession"][];
+        };
+        /**
          * WeekOverviewCard
          * @description The week card with its numbers.
          */
@@ -218,8 +240,42 @@ export interface components {
              * @enum {string}
              */
             type: "week";
-            /** Data */
-            data?: null;
+            data?: components["schemas"]["WeekData"] | null;
+        };
+        /**
+         * WeekSession
+         * @description One tile: a planned or done session in its sport's unit.
+         */
+        WeekSession: {
+            /** Name */
+            name: string;
+            /** Sport */
+            sport: string;
+            /** Minutes */
+            minutes: number | null;
+            /** Amount */
+            amount: number;
+            /** Unit */
+            unit: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "done" | "planned";
+        };
+        /**
+         * WeekTotal
+         * @description What is done of what is planned for one sport.
+         */
+        WeekTotal: {
+            /** Sport */
+            sport: string;
+            /** Unit */
+            unit: string;
+            /** Done */
+            done: number;
+            /** Planned */
+            planned: number;
         };
     };
     responses: never;

@@ -53,3 +53,12 @@ Plus Jakarta Sans for everything, with tabular figures on numbers. The font file
 5. The forecast number is 96 px, 700 weight. All other text uses the type scale.
 6. No forecast shows "No forecast yet". A row with no value today shows "No data". No plan items hides "Week N of M".
 7. Week 1 is the week the plan starts. M is the weeks from the plan start to the goal date, rounded up.
+
+## This week card
+
+1. The card spans both columns. It shows Monday to Sunday of the current week, one column per day, today's column marked.
+2. Each session is one tile. Its height follows its time. The tile shows the session name and its amount with the sport's unit: km for run and ride, m for swim, sets for strength. Time shows only in the hover, which also opens on keyboard focus.
+3. A sport with no unit, or a session with no distance or sets, shows minutes.
+4. A done session counts its own distance, or every set it holds. A workout matched to a plan item shows once, on that item's tile. A workout with no plan item is its own done tile.
+5. A planned session in the past stays planned.
+6. A day with no session says "Rest". The totals row shows done of planned per sport, each with a bar.
