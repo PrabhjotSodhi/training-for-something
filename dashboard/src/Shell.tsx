@@ -1,3 +1,5 @@
+import { Overview } from "./Overview";
+
 export function Shell() {
   return (
     <div className="shell">
@@ -7,7 +9,9 @@ export function Shell() {
           Overview
         </a>
       </nav>
-      <main className="page" />
+      <main className="page">
+        <Overview />
+      </main>
     </div>
   );
 }

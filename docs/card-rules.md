@@ -34,3 +34,12 @@ Plus Jakarta Sans for everything, with tabular figures on numbers. The font file
 
 1. Two surfaces only: the page and the card.
 2. No shadows on any surface.
+3. A card has the card fill (`#ffffff` in light, `#1c1c1e` in dark), a 1 px line edge, a 20 px radius and 24 px padding.
+
+## Grid
+
+1. Cards sit in two columns with a 12 px gap. The week card spans both columns.
+2. Cards in one row share one height.
+3. While the page loads, empty cards keep their size so nothing jumps.
+4. A failed load shows one muted line that says the page cannot reach TFS and why.
+5. A card type the page does not know is skipped and logged in the console.
