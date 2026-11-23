@@ -8,6 +8,10 @@ dist/
 venv/
 .hypothesis/
 
+# Dashboard
+dashboard/node_modules/
+src/tfs/web/dashboard/
+
 # Editors and OS
 .vscode/
 .idea/

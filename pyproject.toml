@@ -24,7 +24,7 @@ version = { attr = "tfs.__version__" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-tfs = ["**/*.sql", "**/*.json", "**/*.toml"]
+tfs = ["**/*.sql", "**/*.json", "**/*.toml", "web/dashboard/**/*"]
 
 [dependency-groups]
 dev = ["hypothesis==6.112.0", "ruff==0.6.9"]
