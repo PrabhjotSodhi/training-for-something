@@ -93,3 +93,9 @@ writing, while the read views show km and minutes.
 ## Contributing
 
 Work is planned as GitHub issues, grouped by milestone. Read [AGENTS.md](AGENTS.md) before you open a pull request.
+
+## License
+
+TFS is free software under the [GNU Affero General Public License v3.0 or later](LICENSE). You may use, change and share it. If you share a changed version, or run one as a service for others, you must publish your source code under the same license.
+
+The license covers the code only. It gives no right to use the Training For Something name or logo.
