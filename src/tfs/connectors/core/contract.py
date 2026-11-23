@@ -71,7 +71,15 @@ METRICS = {
     "hrv_sdnn": Metric("ms", "mean", True),
 }
 
-SESSION_VALUES = ("duration_s", "distance_m", "active_energy_kcal", "avg_hr", "max_hr")
+SESSION_VALUES = (
+    "duration_s",
+    "distance_m",
+    "active_energy_kcal",
+    "avg_hr",
+    "max_hr",
+    "effort_rating",
+    "effort_estimate",
+)
 
 TIMED_KINDS = ("session", "measurement", "event", "document")
 KINDS = (*TIMED_KINDS, "deleted")
@@ -101,6 +109,7 @@ _UNITS = {
     "bpm": ("bpm", lambda value: value),
     "count": ("count", lambda value: value),
     "ms": ("ms", lambda value: value),
+    "appleEffortScore": ("effort", lambda value: value),
     "%": ("%", lambda value: value),
     "mL/min·kg": ("mL/kg/min", lambda value: value),
     "mL/(kg·min)": ("mL/kg/min", lambda value: value),

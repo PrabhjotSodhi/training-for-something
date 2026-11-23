@@ -23,6 +23,10 @@ direction = 1
 formula_version = "load-strength-1"
 baseline_days = 28
 
+[load_effort]
+formula_version = "load-effort-1"
+baseline_days = 28
+
 [load_cardio]
 formula_version = "load-cardio-1"
 baseline_days = 28

@@ -1,3 +1,6 @@
+import json
+import shutil
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -46,6 +49,37 @@ class HealthAutoExportWorkoutsTest(unittest.TestCase):
         self.assertEqual(record["family"], "strength")
         self.assertEqual(record["values"]["avg_hr"], 118.0)
         self.assertEqual(record["values"]["max_hr"], 141.0)
+
+    def test_effort_rating_and_estimate_are_read_when_present(self) -> None:
+        # GIVEN a rated workout in the fixture and one that only has an estimate
+        estimated = Path(tempfile.mkdtemp()) / "estimated.json"
+        self.addCleanup(shutil.rmtree, estimated.parent)
+        estimated.write_text(
+            json.dumps(
+                {
+                    "data": {
+                        "workouts": [
+                            {
+                                "id": "e1",
+                                "start": "2026-10-22 06:00:00 +1300",
+                                "end": "2026-10-22 06:30:00 +1300",
+                                "estimatedEffortScore": {"qty": 6, "units": "appleEffortScore"},
+                            }
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        # WHEN both are read
+        _, records = read_records(self, read, estimated, "rest_json")
+
+        # THEN the rating and the estimate land in their own values
+        rated = self.sessions["A1B2C3D4-0000-4000-8000-000000000002"]["values"]
+        self.assertEqual(rated["effort_rating"], 7.0)
+        self.assertNotIn("effort_estimate", rated)
+        self.assertEqual(records[0]["values"], {"effort_estimate": 6.0})
 
     def test_sport_with_no_family_keeps_its_label(self) -> None:
         record = self.sessions["A1B2C3D4-0000-4000-8000-000000000003"]
