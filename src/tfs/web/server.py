@@ -5,13 +5,15 @@ import io
 import logging
 import socket
 import threading
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from http import HTTPStatus
+from pathlib import Path
 from typing import BinaryIO
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import ClientDisconnect
@@ -20,6 +22,9 @@ PushHandler = Callable[[str, BinaryIO, Mapping[str, str]], tuple[int, dict]]
 
 # A refused push may leave body bytes unread, so no reply keeps the connection open.
 CLOSE = {"Connection": "close"}
+
+DASHBOARD_DIR = Path(__file__).parent / "dashboard"
+BUILD_HINT = "The dashboard is not built. Run: npm --prefix dashboard install && npm --prefix dashboard run build"
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +78,24 @@ def _too_large(max_body: int) -> HTTPException:
     return HTTPException(413, f"The body is larger than the {max_body} bytes this server accepts.")
 
 
+def _add_dashboard(app: FastAPI, check_host: Callable[[Request], Awaitable[None]]) -> None:
+    @app.get("/")
+    async def dashboard() -> Response:
+        if not (DASHBOARD_DIR / "index.html").is_file():
+            return PlainTextResponse(BUILD_HINT)
+        return FileResponse(DASHBOARD_DIR / "index.html")
+
+    if (DASHBOARD_DIR / "assets").is_dir():
+
+        class GuardedFiles(StaticFiles):
+            # A mounted app skips the app's dependencies, so the Host check runs here.
+            async def get_response(self, path, scope):
+                await check_host(Request(scope))
+                return await super().get_response(path, scope)
+
+        app.mount("/assets", GuardedFiles(directory=DASHBOARD_DIR / "assets"))
+
+
 def _make_app(
     push_handler: PushHandler, push_only: bool, max_body: int, read_timeout_s: float
 ) -> FastAPI:
@@ -96,6 +119,8 @@ def _make_app(
         @app.get("/ping")
         async def ping() -> Response:
             return PlainTextResponse("tfs")
+
+        _add_dashboard(app, check_host)
 
     @app.post("/push/{name}")
     async def push(name: str, request: Request) -> Response:

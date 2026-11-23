@@ -12,7 +12,8 @@ training-for-something/
   README.md
   CHANGELOG.md
   pyproject.toml              package metadata, the `tfs` command
-  docs/                       HLD, specs, this map
+  docs/                       HLD, specs, card rules, this map
+  dashboard/                  the dashboard source: Vite, React and TypeScript, built into src/tfs/web/dashboard/
   src/tfs/
     __main__.py               `python -m tfs` runs the CLI
     engine.py                 the background process: starts the web server, scheduler and job worker
@@ -73,6 +74,7 @@ training-for-something/
       server.py               HTTP server on 127.0.0.1, request checks
       push.py                 the push endpoint for phone apps
       catalogue.py            the cards, trend metrics and plate rows the Overview can show
+      dashboard/              the built dashboard, served at / on the screen listener, not committed
       views/                  one file per screen
       templates/
       static/

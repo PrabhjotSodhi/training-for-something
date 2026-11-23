@@ -2,8 +2,11 @@ import http.client
 import json
 import socket
 import struct
+import tempfile
 import threading
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from tfs import config
 from tfs.web.server import make_server
@@ -69,13 +72,28 @@ class RoutesTest(ServerTestCase):
         # GIVEN a running server
         self.start()
         # WHEN a client asks for a path that is not /ping or /push/<name>
-        paths = ("GET", "/"), ("GET", "/api/overview"), ("GET", "/docs"), ("GET", "/openapi.json")
+        paths = ("GET", "/api/overview"), ("GET", "/docs"), ("GET", "/openapi.json")
         pushes = ("POST", "/other"), ("POST", "/push/"), ("POST", "/push/a/b")
         # THEN every one gets 404 and no push reaches the handler
         for method, path in (*paths, *pushes):
             with self.subTest(path=path):
                 self.assertEqual(self.request(method, path)[0], 404)
         self.assertEqual(self.calls, [])
+
+    def test_a_missing_dashboard_folder_gives_the_build_line_and_pushes_still_work(self):
+        # GIVEN a server whose dashboard folder was never built
+        with (
+            tempfile.TemporaryDirectory() as empty,
+            mock.patch("tfs.web.server.DASHBOARD_DIR", Path(empty) / "dashboard"),
+        ):
+            self.start()
+            # WHEN a client asks for /
+            status, body = self.request("GET", "/")
+        # THEN it gets a line that says how to build it
+        self.assertEqual(status, 200)
+        self.assertIn(b"npm --prefix dashboard run build", body)
+        # AND a push still works
+        self.assertEqual(self.request("POST", "/push/x", b"hi")[0], 200)
 
     def test_a_push_reaches_the_handler_with_its_name_body_and_headers(self):
         # GIVEN a handler that records what it gets
