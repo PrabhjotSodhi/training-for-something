@@ -18,11 +18,13 @@ Read more in the [high level design](docs/HLD.md), the [code map](docs/code-map.
 
 ## Ask about your data
 
-You need [uv](https://docs.astral.sh/uv/getting-started/installation/) and Claude Code or Codex on the same computer. uv brings Python 3.12 or later if you do not have it. Until the installer arrives in the "Safe to live with" milestone, install TFS from this repository:
+You need [uv](https://docs.astral.sh/uv/getting-started/installation/) and Claude Code or Codex on the same computer. uv brings Python 3.12 or later if you do not have it.
 
 ```sh
-uv tool install git+https://github.com/PrabhjotSodhi/training-for-something
+uv tool install training-for-something --prerelease allow
 ```
+
+The package includes the dashboard, so you need no Node and no git. Releases before 0.1.0 are alphas, and uv installs those only with `--prerelease allow`. From 0.1.0 on, drop the flag.
 
 Both clients need `tfs` on PATH. Open a new terminal and check:
 
@@ -30,7 +32,7 @@ Both clients need `tfs` on PATH. Open a new terminal and check:
 tfs --version
 ```
 
-If the terminal cannot find `tfs`, run `uv tool update-shell` and open a new terminal. Get a newer version with `uv tool upgrade training-for-something`. Import data first, for example with `tfs import /path/to/export.zip` for an Apple Health export. The tool reports a missing database until you import data or start TFS.
+If the terminal cannot find `tfs`, run `uv tool update-shell` and open a new terminal. Update with `uv tool upgrade training-for-something`. Import data first, for example with `tfs import /path/to/export.zip` for an Apple Health export. The tool reports a missing database until you import data or start TFS.
 
 ### Claude Code
 
@@ -54,6 +56,15 @@ codex mcp add tfs -- tfs mcp
 ```
 
 Restart Codex, select the TFS skill with `$tfs`, and ask about your data. If the skill is missing, check the skills folder for your Codex version. If the server cannot start, check that `tfs` is on PATH in the terminal that launches Codex.
+
+### From source
+
+Contributors clone the repository, then run:
+
+```sh
+npm --prefix dashboard install && npm --prefix dashboard run build && uv tool install --editable .
+```
+
 
 ## Plan changes in chat
 
