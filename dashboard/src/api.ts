@@ -86,15 +86,56 @@ export interface components {
          * @description The plate and the cards to draw.
          */
         Overview: {
-            plate: components["schemas"]["Plate"] | null;
+            plate: components["schemas"]["PlateOverview"] | null;
             /** Cards */
             cards: (components["schemas"]["WeekOverviewCard"] | components["schemas"]["SleepOverviewCard"] | components["schemas"]["TrendOverviewCard"])[];
         };
         /**
-         * Plate
-         * @description The goal plate at the top of the Overview.
+         * PlateData
+         * @description What the plate shows.
          */
-        Plate: {
+        PlateData: {
+            /** Goal */
+            goal: string;
+            /** Date */
+            date: string;
+            /** Days To Go */
+            days_to_go: number;
+            /** Week */
+            week: number | null;
+            /** Weeks */
+            weeks: number | null;
+            forecast: components["schemas"]["PlateForecast"] | null;
+            /** Today */
+            today: components["schemas"]["PlateRow"][];
+        };
+        /**
+         * PlateForecast
+         * @description A forecast range as text, placed on a 0 to 100 scale with the target if there is one.
+         */
+        PlateForecast: {
+            /** Label */
+            label: string;
+            /** Low */
+            low: string;
+            /** High */
+            high: string;
+            /** Unit */
+            unit: string | null;
+            /** Start */
+            start: number;
+            /** End */
+            end: number;
+            /** Target */
+            target: number | null;
+            /** Target Text */
+            target_text: string | null;
+        };
+        /**
+         * PlateOverview
+         * @description The plate with its numbers.
+         */
+        PlateOverview: {
             /** Goal Id */
             goal_id: string;
             /**
@@ -104,6 +145,17 @@ export interface components {
             colour: "orange" | "blue" | "green" | "purple";
             /** Rows */
             rows: ("readiness" | "sleep_asleep" | "resting_hr" | "hrv_sdnn" | "load_cardio" | "load_strength" | "load_effort")[];
+            data?: components["schemas"]["PlateData"] | null;
+        };
+        /**
+         * PlateRow
+         * @description One Today row: the row name and its value for today.
+         */
+        PlateRow: {
+            /** Name */
+            name: string;
+            /** Value */
+            value: string;
         };
         /**
          * SleepOverviewCard
