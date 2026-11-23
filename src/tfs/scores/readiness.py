@@ -15,24 +15,35 @@ _COEFFICIENTS = tomllib.loads(
 FORMULA_VERSION = _COEFFICIENTS["formula_version"]
 
 
-def _robust_z(
-    today: tuple[float, str], history: dict[date, tuple[float, str]], day: date
-) -> tuple[float | None, dict]:
-    """Return today's z score against the same source's previous days, or None with the reason."""
-    value, source = today
+def normal_band(
+    source: str, history: dict[date, tuple[float, str]], day: date
+) -> tuple[float, float, int] | str:
+    """Return the median, the spread and the days used from the same source's previous days, or the reason there is no band."""
     window = [
         day - timedelta(days=offset) for offset in range(1, _COEFFICIENTS["baseline_days"] + 1)
     ]
     baseline = [history[past][0] for past in window if history.get(past, (0, None))[1] == source]
     needed = _COEFFICIENTS["min_baseline_days"]
     if len(baseline) < needed:
-        return None, {"reason": f"needs {needed} days, has {len(baseline)}"}
+        return f"needs {needed} days, has {len(baseline)}"
     normal = median(baseline)
     spread = _MAD_TO_SIGMA * median(abs(other - normal) for other in baseline)
     if spread == 0:
-        return None, {"reason": "baseline never varies"}
+        return "baseline never varies"
+    return normal, spread, len(baseline)
+
+
+def _robust_z(
+    today: tuple[float, str], history: dict[date, tuple[float, str]], day: date
+) -> tuple[float | None, dict]:
+    """Return today's z score against the same source's previous days, or None with the reason."""
+    value, source = today
+    band = normal_band(source, history, day)
+    if isinstance(band, str):
+        return None, {"reason": band}
+    normal, spread, days = band
     z_score = (value - normal) / spread
-    return z_score, {"z": round(z_score, 2), "baseline_days": len(baseline), "source": source}
+    return z_score, {"z": round(z_score, 2), "baseline_days": days, "source": source}
 
 
 def _score_day(

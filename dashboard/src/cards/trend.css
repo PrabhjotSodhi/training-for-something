@@ -1,0 +1,160 @@
+.trend {
+  --band: rgb(120 120 128 / 0.12);
+  --goal: #ff8a00;
+}
+
+.trend[data-colour="blue"] {
+  --goal: #0a7bff;
+}
+
+.trend[data-colour="green"] {
+  --goal: #2fbf5a;
+}
+
+.trend[data-colour="purple"] {
+  --goal: #b04fe0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .trend {
+    --band: rgb(120 120 128 / 0.22);
+  }
+}
+
+.trend-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.trend-chips {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--page);
+}
+
+.trend-chip {
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font: var(--caption);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.trend-chip[aria-selected="true"] {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.trend-state {
+  min-height: 21px;
+  margin-top: 10px;
+  font-weight: 700;
+}
+
+.trend-value {
+  margin-top: 6px;
+  font: var(--number);
+  letter-spacing: -0.04em;
+}
+
+.trend-value span {
+  margin-left: 6px;
+  color: var(--muted);
+  font: var(--body);
+  letter-spacing: -0.005em;
+}
+
+.trend-plot {
+  position: relative;
+  display: flex;
+  margin-top: 22px;
+}
+
+.trend-chart {
+  flex: 1;
+  min-width: 0;
+}
+
+.trend-chart .recharts-wrapper,
+.trend-chart svg {
+  overflow: visible;
+}
+
+.trend-chart *:focus {
+  outline: none;
+}
+
+.trend-gutter {
+  position: relative;
+  flex: none;
+  width: 44px;
+}
+
+.trend-gutter span {
+  position: absolute;
+  left: 14px;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font: var(--caption);
+  white-space: nowrap;
+}
+
+.trend-halo {
+  fill: var(--goal);
+  opacity: 0.2;
+}
+
+.trend-today {
+  fill: var(--goal);
+  stroke: var(--card);
+  stroke-width: 2.5;
+}
+
+.trend-dot {
+  fill: var(--ink);
+  opacity: 0.6;
+}
+
+.trend-x {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-right: 44px;
+  color: var(--muted);
+  font: var(--caption);
+}
+
+.trend-hover {
+  min-width: 140px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--ink);
+  font: var(--caption);
+}
+
+.trend-hover b,
+.trend-hover span {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.trend-hover span {
+  color: var(--muted);
+}
+
+.trend-hover i {
+  color: var(--ink);
+  font-style: normal;
+  font-weight: 700;
+}

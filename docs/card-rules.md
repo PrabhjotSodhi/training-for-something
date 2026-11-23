@@ -69,3 +69,12 @@ Plus Jakarta Sans for everything, with tabular figures on numbers. The font file
 2. One row per night, oldest first, ending today: weekday, a bar and the time. A night belongs to the day the person wakes up.
 3. A night with no data says "No data", has no bar and stays out of the average.
 4. A dashed line marks the saved sleep goal in hours. With no saved goal there is no line.
+
+## Trend card
+
+1. One component draws resting heart rate, HRV, weight, VO2 max and training load: the value, a line over the shaded normal band, a dot on the latest reading, and the band edges as the only y labels. The stretch of line outside the band uses the goal colour from the layout's plate, orange with no plate.
+2. The chart shows the 30 days ending today. A day with no reading is empty. Readings are joined by a line when they are 1 day apart for resting heart rate and HRV, and up to 14 days apart for weight and VO2 max. Weight and VO2 max also show a dot on each reading.
+3. The band is the readiness rule: the median of the previous 42 days from the same source, plus and minus the spread, with at least 21 of those days. A day with no band draws no band and the line still shows.
+4. Training load never shows load points. The line is the last 7 days over the usual week, with the band at 0.88 to 1.1. The value reads like "+16% last 7 days vs your usual". State words are Below normal, Normal and Above normal.
+5. Training load has one part each for Cardio, Strength and Effort. A part shows only when its first load day is 28 or more days ago and its usual week is above 0. Cardio also needs heart rate on at least 3 in 4 of the workouts in the 35 days it looks at. Chips show only for two or more parts, in that order, and the card opens on the layout's `first` part, else Cardio, else the first part that shows. A card with no part, or a metric with no reading, is left out.
+6. The hover shows the date, the day's value and the band's low and high, and opens on keyboard focus.

@@ -192,6 +192,24 @@ export interface components {
             data?: components["schemas"]["SleepData"] | null;
         };
         /**
+         * TrendData
+         * @description The last 30 days ending today. Readings up to join_days apart are joined by a line.
+         */
+        TrendData: {
+            /** Title */
+            title: string;
+            /** Colour */
+            colour: string;
+            /** Unit */
+            unit: string | null;
+            /** Join Days */
+            join_days: number;
+            /** Selected */
+            selected: string;
+            /** Parts */
+            parts: components["schemas"]["TrendPart"][];
+        };
+        /**
          * TrendOverviewCard
          * @description A trend card with its numbers.
          */
@@ -211,8 +229,39 @@ export interface components {
              * @enum {string}
              */
             first?: "cardio" | "strength" | "effort";
-            /** Data */
-            data?: null;
+            data?: components["schemas"]["TrendData"] | null;
+        };
+        /**
+         * TrendPart
+         * @description One line on a trend card. Training load has one per part and a percent, never load points.
+         */
+        TrendPart: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Value */
+            value: number | null;
+            /** State */
+            state: ("Below normal" | "Normal" | "Above normal") | null;
+            /** Percent */
+            percent: number | null;
+            /** Points */
+            points: components["schemas"]["TrendPoint"][];
+        };
+        /**
+         * TrendPoint
+         * @description One day: the value with its normal band, or nulls with no reading or no band.
+         */
+        TrendPoint: {
+            /** Date */
+            date: string;
+            /** Value */
+            value: number | null;
+            /** Low */
+            low: number | null;
+            /** High */
+            high: number | null;
         };
         /** ValidationError */
         ValidationError: {
