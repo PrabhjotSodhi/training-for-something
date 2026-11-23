@@ -1,0 +1,33 @@
+name: release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  wheel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.4.0
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: actions/setup-node@v6.5.0
+        with:
+          node-version: "24"
+      - uses: astral-sh/setup-uv@v10.4.0
+        with:
+          python-version: "3.12"
+      - run: python3 -c "import os,re;t=os.environ['TAG'];v=re.search(r'__version__ = \"(.+?)\"',open('src/tfs/__init__.py').read())[1];assert t=='v'+v,'tag '+t+' does not match package version '+v"
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+      - run: npm --prefix dashboard ci
+      - run: npm --prefix dashboard run build
+      - run: uv build --wheel
+      - run: python3 -c "import glob,zipfile;n='tfs/web/dashboard/index.html';w=glob.glob('dist/*.whl')[0];f=zipfile.ZipFile(w).namelist();assert n in f,n+' is missing from '+w;print(*[x for x in f if x.startswith('tfs/web/dashboard/')],sep='\n')"
+      - run: gh release upload "$TAG" dist/*.whl
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
