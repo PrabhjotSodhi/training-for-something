@@ -17,6 +17,8 @@ uv sync                                               # once, and after pyprojec
 uv run ruff check . && uv run ruff format --check .   # lint and format, as CI runs them
 uv run python -m unittest discover -s tests -t .      # all tests
 uv run python -m unittest tests.test_raw_store        # one file
+npm --prefix dashboard install                        # once, and after dashboard/package.json changes
+npm --prefix dashboard run build                      # build the dashboard into src/tfs/web/dashboard/
 ```
 
 Python 3.12. uv installs everything, and `uv.lock` pins every version. Add a package with `uv add`, never with pip. Tests use `unittest`. Hypothesis is allowed in tests only. Ruff lints and formats. CI fails on any Ruff finding.
