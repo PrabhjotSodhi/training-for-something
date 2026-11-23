@@ -19,6 +19,7 @@ from tfs.importer.session import process_pending
 from tfs.persistence.migrations import migrate
 from tfs.persistence.sqlite import connect, transaction
 from tfs.scheduling import jobs, scheduler
+from tfs.web.overview import Overview, read_overview
 from tfs.web.push import make_push_handler
 from tfs.web.server import PushHandler, WebServer, make_server
 
@@ -74,9 +75,15 @@ class Engine:
             now_fn=self._now_fn,
             on_saved=lambda sha256: self._jobs.put(False),
         )
+
+        def overview() -> Overview:
+            return read_overview(db_path, self._now_fn().astimezone(self._tz).date())
+
         servers: list[WebServer] = []
         try:
-            servers.append(_bind(SCREEN_HOST, self._screen_port, handler, home_wifi=False))
+            servers.append(
+                _bind(SCREEN_HOST, self._screen_port, handler, home_wifi=False, overview=overview)
+            )
             if self._home_wifi:
                 servers.append(_bind(HOME_WIFI_HOST, self._home_wifi_port, handler, home_wifi=True))
             self._prepare_data(db_path)
@@ -162,10 +169,17 @@ class Engine:
             password_store.set("push_token", secrets.token_urlsafe(32))
 
 
-def _bind(host: str, port: int, handler: PushHandler, *, home_wifi: bool) -> WebServer:
+def _bind(
+    host: str,
+    port: int,
+    handler: PushHandler,
+    *,
+    home_wifi: bool,
+    overview: Callable[[], Overview] | None = None,
+) -> WebServer:
     """Bind a server. A taken port raises PortInUseError, or EngineAlreadyRunningError if TFS holds it."""
     try:
-        return make_server(host, port, push_handler=handler, push_only=home_wifi)
+        return make_server(host, port, push_handler=handler, push_only=home_wifi, overview=overview)
     except OSError as error:
         if not home_wifi and _tfs_answers_ping(port):
             raise EngineAlreadyRunningError("TFS is already running.") from error
