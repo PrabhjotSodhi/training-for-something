@@ -21,14 +21,10 @@ Read more in the [high level design](docs/HLD.md), the [code map](docs/code-map.
 You need [uv](https://docs.astral.sh/uv/getting-started/installation/) and Claude Code or Codex on the same computer. uv brings Python 3.12 or later if you do not have it.
 
 ```sh
-uv tool install training-for-something
-```
-
-The package includes the dashboard, so you need no Node and no git. Until 0.1.0, the releases are alphas, which are pre-releases. Add `--prerelease allow` to the install command:
-
-```sh
 uv tool install training-for-something --prerelease allow
 ```
+
+The package includes the dashboard, so you need no Node and no git. Releases before 0.1.0 are alphas, and uv installs those only with `--prerelease allow`. From 0.1.0 on, drop the flag.
 
 Both clients need `tfs` on PATH. Open a new terminal and check:
 
