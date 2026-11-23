@@ -174,7 +174,7 @@ class RoutesTest(ServerTestCase):
 
     def test_the_home_wifi_server_answers_pushes_only(self):
         # GIVEN a server for the home Wi-Fi door
-        self.start(push_only=True)
+        self.start(push_only=True, overview=lambda: None)
         # WHEN a client asks for a screen, an API route or /ping
         for path in ("/", "/api/overview", "/ping", "/docs"):
             # THEN it gets 404

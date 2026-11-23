@@ -11,3 +11,11 @@ PLATE_ROWS = (
     "load_strength",
     "load_effort",
 )
+LOAD_SCORES = ("load_cardio", "load_strength", "load_effort")
+DEFAULT_CARDS = (
+    {"type": "week"},
+    {"type": "trend", "metric": "training_load"},
+    {"type": "sleep"},
+    {"type": "trend", "metric": "resting_hr"},
+    {"type": "trend", "metric": "hrv_sdnn"},
+)

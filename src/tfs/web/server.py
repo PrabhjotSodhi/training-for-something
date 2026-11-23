@@ -18,6 +18,8 @@ from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import ClientDisconnect
 
+from tfs.web.overview import Overview
+
 PushHandler = Callable[[str, BinaryIO, Mapping[str, str]], tuple[int, dict]]
 
 # A refused push may leave body bytes unread, so no reply keeps the connection open.
@@ -78,12 +80,21 @@ def _too_large(max_body: int) -> HTTPException:
     return HTTPException(413, f"The body is larger than the {max_body} bytes this server accepts.")
 
 
-def _add_dashboard(app: FastAPI, check_host: Callable[[Request], Awaitable[None]]) -> None:
+def _add_dashboard(
+    app: FastAPI,
+    check_host: Callable[[Request], Awaitable[None]],
+    overview: Callable[[], Overview] | None,
+) -> None:
     @app.get("/")
     async def dashboard() -> Response:
         if not (DASHBOARD_DIR / "index.html").is_file():
             return PlainTextResponse(BUILD_HINT)
         return FileResponse(DASHBOARD_DIR / "index.html")
+
+    if overview:
+        app.get("/api/overview", response_model=Overview, response_model_exclude_unset=True)(
+            overview
+        )
 
     if (DASHBOARD_DIR / "assets").is_dir():
 
@@ -97,7 +108,11 @@ def _add_dashboard(app: FastAPI, check_host: Callable[[Request], Awaitable[None]
 
 
 def _make_app(
-    push_handler: PushHandler, push_only: bool, max_body: int, read_timeout_s: float
+    push_handler: PushHandler,
+    push_only: bool,
+    max_body: int,
+    read_timeout_s: float,
+    overview: Callable[[], Overview] | None,
 ) -> FastAPI:
     own_names = {"localhost", "127.0.0.1", socket.gethostname().lower()}
 
@@ -120,7 +135,7 @@ def _make_app(
         async def ping() -> Response:
             return PlainTextResponse("tfs")
 
-        _add_dashboard(app, check_host)
+        _add_dashboard(app, check_host, overview)
 
     @app.post("/push/{name}")
     async def push(name: str, request: Request) -> Response:
@@ -167,11 +182,12 @@ def make_server(
     *,
     push_handler: PushHandler,
     push_only: bool = False,
+    overview: Callable[[], Overview] | None = None,
     max_body: int = 1 << 30,
     read_timeout_s: float = 30,
 ) -> WebServer:
-    """Bind host and port, or raise OSError. push_only drops /ping. The caller starts and stops it."""
+    """Bind host and port, or raise OSError. push_only drops /ping and the screen routes. The caller starts and stops it."""
     return WebServer(
-        _make_app(push_handler, push_only, max_body, read_timeout_s),
+        _make_app(push_handler, push_only, max_body, read_timeout_s, overview),
         socket.create_server((host, port)),
     )
