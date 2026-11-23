@@ -96,10 +96,24 @@ class WeekOverviewCard(WeekCard):
     data: WeekData | None = None
 
 
+class SleepNight(BaseModel):
+    """One night: hours asleep on the day the person woke up, or null with no data."""
+
+    date: str
+    hours: float | None
+
+
+class SleepData(BaseModel):
+    """The last 7 nights, oldest first, with the saved sleep goal."""
+
+    nights: list[SleepNight]
+    target_h: float | None
+
+
 class SleepOverviewCard(SleepCard):
     """The sleep card with its numbers."""
 
-    data: None = None
+    data: SleepData | None = None
 
 
 class TrendOverviewCard(TrendCard):
@@ -312,11 +326,31 @@ def _week_data(connection, today: date) -> WeekData:
     )
 
 
+def _sleep_data(connection, target_h: float | None, today: date) -> SleepData:
+    days = [(today - timedelta(days=offset)).isoformat() for offset in range(6, -1, -1)]
+    asleep = {
+        day: hours
+        for day, hours in _rows(
+            connection,
+            "SELECT local_date, value FROM coach_v1_day_facts WHERE metric = 'sleep_asleep'",
+        )
+        if day in days
+    }
+    return SleepData(
+        nights=[SleepNight(date=day, hours=asleep.get(day)) for day in days], target_h=target_h
+    )
+
+
+def _card_data(connection, card: dict, today: date) -> WeekData | SleepData | None:
+    if card["type"] == "week":
+        return _week_data(connection, today)
+    if card["type"] == "sleep":
+        return _sleep_data(connection, card.get("target_h"), today)
+    return None
+
+
 def _cards(connection, cards: list[dict], today: date) -> list[dict]:
-    return [
-        {**card, "data": _week_data(connection, today) if card["type"] == "week" else None}
-        for card in cards
-    ]
+    return [{**card, "data": _card_data(connection, card, today)} for card in cards]
 
 
 def read_overview(db_path: Path, today: date) -> Overview:

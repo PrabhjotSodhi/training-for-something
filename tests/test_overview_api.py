@@ -222,3 +222,25 @@ class OverviewApiTest(unittest.TestCase):
         # THEN Tuesday has a done 12 km tile and the totals hold only that run
         self.assertEqual(week["days"][1]["sessions"][0]["state"], "done")
         self.assertEqual(week["totals"], [{"sport": "run", "unit": "km", "done": 12, "planned": 0}])
+
+    def test_the_sleep_card_holds_seven_nights_with_a_gap_and_the_saved_target(self):
+        # GIVEN six nights averaging 7 h 35 min, a gap on the 21st, and older sleep outside the week
+        nights = (("11-18", 7), ("11-19", 8), ("11-20", 7.5), ("11-22", 7.75), ("11-23", 7))
+        for day, hours in (*nights, ("11-24", 8.25), ("11-17", 3)):
+            self.conn.execute(
+                "INSERT INTO day_facts VALUES (?, 'sleep_asleep', ?, 'h', 'app', 'full', 'f1')",
+                (f"2026-{day}", hours),
+            )
+        layout = {
+            "plate": {"goal_id": "g1", "colour": "blue", "rows": []},
+            "cards": [{"type": "sleep", "target_h": 8}, {"type": "sleep"}],
+        }
+        self.conn.execute("INSERT INTO overview_layout VALUES (1, ?)", (json.dumps(layout),))
+        # WHEN the overview is requested
+        with_target, without = (card["data"] for card in self.get()["cards"])
+        # THEN the nights run from the 18th to today, the 21st is null and the target passes through
+        hours = [night["hours"] for night in with_target["nights"]]
+        self.assertEqual(hours, [7, 8, 7.5, None, 7.75, 7, 8.25])
+        self.assertEqual(with_target["nights"][0]["date"], "2026-11-18")
+        self.assertEqual(with_target["target_h"], 8)
+        self.assertIsNone(without["target_h"])

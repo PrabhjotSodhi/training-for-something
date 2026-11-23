@@ -62,3 +62,10 @@ Plus Jakarta Sans for everything, with tabular figures on numbers. The font file
 4. A done session counts its own distance, or every set it holds. A workout matched to a plan item shows once, on that item's tile. A workout with no plan item is its own done tile.
 5. A planned session in the past stays planned.
 6. A day with no session says "Rest". The totals row shows done of planned per sport, each with a bar.
+
+## Sleep card
+
+1. The headline is the average hours asleep over the last 7 nights, like "7 h 35 min a night". With no night in the 7 it says "No data".
+2. One row per night, oldest first, ending today: weekday, a bar and the time. A night belongs to the day the person wakes up.
+3. A night with no data says "No data", has no bar and stays out of the average.
+4. A dashed line marks the saved sleep goal in hours. With no saved goal there is no line.

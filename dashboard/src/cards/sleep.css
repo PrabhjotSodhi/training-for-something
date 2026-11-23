@@ -1,0 +1,66 @@
+.sleep-headline {
+  margin-top: 12px;
+  font: var(--number);
+  letter-spacing: -0.04em;
+}
+
+.sleep-nights {
+  position: relative;
+  margin-top: 16px;
+  padding-top: 18px;
+}
+
+.sleep-target {
+  position: absolute;
+  top: 16px;
+  bottom: 0;
+  width: 0;
+  border-left: 1.5px dashed var(--muted);
+}
+
+.sleep-target span {
+  position: absolute;
+  top: -18px;
+  left: 0;
+  transform: translateX(-50%);
+  color: var(--muted);
+  font: var(--caption);
+  white-space: nowrap;
+}
+
+.sleep-night {
+  display: grid;
+  grid-template-columns: 36px 1fr 64px;
+  align-items: center;
+  height: 30px;
+  font: var(--caption);
+}
+
+.sleep-day {
+  font-weight: 700;
+}
+
+.sleep-night:not(.now) .sleep-day {
+  color: var(--muted);
+}
+
+.sleep-track {
+  height: 12px;
+}
+
+.sleep-bar {
+  display: block;
+  height: 100%;
+  border-radius: 6px;
+  background: var(--ink);
+}
+
+.sleep-missing {
+  color: var(--muted);
+  line-height: 12px;
+}
+
+.sleep-value {
+  text-align: right;
+  font-weight: 700;
+}
