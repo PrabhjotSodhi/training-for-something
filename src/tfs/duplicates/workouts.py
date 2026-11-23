@@ -11,7 +11,16 @@ TIME_TOLERANCE_S = 180
 NULL_FAMILY_TOLERANCE_S = 60
 DURATION_RATIO = 0.9
 PACE_FIELDS = ("duration_s", "distance_m")
-CHOSEN_FIELDS = ("label", "family", *PACE_FIELDS, "active_energy_kcal", "avg_hr", "max_hr")
+CHOSEN_FIELDS = (
+    "label",
+    "family",
+    *PACE_FIELDS,
+    "active_energy_kcal",
+    "avg_hr",
+    "max_hr",
+    "effort_rating",
+    "effort_estimate",
+)
 
 _SESSIONS_TO_GROUP = """
 WITH reach AS (

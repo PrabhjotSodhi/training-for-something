@@ -21,7 +21,8 @@
         "end": "2026-10-22 18:45:00 +1300",
         "duration": 2700.0,
         "avgHeartRate": {"qty": 118, "units": "bpm"},
-        "maxHeartRate": {"qty": 141, "units": "bpm"}
+        "maxHeartRate": {"qty": 141, "units": "bpm"},
+        "effortScore": {"qty": 7, "units": "appleEffortScore"}
       },
       {
         "id": "A1B2C3D4-0000-4000-8000-000000000003",

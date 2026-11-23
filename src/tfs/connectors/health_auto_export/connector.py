@@ -153,6 +153,8 @@ def _workout_values(workout: dict) -> dict[str, float | None]:
         "active_energy_kcal": _workout_quantity(workout.get("activeEnergyBurned"), "kcal"),
         "avg_hr": _workout_quantity(heart_rate.get("avg", workout.get("avgHeartRate")), "bpm"),
         "max_hr": _workout_quantity(heart_rate.get("max", workout.get("maxHeartRate")), "bpm"),
+        "effort_rating": _workout_quantity(workout.get("effortScore"), "effort"),
+        "effort_estimate": _workout_quantity(workout.get("estimatedEffortScore"), "effort"),
     }
 
 

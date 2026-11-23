@@ -11,13 +11,16 @@ from statistics import mean, median
 
 SCORE = "load_strength"
 CARDIO_SCORE = "load_cardio"
+EFFORT_SCORE = "load_effort"
 _ALL_COEFFICIENTS = tomllib.loads(
     resources.files("tfs.scores").joinpath("coefficients.toml").read_text("utf-8")
 )
 _COEFFICIENTS = _ALL_COEFFICIENTS["load_strength"]
 _CARDIO = _ALL_COEFFICIENTS["load_cardio"]
+_EFFORT = _ALL_COEFFICIENTS["load_effort"]
 FORMULA_VERSION = _COEFFICIENTS["formula_version"]
 CARDIO_FORMULA_VERSION = _CARDIO["formula_version"]
+EFFORT_FORMULA_VERSION = _EFFORT["formula_version"]
 
 # Each workout counts once: its parts come from the member with the most parts, as in coach_v1_workout_parts.
 _WORKING_SETS = """
@@ -150,6 +153,55 @@ def rebuild_cardio(conn: sqlite3.Connection) -> int:
                 round(loads[day]),
                 json.dumps(rows[day]),
                 CARDIO_FORMULA_VERSION,
+            ),
+        )
+    return len(loads)
+
+
+def rebuild_effort(conn: sqlite3.Connection) -> int:
+    """Recompute every effort load row and return how many rows that wrote.
+
+    Each workout group counts once: its effort (the person's rating, else the estimate) x its
+    duration in minutes. A day with no such workout has no row. The caller owns the transaction.
+    """
+    workouts: dict[date, list[tuple]] = defaultdict(list)
+    for local_date, duration_s, rating, estimate in conn.execute(
+        "SELECT local_date, json_extract(chosen_json, '$.duration_s.value'),"
+        " json_extract(chosen_json, '$.effort_rating.value'),"
+        " json_extract(chosen_json, '$.effort_estimate.value')"
+        " FROM session_groups"
+    ):
+        effort = rating if rating is not None else estimate
+        workouts[date.fromisoformat(local_date)].append((duration_s, effort))
+    loads: dict[date, float] = {}
+    rows: dict[date, dict] = {}
+    for day, found in workouts.items():
+        rated = [(d, e) for d, e in found if d and e]
+        if not rated:
+            continue
+        loads[day] = sum(d / 60 * e for d, e in rated)
+        rows[day] = {"workouts": len(rated)}
+        if without := len(found) - len(rated):
+            rows[day]["note"] = f"{without} workout{'s' * (without > 1)} without effort"
+    conn.execute("DELETE FROM scores WHERE score = ?", (EFFORT_SCORE,))
+    for day in sorted(loads):
+        previous = [
+            loads[past]
+            for offset in range(1, _EFFORT["baseline_days"] + 1)
+            if (past := day - timedelta(days=offset)) in loads
+        ]
+        rows[day] |= {
+            "normal": round(median(previous)) if previous else None,
+            "normal_days": len(previous),
+        }
+        conn.execute(
+            "INSERT INTO scores VALUES (?, ?, ?, NULL, NULL, ?, ?)",
+            (
+                day.isoformat(),
+                EFFORT_SCORE,
+                round(loads[day]),
+                json.dumps(rows[day]),
+                EFFORT_FORMULA_VERSION,
             ),
         )
     return len(loads)

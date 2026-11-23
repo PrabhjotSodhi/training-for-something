@@ -239,3 +239,100 @@ class CardioLoadTest(unittest.TestCase):
             self.conn.execute("SELECT value FROM scores WHERE score = 'load_cardio'").fetchone()[0],
             108,
         )
+
+
+class EffortLoadTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.conn = open_database(self)
+        insert_file(self.conn, FIRST_FILE["arrival_seq"], FIRST_FILE["revision_at"])
+
+    def workout(
+        self,
+        record_id: str,
+        rating: int | None = None,
+        estimate: int | None = None,
+        connector: str = "apple_health",
+    ) -> None:
+        values = {"duration_s": 2400}
+        if rating:
+            values["effort_rating"] = rating
+        if estimate:
+            values["effort_estimate"] = estimate
+        insert_workout(
+            self.conn,
+            record_id,
+            connector,
+            start="2026-03-02T06:00:00Z",
+            end=None,
+            values=values,
+        )
+
+    def load_rows(self) -> dict[str, tuple[int, dict]]:
+        self.conn.execute(
+            "INSERT OR IGNORE INTO rebuild_dates SELECT local_date FROM source_records"
+        )
+        rebuild_pending(self.conn)
+        return {
+            day: (value, json.loads(inputs))
+            for day, value, inputs in self.conn.execute(
+                "SELECT local_date, value, inputs_json FROM scores WHERE score = 'load_effort'"
+            )
+        }
+
+    def test_a_rated_run_scores_effort_times_minutes(self) -> None:
+        # GIVEN a 40 minute run rated 7
+        self.workout("run", rating=7)
+
+        # WHEN the scores are rebuilt
+        rows = self.load_rows()
+
+        # THEN the day scores 280
+        self.assertEqual(rows["2026-03-02"][0], 280)
+
+    def test_the_rating_beats_the_estimate(self) -> None:
+        # GIVEN the run has a rating of 7 and an estimate of 6
+        self.workout("run", rating=7, estimate=6)
+
+        # WHEN the scores are rebuilt
+        rows = self.load_rows()
+
+        # THEN the day still scores 280
+        self.assertEqual(rows["2026-03-02"][0], 280)
+
+    def test_a_workout_without_effort_adds_nothing_and_says_so(self) -> None:
+        # GIVEN a rated run and an unrated workout on one day
+        self.workout("run", rating=7)
+        self.workout("lift")
+
+        # WHEN the scores are rebuilt
+        rows = self.load_rows()
+
+        # THEN the unrated workout adds nothing and the inputs say so
+        self.assertEqual(rows["2026-03-02"][0], 280)
+        self.assertEqual(rows["2026-03-02"][1]["note"], "1 workout without effort")
+
+    def test_the_same_run_from_two_linked_apps_counts_once(self) -> None:
+        # GIVEN one app rated the run and the other estimated it
+        self.workout("a", estimate=6)
+        self.workout("b", rating=7, connector="health_auto_export")
+
+        # WHEN the scores are rebuilt
+        rows = self.load_rows()
+
+        # THEN the load is 280, from the rating
+        self.assertEqual(rows["2026-03-02"][0], 280)
+
+    def test_the_first_start_after_an_upgrade_fills_effort_load_without_an_import(self) -> None:
+        # GIVEN workouts whose scores were built before effort load existed
+        self.workout("run", rating=7)
+        self.load_rows()
+        self.conn.execute("DELETE FROM scores WHERE score = 'load_effort'")
+
+        # WHEN the outdated check runs
+        scores.rebuild_if_outdated(self.conn)
+
+        # THEN the day has its effort load again
+        self.assertEqual(
+            self.conn.execute("SELECT value FROM scores WHERE score = 'load_effort'").fetchone()[0],
+            280,
+        )
