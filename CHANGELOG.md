@@ -11,7 +11,7 @@ Versions follow Python's PEP 440. Each release starts with "Breaking changes". E
 
 ### Changed
 
-- Install with `uv tool install git+https://github.com/PrabhjotSodhi/training-for-something`. It puts `tfs` on PATH with no virtual environment to activate. Contributors run `uv sync`, and `uv.lock` pins every version.
+- Install with `uv tool install training-for-something`. Alphas need `--prerelease allow`. The package includes the built dashboard, so you need no Node and no git. It puts `tfs` on PATH with no virtual environment to activate. Contributors run `uv sync`, and `uv.lock` pins every version.
 
 ## 0.1.0a1, 2026-11-19
 

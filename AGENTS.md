@@ -51,6 +51,12 @@ The maintainer cuts each release by hand when a milestone is done. Versions foll
 2. Set `__version__` in `src/tfs/__init__.py`.
 3. Give the top CHANGELOG section the version and date, and list the known gaps.
 4. Merge the pull request, tag the merge commit `v<version>` and publish a GitHub release with that CHANGELOG section. Mark alphas as pre-releases.
+5. On the tagged commit, build the dashboard: `npm --prefix dashboard ci && npm --prefix dashboard run build`.
+6. Build the packages: `uv build`. This writes the wheel and the source archive to `dist/`, which Git ignores. Never commit built files.
+7. Check that the wheel holds the dashboard. The command fails and names the missing file:
+   `uv run python -c "import glob,zipfile;n='tfs/web/dashboard/index.html';w=glob.glob('dist/*.whl')[0];assert n in zipfile.ZipFile(w).namelist(),n+' is missing from '+w;print('ok',w)"`
+   Never upload a wheel that fails this check. Delete `dist/` before `uv build` when it holds older versions.
+8. Upload with `uv publish`, with the PyPI token in `UV_PUBLISH_TOKEN`.
 
 ## When to stop
 
