@@ -20,11 +20,17 @@ Read more in the [high level design](docs/HLD.md), the [code map](docs/code-map.
 
 You need [uv](https://docs.astral.sh/uv/getting-started/installation/) and Claude Code or Codex on the same computer. uv brings Python 3.12 or later if you do not have it.
 
+Copy the install command from the newest release on the [Releases page](https://github.com/PrabhjotSodhi/training-for-something/releases). It looks like this:
+
 ```sh
-uv tool install training-for-something --prerelease allow
+uv tool install https://github.com/PrabhjotSodhi/training-for-something/releases/download/v0.1.0/training_for_something-0.1.0-py3-none-any.whl
 ```
 
-The package includes the dashboard, so you need no Node and no git. Releases before 0.1.0 are alphas, and uv installs those only with `--prerelease allow`. From 0.1.0 on, drop the flag.
+The wheel includes the dashboard, so you need no Node and no git. To update or switch versions, run that release's command with `--force`:
+
+```sh
+uv tool install --force <the release's wheel URL>
+```
 
 Both clients need `tfs` on PATH. Open a new terminal and check:
 
@@ -32,7 +38,7 @@ Both clients need `tfs` on PATH. Open a new terminal and check:
 tfs --version
 ```
 
-If the terminal cannot find `tfs`, run `uv tool update-shell` and open a new terminal. Update with `uv tool upgrade training-for-something`. Import data first, for example with `tfs import /path/to/export.zip` for an Apple Health export. The tool reports a missing database until you import data or start TFS.
+If the terminal cannot find `tfs`, run `uv tool update-shell` and open a new terminal. Import data first, for example with `tfs import /path/to/export.zip` for an Apple Health export. The tool reports a missing database until you import data or start TFS.
 
 ### Claude Code
 

@@ -2,8 +2,7 @@ name: tests
 
 on:
   pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: tests-${{ github.event.pull_request.number || github.ref }}
@@ -13,7 +12,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.4.0
       - uses: astral-sh/setup-uv@v10.4.0
         with:
           python-version: "3.12"
@@ -28,9 +27,24 @@ jobs:
         os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest", "macos-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.4.0
       - uses: astral-sh/setup-uv@v10.4.0
         with:
           python-version: "3.12"
       - run: uv sync --locked
       - run: uv run python -m unittest discover -s tests -t . -v
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.4.0
+      - uses: actions/setup-node@v6.5.0
+        with:
+          node-version: "24"
+      - uses: astral-sh/setup-uv@v10.4.0
+        with:
+          python-version: "3.12"
+      - run: npm --prefix dashboard ci
+      - run: npm --prefix dashboard run build
+      - run: uv build --wheel
+      - run: python3 -c "import glob,zipfile;n='tfs/web/dashboard/index.html';w=glob.glob('dist/*.whl')[0];f=zipfile.ZipFile(w).namelist();assert n in f,n+' is missing from '+w;print(*[x for x in f if x.startswith('tfs/web/dashboard/')],sep='\n')"
