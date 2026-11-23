@@ -1,6 +1,7 @@
 import { createElement, type ReactNode } from "react";
 import type { components } from "./api";
 import { Sleep } from "./cards/Sleep";
+import { Trend } from "./cards/Trend";
 import { Week } from "./cards/Week";
 
 export type Card = components["schemas"]["Overview"]["cards"][number];
@@ -29,5 +30,11 @@ export const catalogue: Record<string, { full: boolean; draw: (card: Card) => Re
         ? createElement(Sleep, { sleep: card.data })
         : placeholder(card),
   },
-  trend: { full: false, draw: placeholder },
+  trend: {
+    full: false,
+    draw: (card) =>
+      "data" in card && card.data && "parts" in card.data
+        ? createElement(Trend, { trend: card.data })
+        : placeholder(card),
+  },
 };

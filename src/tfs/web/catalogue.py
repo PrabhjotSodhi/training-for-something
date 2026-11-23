@@ -2,6 +2,14 @@
 
 CARD_TYPES = ("week", "sleep", "trend")
 TREND_METRICS = ("resting_hr", "hrv_sdnn", "weight", "vo2_max", "training_load")
+TREND_TITLES = {
+    "resting_hr": "Resting heart rate",
+    "hrv_sdnn": "HRV",
+    "weight": "Weight",
+    "vo2_max": "VO2 max",
+    "training_load": "Training load",
+}
+JOIN_DAYS = {"weight": 14, "vo2_max": 14}
 PLATE_ROWS = (
     "readiness",
     "sleep_asleep",
@@ -12,7 +20,13 @@ PLATE_ROWS = (
     "load_effort",
 )
 SPORT_UNITS = {"run": "km", "ride": "km", "swim": "m", "strength": "sets"}
-LOAD_SCORES = ("load_cardio", "load_strength", "load_effort")
+LOAD_PARTS = {
+    "cardio": ("Cardio", "load_cardio"),
+    "strength": ("Strength", "load_strength"),
+    "effort": ("Effort", "load_effort"),
+}
+LOAD_SCORES = tuple(score for _, score in LOAD_PARTS.values())
+LOAD_BAND = (0.88, 1.1)
 DEFAULT_CARDS = (
     {"type": "week"},
     {"type": "trend", "metric": "training_load"},

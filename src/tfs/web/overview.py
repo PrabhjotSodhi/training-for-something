@@ -12,9 +12,21 @@ from pydantic import BaseModel, Field
 
 from tfs.mcp.tool_access import open_reader, query
 from tfs.proposals.models import Plate, SleepCard, TrendCard, WeekCard
-from tfs.web.catalogue import DEFAULT_CARDS, LOAD_SCORES, PLATE_ROWS, SPORT_UNITS
+from tfs.scores.readiness import normal_band
+from tfs.web.catalogue import (
+    DEFAULT_CARDS,
+    JOIN_DAYS,
+    LOAD_BAND,
+    LOAD_PARTS,
+    LOAD_SCORES,
+    PLATE_ROWS,
+    SPORT_UNITS,
+    TREND_TITLES,
+)
 
 WINDOW_DAYS = 28
+TREND_DAYS = 30
+LOAD_COVERAGE_DAYS = 35
 
 
 class PlateForecast(BaseModel):
@@ -116,10 +128,41 @@ class SleepOverviewCard(SleepCard):
     data: SleepData | None = None
 
 
+class TrendPoint(BaseModel):
+    """One day: the value with its normal band, or nulls with no reading or no band."""
+
+    date: str
+    value: float | None
+    low: float | None
+    high: float | None
+
+
+class TrendPart(BaseModel):
+    """One line on a trend card. Training load has one per part and a percent, never load points."""
+
+    key: str
+    name: str
+    value: float | None
+    state: Literal["Below normal", "Normal", "Above normal"] | None
+    percent: int | None
+    points: list[TrendPoint]
+
+
+class TrendData(BaseModel):
+    """The last 30 days ending today. Readings up to join_days apart are joined by a line."""
+
+    title: str
+    colour: str
+    unit: str | None
+    join_days: int
+    selected: str
+    parts: list[TrendPart]
+
+
 class TrendOverviewCard(TrendCard):
     """A trend card with its numbers."""
 
-    data: None = None
+    data: TrendData | None = None
 
 
 class Overview(BaseModel):
@@ -341,16 +384,151 @@ def _sleep_data(connection, target_h: float | None, today: date) -> SleepData:
     )
 
 
-def _card_data(connection, card: dict, today: date) -> WeekData | SleepData | None:
+def _state(value: float, low: float, high: float) -> str:
+    return "Above normal" if value > high else "Below normal" if value < low else "Normal"
+
+
+def _trend_days(today: date) -> list[date]:
+    return [today - timedelta(days=offset) for offset in range(TREND_DAYS - 1, -1, -1)]
+
+
+def _metric_part(connection, metric: str, today: date) -> tuple[TrendPart, str] | None:
+    rows = [
+        row
+        for row in _rows(
+            connection,
+            "SELECT local_date, metric, value, unit, source FROM coach_v1_day_facts"
+            " WHERE metric IN ('resting_hr', 'hrv_sdnn', 'weight', 'vo2_max')",
+        )
+        if row[1] == metric
+    ]
+    history = {date.fromisoformat(day): (value, source) for day, _, value, _, source in rows}
+    units = {date.fromisoformat(row[0]): row[3] for row in rows}
+    points = []
+    for day in _trend_days(today):
+        if day not in history:
+            points.append(TrendPoint(date=day.isoformat(), value=None, low=None, high=None))
+            continue
+        value, source = history[day]
+        band = normal_band(source, history, day)
+        low, high = (
+            (None, None) if isinstance(band, str) else (band[0] - band[1], band[0] + band[1])
+        )
+        points.append(
+            TrendPoint(
+                date=day.isoformat(),
+                value=round(value, 1),
+                low=None if low is None else round(low, 1),
+                high=None if high is None else round(high, 1),
+            )
+        )
+    latest = next((point for point in reversed(points) if point.value is not None), None)
+    if latest is None:
+        return None
+    state = None if latest.low is None else _state(latest.value, latest.low, latest.high)
+    part = TrendPart(
+        key=metric,
+        name=TREND_TITLES[metric],
+        value=latest.value,
+        state=state,
+        percent=None,
+        points=points,
+    )
+    return part, units[date.fromisoformat(latest.date)]
+
+
+def _load_ratio(daily: dict[date, float], workouts: list, day: date) -> float | None:
+    """Return the last 7 days of load over the usual week, or None when the part does not show."""
+    if min(daily) > day - timedelta(days=28):
+        return None
+    usual = sum(daily.get(day - timedelta(days=back), 0) for back in range(7, 35)) / 4
+    recent = sum(daily.get(day - timedelta(days=back), 0) for back in range(7))
+    window = [
+        covered
+        for found, covered in workouts
+        if day - timedelta(days=LOAD_COVERAGE_DAYS - 1) <= found <= day
+    ]
+    if 4 * sum(window) < 3 * len(window):
+        return None
+    return recent / usual if usual > 0 else None
+
+
+def _load_parts(connection, today: date) -> list[TrendPart]:
+    scores = _rows(
+        connection,
+        "SELECT local_date, score, value FROM coach_v1_scores"
+        " WHERE score IN ('load_cardio', 'load_strength', 'load_effort')",
+    )
+    workouts = [
+        (date.fromisoformat(day), bool(minutes and avg_hr))
+        for day, minutes, avg_hr in _rows(
+            connection, "SELECT local_date, duration_min, avg_hr FROM coach_v1_workouts"
+        )
+    ]
+    parts = []
+    for key, (name, score) in LOAD_PARTS.items():
+        daily = {date.fromisoformat(day): value for day, found, value in scores if found == score}
+        if not daily:
+            continue
+        points = []
+        for day in _trend_days(today):
+            found = _load_ratio(daily, workouts if key == "cardio" else [], day)
+            points.append(
+                TrendPoint(
+                    date=day.isoformat(),
+                    value=None if found is None else round(found, 3),
+                    low=None if found is None else LOAD_BAND[0],
+                    high=None if found is None else LOAD_BAND[1],
+                )
+            )
+        if points[-1].value is not None:
+            parts.append(
+                TrendPart(
+                    key=key,
+                    name=name,
+                    value=None,
+                    state=_state(points[-1].value, *LOAD_BAND),
+                    percent=round((points[-1].value - 1) * 100),
+                    points=points,
+                )
+            )
+    return parts
+
+
+def _trend_data(connection, card: dict, today: date, colour: str) -> TrendData | None:
+    metric = card["metric"]
+    unit = None
+    if metric == "training_load":
+        parts = _load_parts(connection, today)
+    else:
+        found = _metric_part(connection, metric, today)
+        parts, unit = ([found[0]], found[1]) if found else ([], None)
+    if not parts:
+        return None
+    keys = [part.key for part in parts]
+    return TrendData(
+        title=TREND_TITLES[metric],
+        colour=colour,
+        unit=unit,
+        join_days=JOIN_DAYS.get(metric, 1),
+        selected=card.get("first") if card.get("first") in keys else keys[0],
+        parts=parts,
+    )
+
+
+def _card_data(
+    connection, card: dict, today: date, colour: str
+) -> WeekData | SleepData | TrendData | None:
     if card["type"] == "week":
         return _week_data(connection, today)
     if card["type"] == "sleep":
         return _sleep_data(connection, card.get("target_h"), today)
-    return None
+    return _trend_data(connection, card, today, colour)
 
 
-def _cards(connection, cards: list[dict], today: date) -> list[dict]:
-    return [{**card, "data": _card_data(connection, card, today)} for card in cards]
+def _cards(connection, cards: list[dict], today: date, colour: str) -> list[dict]:
+    drawn = [{**card, "data": _card_data(connection, card, today, colour)} for card in cards]
+    return [card for card in drawn if card["data"] is not None]
 
 
 def read_overview(db_path: Path, today: date) -> Overview:
@@ -364,7 +542,7 @@ def read_overview(db_path: Path, today: date) -> Overview:
             return Overview.model_validate(
                 {
                     "plate": plate,
-                    "cards": _cards(connection, layout["cards"], today),
+                    "cards": _cards(connection, layout["cards"], today, layout["plate"]["colour"]),
                 }
             )
         goals = _rows(
@@ -386,5 +564,7 @@ def read_overview(db_path: Path, today: date) -> Overview:
                 "rows": [r for r in PLATE_ROWS if r in have],
             }
             plate["data"] = _plate_data(connection, plate, today)
-        cards = _cards(connection, [card for card in DEFAULT_CARDS if _has_data(card, have)], today)
+        cards = _cards(
+            connection, [card for card in DEFAULT_CARDS if _has_data(card, have)], today, "orange"
+        )
     return Overview.model_validate({"plate": plate, "cards": cards})

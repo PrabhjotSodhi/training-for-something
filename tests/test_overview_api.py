@@ -1,7 +1,7 @@
 import http.client
 import json
 import unittest
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from tests.helpers import insert_file, insert_workout, open_database
@@ -26,17 +26,33 @@ class OverviewApiTest(unittest.TestCase):
         self.server.start()
         self.addCleanup(self.server.stop)
 
-    def fact(self, day: str, metric: str) -> None:
+    def fact(self, day: str, metric: str, value: float = 50) -> None:
         self.conn.execute(
-            "INSERT INTO day_facts VALUES (?, ?, 50, 'x', 'app', 'full', 'f1')", (day, metric)
+            "INSERT INTO day_facts VALUES (?, ?, ?, 'x', 'app', 'full', 'f1')", (day, metric, value)
         )
 
-    def workout(self, key, day, family, label, minutes, km=None, sets=0) -> None:
+    def ago(self, days: int) -> str:
+        return (self.today - timedelta(days=days)).isoformat()
+
+    def load(self, score: str, days_ago: int, value: float) -> None:
+        self.conn.execute(
+            "INSERT INTO scores VALUES (?, ?, ?, NULL, NULL, '{}', 'f1')",
+            (self.ago(days_ago), score, value),
+        )
+
+    def trend_cards(self, *cards: dict) -> list[dict]:
+        layout = {"plate": {"goal_id": "g1", "colour": "blue", "rows": []}, "cards": list(cards)}
+        self.conn.execute("INSERT INTO overview_layout VALUES (1, ?)", (json.dumps(layout),))
+        return self.get()["cards"]
+
+    def workout(self, key, day, family, label, minutes, km=None, sets=0, avg_hr=None) -> None:
         insert_file(self.conn, 1, "2026-10-01T00:00:00Z")
         insert_workout(self.conn, key, "invented", start=f"{day}T07:00:00Z", family=family)
         chosen = {"family": {"value": family, "record_id": key}}
         chosen["label"] = {"value": label, "record_id": key}
         chosen["duration_s"] = {"value": minutes * 60, "record_id": key}
+        if avg_hr:
+            chosen["avg_hr"] = {"value": avg_hr, "record_id": key}
         if km:
             chosen["distance_m"] = {"value": km * 1000, "record_id": key}
         self.conn.execute(
@@ -96,11 +112,12 @@ class OverviewApiTest(unittest.TestCase):
         # AND only week and resting heart rate remain, each with null data
         self.assertEqual(
             [(card["type"], card["data"] is None) for card in body["cards"]],
-            [("week", False), ("trend", True)],
+            [("week", False), ("trend", False)],
         )
 
     def test_a_saved_layout_is_returned_as_saved(self):
-        # GIVEN a saved layout with one hrv trend card
+        # GIVEN a saved layout with one hrv trend card and an hrv reading
+        self.fact("2026-11-20", "hrv_sdnn")
         layout = {
             "plate": {"goal_id": "g1", "colour": "blue", "rows": ["readiness"]},
             "cards": [{"type": "trend", "metric": "hrv_sdnn"}],
@@ -112,7 +129,9 @@ class OverviewApiTest(unittest.TestCase):
         self.assertEqual(body["plate"]["goal_id"], "g1")
         self.assertEqual(body["plate"]["rows"], ["readiness"])
         self.assertIsNone(body["plate"]["data"])
-        self.assertEqual(body["cards"], [{"type": "trend", "metric": "hrv_sdnn", "data": None}])
+        self.assertEqual(
+            [(card["type"], card["metric"]) for card in body["cards"]], [("trend", "hrv_sdnn")]
+        )
 
     def test_no_goal_means_no_plate(self):
         # GIVEN no goals
@@ -244,3 +263,89 @@ class OverviewApiTest(unittest.TestCase):
         self.assertEqual(with_target["nights"][0]["date"], "2026-11-18")
         self.assertEqual(with_target["target_h"], 8)
         self.assertIsNone(without["target_h"])
+
+    def test_resting_heart_rate_shows_today_against_the_median_and_spread_of_the_42_days_before(
+        self,
+    ):
+        # GIVEN 42 earlier days of 47, 49 and 51 (median 49, spread 3) and 49 today
+        for back in range(1, 43):
+            self.fact(self.ago(back), "resting_hr", (47, 49, 51)[back % 3])
+        self.fact(self.ago(0), "resting_hr", 49)
+        # WHEN the overview is requested
+        data = self.trend_cards({"type": "trend", "metric": "resting_hr"})[0]["data"]
+        # THEN 30 days end today at 49 with band edges 46 and 52, and the card takes the plate colour
+        points = data["parts"][0]["points"]
+        self.assertEqual(len(points), 30)
+        self.assertEqual(points[-1], {"date": self.ago(0), "value": 49, "low": 46, "high": 52})
+        self.assertEqual(data["colour"], "blue")
+
+    def test_a_day_with_no_reading_is_null(self):
+        # GIVEN readings today and the day before yesterday
+        self.fact(self.ago(0), "resting_hr")
+        self.fact(self.ago(2), "resting_hr")
+        # WHEN the overview is requested
+        data = self.trend_cards({"type": "trend", "metric": "resting_hr"})[0]["data"]
+        # THEN yesterday is null between two readings
+        self.assertEqual([p["value"] for p in data["parts"][0]["points"][-3:]], [50, None, 50])
+
+    def test_cardio_load_of_679_against_2340_over_the_previous_28_days_is_above_normal(self):
+        # GIVEN 679 of cardio load in the last 7 days, 2340 in the 28 before, first load 30 days ago
+        self.load("load_cardio", 30, 2340)
+        self.load("load_cardio", 0, 679)
+        # WHEN the overview is requested
+        data = self.trend_cards({"type": "trend", "metric": "training_load"})[0]["data"]
+        # THEN it is Above normal at +16% and carries no load value
+        part = data["parts"][0]
+        self.assertEqual(
+            (part["state"], part["percent"], part["value"]), ("Above normal", 16, None)
+        )
+
+    def test_strength_data_only_has_one_part_and_no_chips(self):
+        # GIVEN strength load with its first day 30 days ago
+        self.load("load_strength", 30, 400)
+        self.load("load_strength", 0, 100)
+        # WHEN the overview is requested
+        data = self.trend_cards({"type": "trend", "metric": "training_load", "first": "effort"})[0][
+            "data"
+        ]
+        # THEN only strength shows, selected although effort was asked for
+        self.assertEqual(
+            ([part["key"] for part in data["parts"]], data["selected"]), (["strength"], "strength")
+        )
+
+    def test_a_first_workout_10_days_ago_drops_training_load_out(self):
+        # GIVEN cardio load that started 10 days ago
+        self.load("load_cardio", 10, 300)
+        self.load("load_cardio", 0, 300)
+        # WHEN the overview is requested
+        # THEN there is no card
+        self.assertEqual(self.trend_cards({"type": "trend", "metric": "training_load"}), [])
+
+    def test_all_three_parts_show_in_order_and_the_layout_picks_the_first(self):
+        # GIVEN cardio, strength and effort load that started 30 days ago
+        for score in ("load_effort", "load_strength", "load_cardio"):
+            self.load(score, 30, 400)
+            self.load(score, 0, 100)
+        # WHEN the overview is requested with and without a first part
+        plain, picked = (
+            card["data"]
+            for card in self.trend_cards(
+                {"type": "trend", "metric": "training_load"},
+                {"type": "trend", "metric": "training_load", "first": "strength"},
+            )
+        )
+        # THEN the chips run Cardio, Strength, Effort and the card opens on the one asked for
+        self.assertEqual(
+            [part["name"] for part in plain["parts"]], ["Cardio", "Strength", "Effort"]
+        )
+        self.assertEqual((plain["selected"], picked["selected"]), ("cardio", "strength"))
+
+    def test_cardio_needs_heart_rate_on_three_in_four_workouts(self):
+        # GIVEN cardio load with one workout with heart rate and one without
+        self.load("load_cardio", 30, 400)
+        self.load("load_cardio", 0, 100)
+        self.workout("w1", self.ago(3), "run", "Run", 30, avg_hr=140)
+        self.workout("w2", self.ago(2), "run", "Run", 30)
+        # WHEN the overview is requested
+        # THEN cardio does not show
+        self.assertEqual(self.trend_cards({"type": "trend", "metric": "training_load"}), [])
