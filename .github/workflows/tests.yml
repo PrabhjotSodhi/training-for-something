@@ -45,5 +45,6 @@ jobs:
         with:
           python-version: "3.12"
       - run: npm --prefix dashboard ci
+      - run: npm --prefix dashboard run build
       - run: uv build --wheel
       - run: python3 -c "import glob,zipfile;n='tfs/web/dashboard/index.html';w=glob.glob('dist/*.whl')[0];f=zipfile.ZipFile(w).namelist();assert n in f,n+' is missing from '+w;print(*[x for x in f if x.startswith('tfs/web/dashboard/')],sep='\n')"
