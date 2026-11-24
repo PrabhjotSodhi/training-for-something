@@ -8,14 +8,14 @@ import secrets
 import sqlite3
 import threading
 from collections.abc import Callable
-from datetime import UTC, datetime, tzinfo
+from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
 
 from tfs import password_store, scores
 from tfs.config import HOME_WIFI_PORT, SCREEN_HOST, SCREEN_PORT
-from tfs.connectors.core.contract import to_utc_text
+from tfs.connectors.core.contract import load_manifests, to_utc_text
 from tfs.importer.raw_store import scan_raw
-from tfs.importer.session import process_pending
+from tfs.importer.session import process_pending, sync
 from tfs.persistence.migrations import migrate
 from tfs.persistence.sqlite import connect, transaction
 from tfs.scheduling import jobs, scheduler
@@ -26,6 +26,7 @@ from tfs.web.server import PushHandler, WebServer, make_server
 HOME_WIFI_HOST = "0.0.0.0"
 PING_TIMEOUT_S = 1
 SCHEDULER_INTERVAL_S = 60
+FETCH_INTERVAL = timedelta(hours=1)
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +156,32 @@ class Engine:
                     scheduler.run_due(conn, to_utc_text(self._now_fn()))
             except (OSError, ValueError, sqlite3.Error):
                 logger.error("Scheduler run failed. TFS tries again in a minute.")
+            self._fetch_due()
             self._stopping.wait(SCHEDULER_INTERVAL_S)
+
+    def _fetch_due(self) -> None:
+        """Sync each enabled fetching source whose last attempt is over an hour old."""
+        now = self._now_fn()
+        cutoff = to_utc_text(now - FETCH_INTERVAL)
+        fetching = [
+            name for name, manifest in load_manifests().items() if manifest["routes"]["fetch"]
+        ]
+        try:
+            with contextlib.closing(connect(self._data_dir / "tfs.db", "import")) as conn:
+                due = [
+                    row["connector"]
+                    for row in conn.execute(
+                        "SELECT connector FROM sources WHERE enabled = 1"
+                        " AND (last_attempt_at IS NULL OR last_attempt_at <= ?)",
+                        (cutoff,),
+                    )
+                    if row["connector"] in fetching
+                ]
+                for name in due:
+                    if not self._stopping.is_set():
+                        sync(conn, self._data_dir, name, now=to_utc_text(now), tz=self._tz)
+        except (OSError, ValueError, sqlite3.Error):
+            logger.error("Fetching failed. TFS tries again in a minute.")
 
     def _prepare_data(self, db_path: Path) -> None:
         (self._data_dir / "raw").mkdir(parents=True, exist_ok=True)

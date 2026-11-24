@@ -10,6 +10,7 @@ import sys
 import threading
 import webbrowser
 from collections.abc import Callable, Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote
 
@@ -21,7 +22,9 @@ from tfs import config, password_store, providers
 from tfs.cli import import_, start
 from tfs.cli.connect import connect_source
 from tfs.connectors.core import runner
-from tfs.connectors.core.contract import load_manifests
+from tfs.connectors.core.contract import load_manifests, to_utc_text
+from tfs.importer.session import sync
+from tfs.persistence import sqlite
 from tfs.persistence.migrations import DatabaseTooNewError
 from tfs.web import setup_page
 
@@ -265,4 +268,18 @@ def _connect_with_asks(name: str, manifest: dict, opens: str | None) -> None:
         answers[ask["key"]] = _ask(prompt(f"{ask['label']}:"))
     with _spinner(f"Connecting {manifest['label']}"):
         connect_source(name, answers)
+        summary = _first_sync(name) if manifest["routes"]["fetch"] else None
     print(f"  Connected {manifest['label']}.")
+    if summary:
+        print(f"  {summary}")
+
+
+def _first_sync(name: str) -> str:
+    """Fetch once so a rejected key shows now. A failed sync turns the source off and raises."""
+    with contextlib.closing(sqlite.connect(config.db_path())) as conn:
+        result = sync(conn, config.data_dir(), name, now=to_utc_text(datetime.now(UTC)))
+        if result.needs_you:
+            with sqlite.transaction(conn):
+                conn.execute("UPDATE sources SET enabled = 0 WHERE connector = ?", (name,))
+            raise runner.ConnectorUserError(result.needs_you)
+    return result.summary
