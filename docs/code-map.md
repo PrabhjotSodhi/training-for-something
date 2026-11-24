@@ -11,6 +11,8 @@ training-for-something/
   AGENTS.md                   rules for every coding agent
   README.md
   CHANGELOG.md
+  install.sh                  one-line installer for Mac and Linux
+  install.ps1                 one-line installer for Windows
   pyproject.toml              package metadata, the `tfs` command
   docs/                       HLD, specs, card rules, this map
   dashboard/                  the dashboard source: Vite, React and TypeScript, built into src/tfs/web/dashboard/
