@@ -1,22 +1,49 @@
-# Training For Something
+<div align="center">
 
-A free, open source coach for your goal. It runs on your computer, reads your health and training apps, and answers your questions through the AI tool you already use.
+<img src="docs/images/banner.webp" alt="Training For Something: the coach for your goal" width="880">
 
-[Install](#install) · [Releases](https://github.com/PrabhjotSodhi/training-for-something/releases) · [License](#license)
+**A free, open source coach for your goal.**
+
+It runs on your computer, reads your health and training apps,<br>
+and answers your questions through the AI tool you already use.
 
 [![tests](https://github.com/PrabhjotSodhi/training-for-something/actions/workflows/tests.yml/badge.svg)](https://github.com/PrabhjotSodhi/training-for-something/actions/workflows/tests.yml)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/PrabhjotSodhi/training-for-something?include_prereleases)](https://github.com/PrabhjotSodhi/training-for-something/releases)
 
-![The TFS Overview, filled with made-up data](docs/images/overview.webp)
+[Install](#install) · [Releases](https://github.com/PrabhjotSodhi/training-for-something/releases) · [License](#license)
+
+</div>
 
 ## Features
 
-![Ask your coach in Claude Code or Codex and approve each change. Each workout is counted once. One line installs TFS. Works with Apple Health, Health Auto Export and Hevy. Your data stays on your computer.](docs/images/features-now.webp)
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/feature-ask.webp" alt="A question about long runs answered with the person's own numbers"><br><b>Ask your coach</b><br>Ask in Claude Code or Codex. Answers come from your own numbers.</td>
+<td width="50%" valign="top"><img src="docs/images/feature-approve.webp" alt="A prompt asking to save one added easy run, with Yes and No"><br><b>Approve every change</b><br>Your coach shows each change first. Nothing saves without your yes.</td>
+</tr>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/feature-goal.webp" alt="The goal plate with a forecast range of 0:48 to 0:50"><br><b>Your goal, front and centre</b><br>A dashboard on your computer shows your forecast, today and your week.</td>
+<td width="50%" valign="top"><img src="docs/images/feature-once.webp" alt="The same run from Apple Health and Health Auto Export kept as one run"><br><b>Counted once</b><br>The same run from two apps stays one run.</td>
+</tr>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/feature-install.webp" alt="The setup checklist with Claude Code and Codex found"><br><b>One line to install</b><br>Setup finds your AI tools and connects your apps.</td>
+<td width="50%" valign="top"><img src="docs/images/feature-apps.webp" alt="Apple Health, Hevy, Health Auto Export, Claude Code and Codex"><br><b>Works with your apps</b><br>Apple Health, Health Auto Export and Hevy, with Claude Code or Codex.</td>
+</tr>
+</table>
 
 ### Coming soon
 
-![A missed session reworks the rest of your week. Effort load from your workout ratings. Plans sent to Hevy as routines. A coach that checks your data each morning.](docs/images/features-soon.webp)
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/feature-missed.webp" alt="A missed Tuesday session moved to Thursday, waiting for approval"><br><b>Missed a session?</b><br>Your coach reworks the rest of your week.</td>
+<td width="50%" valign="top"><img src="docs/images/feature-effort.webp" alt="Effort up 12 percent this week against the normal"><br><b>Effort load</b><br>Your workout ratings, shown against your own normal.</td>
+</tr>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/feature-hevy.webp" alt="An upper body routine marked as sent to Hevy"><br><b>Plans sent to Hevy</b><br>Strength sessions arrive in Hevy as routines.</td>
+<td width="50%" valign="top"><img src="docs/images/feature-morning.webp" alt="A morning note that changes today's intervals to an easy run"><br><b>A coach in the background</b><br>It checks your data each morning. No chat needed.</td>
+</tr>
+</table>
 
 Also coming: log food with a photo, read lab results from a PDF, Android phones through Health Connect, and Fitbit through Apple Health.
 
