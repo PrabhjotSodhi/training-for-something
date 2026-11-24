@@ -10,7 +10,6 @@ from tests.helpers import open_database
 from tests.test_proposals import ADD, NOW, proposal
 from tfs.connectors.core import send
 from tfs.connectors.core.contract import load_manifests, to_utc_text
-from tfs.connectors.core.runner import run
 from tfs.connectors.hevy import routines
 from tfs.mcp.tool_access import open_reader, query
 from tfs.proposals.apply import preview, save
@@ -81,9 +80,6 @@ class FakeHevy:
 
 class HevySendTest(unittest.TestCase):
     def setUp(self):
-        patch = mock.patch.object(routines, "_WRITES_PROVEN", True)
-        patch.start()
-        self.addCleanup(patch.stop)
         self.http = FakeHevy()
 
     def send(self, item=None, **changes):
@@ -99,30 +95,98 @@ class HevySendTest(unittest.TestCase):
         }
         return routines.send(**(payload | changes))
 
-    def test_default_gate_makes_no_request_even_in_real_helper(self):
-        with mock.patch.object(routines, "_WRITES_PROVEN", False):
-            self.assertEqual(self.send()["status"], "needs_you")
-        self.assertEqual(self.http.calls, [])
-        result = run(
-            "hevy",
-            "send",
-            {
-                "item": ITEM,
-                "op_id": "operation-1",
-                "remote_id": None,
-                "remote_version": None,
-                "in_doubt": False,
-                "secrets": {"api_key": "invented-key"},
-                "now": VERSION,
-            },
-            timeout_s=10,
+    def plan_with_hevy(self):
+        conn = open_database(self)
+        path = Path(conn.execute("PRAGMA database_list").fetchone()[2])
+        conn.execute("INSERT INTO sources(connector) VALUES ('hevy')")
+        conn.execute(
+            "INSERT INTO app_targets(connector, remote_id, title, folder, remote_version)"
+            " VALUES ('hevy', ?, ?, ?, ?)",
+            (NAMED["id"], NAMED["title"], NAMED["folder_id"], NAMED["updated_at"]),
         )
-        self.assertEqual(result["status"], "needs_you")
-        self.assertIn("verification", result["message"])
+        self.http.saved[NAMED["id"]] = copy.deepcopy(NAMED)
+
+        def deliver(connector, operation, payload, **options):
+            return routines.send(**payload, http=self.http)
+
+        for patch in (
+            mock.patch.object(send.password_store, "get", return_value="invented-key"),
+            mock.patch.object(send.runner, "run", side_effect=deliver),
+        ):
+            patch.start()
+            self.addCleanup(patch.stop)
+        return conn, path
+
+    def approve(self, path, *actions, version=0):
+        value = proposal(*actions, version=version)
+        shown = preview(path, value, now=NOW)
+        value["delivery_targets"] = shown["delivery_targets"]
+        save(path, value, request_id=f"save-{version}", approved_by="chat", now=NOW)
+        return shown
+
+    def plan_status(self, path):
+        with closing(open_reader(path)) as reader:
+            sql = "SELECT plan_item_id, status FROM coach_v1_plan_items ORDER BY plan_item_id"
+            return query(reader, sql)["rows"]
+
+    def test_with_hevy_connected_a_strength_save_queues_a_hevy_job_that_sends(self):
+        # GIVEN Hevy is connected
+        conn, path = self.plan_with_hevy()
+        # WHEN a strength session is approved
+        shown = self.approve(path, ADD)
+        # THEN a Hevy job is queued and the worker sends it
+        self.assertEqual(shown["delivery_targets"], {"p1": ["hevy"]})
+        self.assertTrue(jobs.run_one(path, to_utc_text(NOW)))
+        self.assertEqual(self.plan_status(path), [["p1", "sent"]])
+
+    def test_preview_shows_the_title_of_the_named_routine(self):
+        # GIVEN Hevy is connected and TFS has read the person's routines
+        _, path = self.plan_with_hevy()
+        # WHEN a session that names a routine is previewed
+        shown = preview(path, proposal({**ADD, "send_into": {"hevy": NAMED["id"]}}), now=NOW)
+        # THEN the preview shows that routine's title
+        self.assertEqual(shown["send_into_titles"], {"p1": {"hevy": NAMED["title"]}})
+
+    def test_approved_session_goes_into_the_named_routine(self):
+        # GIVEN an approved session that names a routine
+        _, path = self.plan_with_hevy()
+        self.approve(path, {**ADD, "send_into": {"hevy": NAMED["id"]}})
+        # WHEN the worker sends it
+        self.assertTrue(jobs.run_one(path, to_utc_text(NOW)))
+        # THEN the named routine holds the session and no routine is created
+        stored = self.http.saved[NAMED["id"]]
+        self.assertEqual([e["exercise_template_id"] for e in stored["exercises"]], ["press"])
+        self.assertEqual(list(self.http.saved), [NAMED["id"]])
+        self.assertEqual(self.plan_status(path), [["p1", "sent"]])
+
+    def test_removing_a_session_sent_to_a_named_routine_queues_nothing(self):
+        # GIVEN a session sent into a named routine
+        conn, path = self.plan_with_hevy()
+        self.approve(path, {**ADD, "send_into": {"hevy": NAMED["id"]}})
+        jobs.run_one(path, to_utc_text(NOW))
+        stored = copy.deepcopy(self.http.saved[NAMED["id"]])
+        # WHEN the session is removed
+        shown = self.approve(path, {"action": "remove_session", "item": "p1"}, version=1)
+        # THEN nothing is queued and the routine stays as it is
+        self.assertEqual(shown["delivery_targets"], {})
+        self.assertFalse(jobs.run_one(path, to_utc_text(NOW)))
+        self.assertEqual(self.http.saved[NAMED["id"]], stored)
+
+    def test_second_session_on_the_same_routine_unlinks_the_first(self):
+        # GIVEN a session sent into a named routine
+        _, path = self.plan_with_hevy()
+        self.approve(path, {**ADD, "send_into": {"hevy": NAMED["id"]}})
+        jobs.run_one(path, to_utc_text(NOW))
+        # WHEN a second session names the same routine and is sent
+        second = {**ADD, "item": "p2", "date": "2026-11-09", "send_into": {"hevy": NAMED["id"]}}
+        self.approve(path, second, version=1)
+        self.assertTrue(jobs.run_one(path, to_utc_text(NOW)))
+        # THEN the first shows as not sent, and it can still be changed
+        self.assertEqual(self.plan_status(path), [["p1", "saved"], ["p2", "sent"]])
+        self.approve(path, {"action": "change_session", "item": "p1", "label": "Pull"}, version=2)
 
     def test_removed_routine_returns_manual_instruction_without_http(self):
-        with mock.patch.object(routines, "_WRITES_PROVEN", False):
-            result = self.send(item={**ITEM, "status": "removed"}, remote_id="routine-1")
+        result = self.send(item={**ITEM, "status": "removed"}, remote_id="routine-1")
         self.assertEqual(
             (result["status"], result["manual_action"], result["remote_id"]),
             ("needs_you", "delete", "routine-1"),

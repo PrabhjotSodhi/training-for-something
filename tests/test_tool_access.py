@@ -178,6 +178,7 @@ class ToolAccessTest(unittest.TestCase):
                 "coach_v1_forecasts",
                 "coach_v1_overview",
                 "coach_v1_limits",
+                "coach_v1_app_targets",
             ],
         )
         meaning = result["coach_v1_workouts"]["meaning"]

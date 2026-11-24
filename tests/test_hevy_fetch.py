@@ -8,6 +8,7 @@ from tfs.connectors.hevy.connector import connect, fetch
 NOW = "2026-10-27T07:00:00Z"
 API_KEY = "invented-key-123"
 BASE = "https://api.hevyapp.com/v1"
+ROUTINES_URL = f"{BASE}/routines?page=1&pageSize=10"
 
 
 class FakeHttp:
@@ -49,6 +50,7 @@ class HevyFetchTest(unittest.TestCase):
             {
                 f"{BASE}/workouts?page=1&pageSize=10": _page(1, 2),
                 f"{BASE}/workouts?page=2&pageSize=10": _page(2, 2),
+                ROUTINES_URL: _page(1, 1, key="routines"),
             }
         )
 
@@ -56,9 +58,13 @@ class HevyFetchTest(unittest.TestCase):
 
         self.assertEqual(
             http.urls,
-            [f"{BASE}/workouts?page=1&pageSize=10", f"{BASE}/workouts?page=2&pageSize=10"],
+            [
+                f"{BASE}/workouts?page=1&pageSize=10",
+                f"{BASE}/workouts?page=2&pageSize=10",
+                ROUTINES_URL,
+            ],
         )
-        self.assertEqual(http.headers, [{"api-key": API_KEY, "accept": "application/json"}] * 2)
+        self.assertEqual(http.headers, [{"api-key": API_KEY, "accept": "application/json"}] * 3)
         self.assertEqual(
             result,
             {
@@ -77,17 +83,18 @@ class HevyFetchTest(unittest.TestCase):
                 "cursor": {"since": "2026-10-27T06:55:00Z"},
                 "auth_failed": False,
                 "wait_until": None,
+                "targets": [],
             },
         )
         self.assertEqual(json.loads((self.out_dir / "workouts_page-2.json").read_text())["page"], 2)
 
     def test_later_fetch_asks_for_events_since_the_cursor(self) -> None:
         url = f"{BASE}/workouts/events?page=1&pageSize=10&since=2026-10-26T07%3A00%3A00Z"
-        http = FakeHttp({url: _page(1, 1, key="events")})
+        http = FakeHttp({url: _page(1, 1, key="events"), ROUTINES_URL: _page(1, 1, key="routines")})
 
         result = self._fetch({"since": "2026-10-26T07:00:00Z"}, http)
 
-        self.assertEqual(http.urls, [url])
+        self.assertEqual(http.urls, [url, ROUTINES_URL])
         self.assertEqual(
             result["files"],
             [

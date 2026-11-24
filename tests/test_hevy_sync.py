@@ -39,6 +39,10 @@ WORKOUT = {
         }
     ],
 }
+ROUTINES = [
+    {"id": "routine-1", "title": "Push A", "folder_id": 7, "updated_at": "2026-11-18T09:00:00Z"},
+    {"id": "routine-2", "title": "Legs", "folder_id": None, "updated_at": "2026-11-19T09:00:00Z"},
+]
 
 
 class FakeHevy:
@@ -47,10 +51,14 @@ class FakeHevy:
     def __init__(self, *, accepts_key: bool = True) -> None:
         self.accepts_key = accepts_key
         self.fetches = 0
+        self.routines = [{**routine, "exercises": []} for routine in ROUTINES]
 
     def http(self, url: str, headers: dict, timeout_s: float = 30) -> tuple[int, dict, bytes]:
         if not self.accepts_key:
             return 401, {}, b""
+        if "/routines?" in url:
+            body = {"page": 1, "page_count": 1, "routines": self.routines}
+            return 200, {}, json.dumps(body).encode("utf-8")
         body = {"page": 1, "page_count": 1, "workouts": [WORKOUT], "events": []}
         return 200, {}, json.dumps(body).encode("utf-8")
 
@@ -146,6 +154,23 @@ class EngineFetchTest(HevyTestCase):
         self.assertEqual(self.hevy.fetches, 1)
         cursor = self.conn.execute("SELECT cursor_json FROM sources").fetchone()[0]
         self.assertEqual(json.loads(cursor), {"since": "2026-11-20T12:55:00Z"})
+
+    def test_given_a_routine_deleted_in_hevy_when_the_next_fetch_runs_then_it_drops_out(self):
+        # GIVEN TFS has read two Hevy routines
+        self.clock += FETCH_INTERVAL
+        self.engine._fetch_due()
+        # WHEN one is deleted in Hevy and the next fetch runs
+        self.hevy.routines.pop()
+        self.clock += FETCH_INTERVAL
+        self.engine._fetch_due()
+        # THEN the ask TFS tool lists only the routine that is left
+        with contextlib.closing(open_reader(config.db_path())) as reader:
+            sql = "SELECT connector, remote_id, title, folder, remote_version FROM coach_v1_app_targets"
+            rows = query(reader, sql)["rows"]
+        first = ROUTINES[0]
+        self.assertEqual(
+            rows, [["hevy", first["id"], first["title"], first["folder_id"], first["updated_at"]]]
+        )
 
     def test_given_a_source_that_does_not_fetch_then_the_engine_leaves_it_alone(self):
         # GIVEN an enabled push source that was never fetched
