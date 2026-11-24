@@ -44,6 +44,25 @@ ROUTINES = [
 ]
 
 
+TEMPLATES = [{"id": "t-chest", "primary_muscle_group": "chest"}, {"id": "t-untagged"}]
+
+
+def workout_of(*exercises: tuple[str, list[str]]) -> dict:
+    """A workout holding one exercise per (template id, set types) pair."""
+    return {
+        **WORKOUT,
+        "exercises": [
+            {
+                "index": index,
+                "title": template,
+                "exercise_template_id": template,
+                "sets": [{"index": n, "type": kind, "reps": 8} for n, kind in enumerate(kinds)],
+            }
+            for index, (template, kinds) in enumerate(exercises)
+        ],
+    }
+
+
 class FakeHevy:
     """Stands in for the Hevy API and for the connector child process."""
 
@@ -51,6 +70,8 @@ class FakeHevy:
         self.accepts_key = accepts_key
         self.fetches = 0
         self.routines = [{**routine, "exercises": []} for routine in ROUTINES]
+        self.workouts = [WORKOUT]
+        self.deleted: list[str] = []
 
     def http(self, url: str, headers: dict, timeout_s: float = 30) -> tuple[int, dict, bytes]:
         if not self.accepts_key:
@@ -58,7 +79,14 @@ class FakeHevy:
         if "/routines?" in url:
             body = {"page": 1, "page_count": 1, "routines": self.routines}
             return 200, {}, json.dumps(body).encode("utf-8")
-        body = {"page": 1, "page_count": 1, "workouts": [WORKOUT], "events": []}
+        if "/exercise_templates?" in url:
+            body = {"page": 1, "page_count": 1, "exercise_templates": TEMPLATES}
+            return 200, {}, json.dumps(body).encode("utf-8")
+        events = [
+            {"type": "deleted", "id": key, "deleted_at": "2026-11-20T13:00:00Z"}
+            for key in self.deleted
+        ]
+        body = {"page": 1, "page_count": 1, "workouts": self.workouts, "events": events}
         return 200, {}, json.dumps(body).encode("utf-8")
 
     def run(self, name: str, op: str, payload: dict, **options) -> dict:
@@ -170,6 +198,45 @@ class EngineFetchTest(HevyTestCase):
         self.assertEqual(
             rows, [["hevy", first["id"], first["title"], first["folder_id"], first["updated_at"]]]
         )
+
+    def sets_by_muscle(self) -> list[list]:
+        with contextlib.closing(open_reader(config.db_path())) as reader:
+            sql = "SELECT week_start, muscle, sets FROM coach_v1_sets_by_muscle"
+            return query(reader, sql)["rows"]
+
+    def test_given_3_working_sets_and_a_warmup_tagged_chest_then_chest_has_3(self):
+        # GIVEN a week with 3 working sets of a chest exercise and 1 warmup set
+        self.hevy.workouts = [workout_of(("t-chest", ["warmup", "normal", "failure", "dropset"]))]
+        # WHEN Hevy is fetched
+        self.clock += FETCH_INTERVAL
+        self.engine._fetch_due()
+        # THEN chest has 3 for that week
+        self.assertEqual(self.sets_by_muscle(), [["2026-11-16", "chest", 3]])
+
+    def test_given_a_workout_deleted_in_hevy_when_the_next_sync_runs_then_its_sets_leave_the_count(
+        self,
+    ):
+        # GIVEN two stored workouts, each with one chest set
+        second = {**workout_of(("t-chest", ["normal"])), "id": "w-2"}
+        self.hevy.workouts = [workout_of(("t-chest", ["normal"])), second]
+        self.clock += FETCH_INTERVAL
+        self.engine._fetch_due()
+        self.assertEqual(self.sets_by_muscle(), [["2026-11-16", "chest", 2]])
+        # WHEN one is deleted in Hevy and the next sync runs
+        self.hevy.deleted = ["w-1"]
+        self.clock += FETCH_INTERVAL
+        self.engine._fetch_due()
+        # THEN only the other workout's set counts
+        self.assertEqual(self.sets_by_muscle(), [["2026-11-16", "chest", 1]])
+
+    def test_given_an_exercise_with_no_muscle_tag_then_its_sets_go_under_other(self):
+        # GIVEN a workout with 2 sets of an exercise whose template has no muscle tag
+        self.hevy.workouts = [workout_of(("t-untagged", ["normal", "normal"]))]
+        # WHEN Hevy is fetched
+        self.clock += FETCH_INTERVAL
+        self.engine._fetch_due()
+        # THEN the sets count under other
+        self.assertEqual(self.sets_by_muscle(), [["2026-11-16", "other", 2]])
 
     def test_given_a_source_that_does_not_fetch_then_the_engine_leaves_it_alone(self):
         # GIVEN an enabled push source that was never fetched
