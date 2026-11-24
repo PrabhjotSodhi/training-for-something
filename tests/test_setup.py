@@ -2,12 +2,15 @@ import argparse
 import contextlib
 import io
 import os
+import socket
+import sys
 import tempfile
 import unittest
+import urllib.request
 from collections import deque
 from unittest import mock
 
-from tfs import config
+from tfs import config, password_store
 from tfs.cli import main, setup, start
 from tfs.connectors.core.contract import load_manifests
 from tfs.persistence import sqlite
@@ -25,6 +28,10 @@ class FakeQuestionary:
 
     def __init__(self, *answers):
         self.answers = deque(answers)
+
+    @staticmethod
+    def print(text, style=None):
+        sys.stdout.write(f"{text}\n")
 
     def __getattr__(self, kind):
         def question(message, **options):
@@ -148,6 +155,79 @@ class SetupTest(TfsHomeTestCase):
         code, out, err, _ = self.run_setup(FakeQuestionary(), FakeCommands(found=set()), tty=False)
         self.assertEqual(code, 1)
         self.assertEqual(out + err, "Run tfs setup in a terminal.\n")
+
+
+class PhonePageTest(TfsHomeTestCase):
+    CODE = "k7q2abcd"
+
+    def run_push_setup(self, picked, answers, port, on_enter=lambda: None):
+        questionary = FakeQuestionary(picked, *answers, False)
+        out, err = io.StringIO(), io.StringIO()
+
+        def enter(*_):
+            on_enter()
+            return ""
+
+        with (
+            mock.patch("sys.stdin", mock.Mock(isatty=lambda: True)),
+            mock.patch("tfs.cli.setup.questionary", questionary),
+            mock.patch("tfs.providers.shutil.which", FakeCommands(found=set()).which),
+            mock.patch("tfs.cli.setup.connect_source"),
+            mock.patch("tfs.cli.setup.import_.run") as imported,
+            mock.patch("tfs.cli.setup.start.run", return_value=0),
+            mock.patch("tfs.cli.setup._host", return_value="127.0.0.1"),
+            mock.patch("tfs.cli.setup._BIND", "127.0.0.1"),
+            mock.patch("tfs.cli.setup.config.HOME_WIFI_PORT", port),
+            mock.patch("tfs.cli.setup.secrets.token_urlsafe", return_value=self.CODE),
+            mock.patch("builtins.input", enter),
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(err),
+        ):
+            code = main(["setup"])
+        return code, out.getvalue() + err.getvalue(), imported
+
+    def free_port(self):
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            return probe.getsockname()[1]
+
+    def test_given_the_first_page_request_then_the_terminal_confirms_the_phone_and_the_token_stays_hidden(
+        self,
+    ):
+        port = self.free_port()
+        url = f"http://127.0.0.1:{port}/setup/{self.CODE}"
+        _, out, _ = self.run_push_setup(
+            ["health_auto_export"],
+            [],
+            port,
+            lambda: urllib.request.urlopen(url).read(),  # noqa: S310
+        )
+        token = password_store.get("push_token")
+        self.assertTrue(token)
+        self.assertNotIn(token, out)
+        self.assertIn("✔ Your phone reached this computer.", out)
+        self.assertIn("Tap both buttons on the page, then press Enter.", out)
+
+    def test_given_enter_before_any_request_then_no_phone_line_and_the_address_stops_answering(
+        self,
+    ):
+        port = self.free_port()
+        _, out, _ = self.run_push_setup(["health_auto_export"], [], port)
+        self.assertNotIn("Your phone reached", out)
+        with self.assertRaises(OSError):
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/setup/{self.CODE}", timeout=5)
+
+    def test_given_the_port_is_in_use_then_setup_says_so_and_goes_on_to_the_next_app(self):
+        with socket.socket() as taken:
+            taken.bind(("127.0.0.1", 0))
+            taken.listen()
+            port = taken.getsockname()[1]
+            _, out, imported = self.run_push_setup(
+                ["health_auto_export", "apple_health"], [""], port
+            )
+        self.assertIn("Close TFS, then run tfs setup again.", out)
+        self.assertIn("2 of 2", out)
+        imported.assert_not_called()
 
 
 class StartHomeWifiTest(TfsHomeTestCase):

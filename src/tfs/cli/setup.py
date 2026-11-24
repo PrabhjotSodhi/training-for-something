@@ -17,6 +17,7 @@ from tfs.cli.connect import connect_source
 from tfs.connectors.core import runner
 from tfs.connectors.core.contract import load_manifests
 from tfs.persistence.migrations import DatabaseTooNewError
+from tfs.web import setup_page
 
 # prompt_toolkit raises this on Windows when the terminal is not a real console, such as Git Bash.
 # Its module refuses to import on other systems, so the tuple stays empty there.
@@ -25,6 +26,9 @@ if sys.platform == "win32":
     from prompt_toolkit.output.win32 import NoConsoleScreenBufferError
 
     _NO_CONSOLE = (NoConsoleScreenBufferError,)
+
+_BIND = "0.0.0.0"  # noqa: S104 (a phone on the Wi-Fi must reach it)
+_BOLD, _GREEN, _RED, _DIM = "bold", "fg:ansigreen", "fg:ansired", "fg:ansibrightblack"
 
 _CONNECT_ERRORS = (
     runner.ConnectorUserError,
@@ -85,17 +89,20 @@ def _ask(question: questionary.Question):
 
 
 def _connect_ai_tools() -> None:
-    print("AI tools")
+    questionary.print("AI tools", style=_BOLD)
     found = 0
     for provider in providers.PROVIDERS:
         program = providers.find(provider)
         if program is None:
-            print(f"  ✘ {provider.label:<13} not found")
+            questionary.print(f"  ✘ {provider.label:<13} not found", style=_RED)
             continue
         found += 1
         connected = providers.is_connected(program) or _offer_connect(program, provider)
         status = "found, TFS connected" if connected else "found, TFS not connected"
-        print(f"  {'✔' if connected else '✘'} {provider.label:<13} {status}")
+        questionary.print(
+            f"  {'✔' if connected else '✘'} {provider.label:<13} {status}",
+            style=_GREEN if connected else _RED,
+        )
     if not found:
         print("TFS needs Claude Code or Codex. Install one, then run tfs setup again.")
 
@@ -117,7 +124,7 @@ def _set_up_app(name: str, manifest: dict) -> None:
         if manifest["routes"]["files"]:
             _import_file(name)
         if manifest["routes"]["push"]:
-            _show_links(name, setup.get("links", []))
+            _show_links(name, manifest["label"], setup.get("links", []))
         if manifest["asks"]:
             _connect_with_asks(name, manifest, setup.get("opens"))
     except _CONNECT_ERRORS as error:
@@ -134,22 +141,42 @@ def _import_file(name: str) -> None:
         import_.run(argparse.Namespace(path=Path(path), connector=name))
 
 
-def _show_links(name: str, links: list[dict]) -> None:
+def _show_links(name: str, label: str, links: list[dict]) -> None:
     connect_source(name, {})
     token = password_store.get("push_token")
     if not token:
         token = secrets.token_urlsafe(32)
         password_store.set("push_token", token)
     push_url = f"http://{_host()}:{config.HOME_WIFI_PORT}/push/{name}"
-    for number, link in enumerate(links, 1):
-        url = fill_link(link["url"], push_url, token)
-        print(f"\n  {link['label']}")
-        code = qrcode.QRCode()
-        code.add_data(url)
-        code.print_ascii(invert=True)
-        print(url)
-        if number < len(links):
-            input("Press Enter, then scan the next one.")
+    buttons = [(f"Add {link['label']}", fill_link(link["url"], push_url, token)) for link in links]
+    code = secrets.token_urlsafe(6)
+    if sys.platform == "win32":
+        questionary.print("  If Windows asks, allow TFS on private networks.", style=_DIM)
+    try:
+        server = setup_page.SetupServer(
+            _BIND, config.HOME_WIFI_PORT, code, f"Connect {label}", buttons, _phone_reached
+        )
+    except OSError:
+        questionary.print("  Close TFS, then run tfs setup again.", style=_RED)
+        return
+    server.start()
+    try:
+        _print_qr(f"http://{_host()}:{config.HOME_WIFI_PORT}/setup/{code}")
+        questionary.print("  Waiting for your phone... (Enter to skip)", style=_DIM)
+        input()
+    finally:
+        server.stop()
+
+
+def _phone_reached() -> None:
+    questionary.print("  ✔ Your phone reached this computer.", style=_GREEN)
+    questionary.print("  Tap both buttons on the page, then press Enter.", style=_DIM)
+
+
+def _print_qr(url: str) -> None:
+    code = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_L, border=2)
+    code.add_data(url)
+    code.print_ascii(invert=True)
 
 
 def _host() -> str:

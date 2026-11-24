@@ -10,7 +10,7 @@
   "setup": {
     "steps": [
       "Needs Health Auto Export Premium.",
-      "Scan with your iPhone camera, then tap Enable."
+      "Scan with your iPhone camera."
     ],
     "links": [
       {
