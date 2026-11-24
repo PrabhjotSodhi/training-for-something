@@ -1,10 +1,15 @@
 """`tfs setup`: connect the AI tools and the apps in one guided run, then start TFS."""
 
 import argparse
+import contextlib
+import io
+import itertools
 import secrets
 import socket
 import sys
+import threading
 import webbrowser
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from urllib.parse import quote
 
@@ -94,6 +99,34 @@ def _checklist(message: str, choices: list) -> questionary.Question:
     )
 
 
+@contextlib.contextmanager
+def _spinner(text: str) -> Iterator[Callable[[str], None]]:
+    """Animate a spinner beside text until the block ends. Yields a function that changes the text."""
+    stream, label, done = sys.stdout, [text], threading.Event()
+
+    def spin() -> None:
+        width = 0
+        for frame in itertools.cycle("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"):
+            line = f"  {frame} {label[0]}"
+            stream.write("\r" + line.ljust(width))
+            stream.flush()
+            width = max(width, len(line))
+            if done.wait(0.08):
+                break
+        stream.write("\r" + " " * width + "\r")
+        stream.flush()
+
+    thread = threading.Thread(target=spin, daemon=True)
+    if stream.isatty():
+        thread.start()
+    try:
+        yield lambda new_text: label.__setitem__(0, new_text)
+    finally:
+        done.set()
+        if thread.is_alive():
+            thread.join()
+
+
 def _ask(question: questionary.Question):
     answer = question.ask()
     if answer is None:
@@ -102,15 +135,16 @@ def _ask(question: questionary.Question):
 
 
 def _connect_ai_tools() -> None:
-    programs = {provider: providers.find(provider) for provider in providers.PROVIDERS}
+    with _spinner("Looking for Claude Code and Codex"):
+        programs = {provider: providers.find(provider) for provider in providers.PROVIDERS}
+        connected = {
+            p for p, program in programs.items() if program and providers.is_connected(program)
+        }
     if not any(programs.values()):
         questionary.print(
             "TFS needs Claude Code or Codex. Install one, then run tfs setup again.", style=_RED
         )
         return
-    connected = {
-        p for p, program in programs.items() if program and providers.is_connected(program)
-    }
     choices = [_tool_choice(p, programs[p], p in connected) for p in providers.PROVIDERS]
     if not any(choice.disabled is None for choice in choices):
         for provider in connected:
@@ -118,7 +152,8 @@ def _connect_ai_tools() -> None:
         return
     picked = _ask(_checklist("Connect TFS to your AI tools", choices))
     for provider in picked:
-        problem = providers.connect(programs[provider], provider)
+        with _spinner(f"Connecting {provider.label}") as say:
+            problem = providers.connect(programs[provider], provider, say)
         if problem:
             questionary.print(f"  ✘ Could not connect {provider.label}: {problem}", style=_RED)
         else:
@@ -156,8 +191,18 @@ def _import_file(name: str) -> None:
     )
     # Dragging a file onto a Windows terminal wraps its path in quotes.
     path = typed.strip().strip("\"'")
-    if path:
-        import_.run(argparse.Namespace(path=Path(path), connector=name))
+    if not path:
+        return
+    output = io.StringIO()
+    try:
+        with (
+            _spinner(f"Importing {Path(path).name}"),
+            contextlib.redirect_stdout(output),
+            contextlib.redirect_stderr(output),
+        ):
+            import_.run(argparse.Namespace(path=Path(path), connector=name))
+    finally:
+        print(output.getvalue(), end="")
 
 
 def _show_links(name: str, label: str, links: list[dict]) -> None:
@@ -218,5 +263,6 @@ def _connect_with_asks(name: str, manifest: dict, opens: str | None) -> None:
     for ask in manifest["asks"]:
         prompt = questionary.password if ask["secret"] else questionary.text
         answers[ask["key"]] = _ask(prompt(f"{ask['label']}:"))
-    connect_source(name, answers)
+    with _spinner(f"Connecting {manifest['label']}"):
+        connect_source(name, answers)
     print(f"  Connected {manifest['label']}.")
