@@ -9,13 +9,10 @@ from tfs.connectors.core.contract import parse_iso_time, to_utc_text
 _ORIGIN_APP = "com.garmin.connect.mobile"
 _API = "https://personal.connectapi.garmin.com"
 _TOKEN_URL = f"{_API}/personalapitoken-service/personal-api/personal-api-key/token"
-_FIRST_DAYS = 28
+_MAX_DAYS = 28
 _OVERLAP = timedelta(days=1)
 _DEFAULT_WAIT_S = 300
 _PAGE_SIZE = 99
-_EXPIRED = (
-    "Your Garmin API key expired. Create a new key in Garmin Connect and run tfs connect garmin."
-)
 _ACTIVITIES = (
     "/activitylist-service/activities/search/activities"
     "?startDate={start}&endDate={end}&limit={limit}&start={offset}"
@@ -51,7 +48,8 @@ def connect(answers: dict) -> dict:
 def fetch(cursor: dict | None, secrets: dict, out_dir: str, http, now: str) -> dict:
     """Exchange the key for a token, download each data set since the cursor and return the files and next cursor."""
     now_time = parse_iso_time(now)
-    since = parse_iso_time(cursor["since"]) if cursor else now_time - timedelta(days=_FIRST_DAYS)
+    earliest = now_time - timedelta(days=_MAX_DAYS)
+    since = max(parse_iso_time(cursor["since"]), earliest) if cursor else earliest
     dates = {"start": since.date().isoformat(), "end": now_time.date().isoformat()}
     # The token is Garmin's reply body. It lives in this run's memory only.
     status, reply_headers, body = http(
@@ -91,7 +89,7 @@ def _stopped(
 ) -> dict:
     result = {"files": [], "cursor": cursor, "auth_failed": False, "wait_until": None}
     if status in (401, 403):
-        return result | {"auth_failed": True, "message": _EXPIRED}
+        return result | {"auth_failed": True}
     if status == 429:
         value = next((v for k, v in headers.items() if k.lower() == "retry-after"), "")
         wait = int(value) if value.isascii() and value.isdigit() else _DEFAULT_WAIT_S
@@ -202,6 +200,15 @@ def _sleep(item: dict) -> dict:
     )
 
 
+def _daily(stream: str, metric: str, unit: str, items: list[dict], value_of) -> list[dict]:
+    # Garmin leaves a day's value out when the device recorded nothing, so that day gets no record.
+    return [
+        _measurement(stream, item["calendarDate"], metric, value, unit)
+        for item in items
+        if (value := value_of(item)) is not None
+    ]
+
+
 def _weight(item: dict) -> dict:
     latest = item["latestWeight"]
     return _measurement(
@@ -216,34 +223,32 @@ def _weight(item: dict) -> dict:
 
 _READERS = {
     "activities": lambda page: [_activity(item) for item in page],
-    "sleep": lambda page: [_sleep(item) for item in page],
-    "hrv": lambda page: [
-        _measurement("hrv", item["calendarDate"], "hrv_rmssd", item["lastNightAvg"], "ms")
-        for item in page["hrvSummaries"]
+    "sleep": lambda page: [
+        _sleep(item) for item in page if item.get("sleepTimeSeconds") is not None
     ],
-    "steps": lambda page: [
-        _measurement("steps", item["calendarDate"], "steps", item["totalSteps"], "count")
-        for item in page
+    "hrv": lambda page: _daily(
+        "hrv", "hrv_rmssd", "ms", page["hrvSummaries"], lambda item: item.get("lastNightAvg")
+    ),
+    "steps": lambda page: _daily(
+        "steps", "steps", "count", page, lambda item: item.get("totalSteps")
+    ),
+    "resting_hr": lambda page: _daily(
+        "resting_hr",
+        "resting_hr",
+        "bpm",
+        page["data"],
+        lambda item: (item.get("heartRate") or {}).get("restingValue"),
+    ),
+    "weight": lambda page: [
+        _weight(item)
+        for item in page["dailyWeightSummaries"]
+        if (item.get("latestWeight") or {}).get("weight") is not None
     ],
-    "resting_hr": lambda page: [
-        _measurement(
-            "resting_hr",
-            item["calendarDate"],
-            "resting_hr",
-            item["heartRate"]["restingValue"],
-            "bpm",
-        )
-        for item in page["data"]
-    ],
-    "weight": lambda page: [_weight(item) for item in page["dailyWeightSummaries"]],
-    "vo2_max": lambda page: [
-        _measurement(
-            "vo2_max",
-            item["generic"]["calendarDate"],
-            "vo2_max",
-            item["generic"]["vo2MaxValue"],
-            "mL/kg/min",
-        )
-        for item in page
-    ],
+    "vo2_max": lambda page: _daily(
+        "vo2_max",
+        "vo2_max",
+        "mL/kg/min",
+        [item["generic"] for item in page if item.get("generic")],
+        lambda item: item.get("vo2MaxValue"),
+    ),
 }

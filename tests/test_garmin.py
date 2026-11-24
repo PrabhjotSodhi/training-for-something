@@ -18,9 +18,6 @@ from tfs.persistence.sqlite import connect
 
 API_KEY = "invented-key-123"
 NOW = "2026-11-20T12:00:00Z"
-EXPIRED_MESSAGE = (
-    "Your Garmin API key expired. Create a new key in Garmin Connect and run tfs connect garmin."
-)
 ACTIVITY = {
     "activityId": 9001,
     "activityName": "Morning Run",
@@ -121,16 +118,15 @@ class GarminFetchTest(unittest.TestCase):
         self.assertEqual(set(garmin.bearers), {"Bearer token-1", "Bearer token-2"})
         self.assertNotIn("token-", json.dumps([first, second]))
 
-    def test_given_an_expired_key_then_auth_failed_with_the_message_and_the_cursor_stays(self):
+    def test_given_an_expired_key_then_auth_failed_and_the_cursor_stays(self):
         cursor = {"since": "2026-11-19T12:00:00Z"}
         for garmin in (FakeGarmin(key_valid=False), FakeGarmin(data_status=401)):
             with self.subTest(token_endpoint_rejects=not garmin.key_valid):
                 # GIVEN the token endpoint or a data endpoint answers 401
                 # WHEN TFS fetches
                 result = self.fetch(garmin, cursor)
-                # THEN the fetch is auth_failed with the message and the same cursor
+                # THEN the fetch is auth_failed with the same cursor
                 self.assertTrue(result["auth_failed"])
-                self.assertEqual(result["message"], EXPIRED_MESSAGE)
                 self.assertEqual(result["files"], [])
                 self.assertEqual(result["cursor"], cursor)
 
@@ -170,6 +166,24 @@ class GarminSetupTest(unittest.TestCase):
                 stored = conn.execute("SELECT COUNT(*) FROM source_records").fetchone()[0]
         self.assertEqual(garmin.exchanges, 1)
         self.assertEqual(stored, len(REPLIES))
+
+
+class GarminReadTest(unittest.TestCase):
+    def test_given_a_page_with_one_good_day_and_one_empty_day_then_one_record_is_read(self):
+        # GIVEN a steps page where Garmin left one day's value out
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        page = Path(folder.name) / "steps.json"
+        days = [
+            {"calendarDate": "2026-11-19", "totalSteps": 8200},
+            {"calendarDate": "2026-11-20", "totalSteps": None},
+        ]
+        page.write_text(json.dumps(days), encoding="utf-8")
+        out_path = Path(folder.name) / "records.jsonl"
+        # WHEN the connector reads it
+        result = connector.read(str(page), "steps", str(out_path))
+        # THEN the good day is read and the empty day is skipped
+        self.assertEqual((result["status"], result["count"]), ("ok", 1))
 
 
 class GarminDuplicateTest(unittest.TestCase):

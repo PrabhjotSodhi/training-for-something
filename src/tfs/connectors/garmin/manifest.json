@@ -4,7 +4,7 @@
   "routes": {"fetch": true, "push": false, "files": []},
   "asks": [{"key": "api_key", "label": "Personal API key", "secret": true}],
   "stale_after_hours": 48,
-  "app_ids": ["com.garmin.connect.mobile", "Garmin Connect"],
+  "app_ids": [],
   "notices_deletes": false,
   "sends": [],
   "setup": {
