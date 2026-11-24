@@ -2,6 +2,7 @@
 
 import shutil
 import subprocess
+from collections.abc import Callable
 from typing import NamedTuple
 
 from tfs.providers import claude_code, codex
@@ -51,12 +52,19 @@ def is_connected(program: str) -> bool:
     return ok and PLUGIN in output
 
 
-def connect(program: str, provider: Provider) -> str | None:
+def connect(program: str, provider: Provider, say: Callable[[str], None]) -> str | None:
     """Add the TFS marketplace and install the plugin. Return the problem, or None on success."""
-    for argv in (
-        [program, "plugin", "marketplace", "add", REPO],
-        [program, "plugin", provider.install, PLUGIN],
+    for step, argv in (
+        (
+            f"Adding the TFS marketplace to {provider.label}",
+            [program, "plugin", "marketplace", "add", REPO],
+        ),
+        (
+            f"Installing the TFS plugin in {provider.label}",
+            [program, "plugin", provider.install, PLUGIN],
+        ),
     ):
+        say(step)
         ok, output = run_command(argv)
         if not ok:
             lines = output.strip().splitlines()
