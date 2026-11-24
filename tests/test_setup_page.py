@@ -38,7 +38,9 @@ def get(server, path):
 
 class SetupServerTest(unittest.TestCase):
     def start(self, on_reach=lambda: None):
-        server = setup_page.SetupServer("127.0.0.1", 0, CODE, BUTTONS, on_reach)
+        server = setup_page.SetupServer(
+            "127.0.0.1", 0, CODE, "Connect Example App", BUTTONS, on_reach
+        )
         server.start()
         self.addCleanup(server.stop)
         return server
@@ -48,6 +50,7 @@ class SetupServerTest(unittest.TestCase):
         body = response.read().decode()
         self.assertEqual(response.status, 200)
         self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertIn("<h1>Connect Example App</h1>", body)
         parser = Hrefs()
         parser.feed(body)
         self.assertEqual(parser.found, [url for _, url in BUTTONS])
@@ -86,7 +89,9 @@ class SetupServerTest(unittest.TestCase):
             taken.bind(("127.0.0.1", 0))
             taken.listen()
             with self.assertRaises(OSError):
-                setup_page.SetupServer("127.0.0.1", taken.getsockname()[1], CODE, BUTTONS, bool)
+                setup_page.SetupServer(
+                    "127.0.0.1", taken.getsockname()[1], CODE, "Connect Example App", BUTTONS, bool
+                )
 
     def test_given_the_longest_address_then_the_qr_is_33_characters_wide_or_less(self):
         url = "http://255.255.255.255:47824/setup/" + "k7q2_abc"

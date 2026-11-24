@@ -27,7 +27,7 @@ a.button:active{opacity:.8}
 """
 
 
-def render_page(buttons: list[tuple[str, str]]) -> str:
+def render_page(title: str, buttons: list[tuple[str, str]]) -> str:
     """Return the setup page with one full-width button per (label, link). Values are escaped."""
     links = "\n".join(
         f'<a class="button" href="{escape(url)}">{escape(label)}</a>' for label, url in buttons
@@ -37,13 +37,13 @@ def render_page(buttons: list[tuple[str, str]]) -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width">
-<title>Connect Health Auto Export</title>
+<title>{escape(title)}</title>
 <style>{_STYLE}</style>
 </head>
 <body>
 <main>
 <p class="brand">Training For Something</p>
-<h1>Connect Health Auto Export</h1>
+<h1>{escape(title)}</h1>
 <div class="card">
 {links}
 </div>
@@ -66,12 +66,13 @@ class SetupServer(ThreadingHTTPServer):
         bind: str,
         port: int,
         code: str,
+        title: str,
         buttons: list[tuple[str, str]],
         on_reach: Callable[[], None],
         lifetime_s: float = SERVER_LIFETIME_S,
     ) -> None:
         super().__init__((bind, port), _Handler)
-        self.page = render_page(buttons).encode()
+        self.page = render_page(title, buttons).encode()
         self.path = f"/setup/{code}"
         self.on_reach = on_reach
         self.reached = False

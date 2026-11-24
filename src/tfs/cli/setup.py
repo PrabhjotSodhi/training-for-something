@@ -124,7 +124,7 @@ def _set_up_app(name: str, manifest: dict) -> None:
         if manifest["routes"]["files"]:
             _import_file(name)
         if manifest["routes"]["push"]:
-            _show_links(name, setup.get("links", []))
+            _show_links(name, manifest["label"], setup.get("links", []))
         if manifest["asks"]:
             _connect_with_asks(name, manifest, setup.get("opens"))
     except _CONNECT_ERRORS as error:
@@ -141,7 +141,7 @@ def _import_file(name: str) -> None:
         import_.run(argparse.Namespace(path=Path(path), connector=name))
 
 
-def _show_links(name: str, links: list[dict]) -> None:
+def _show_links(name: str, label: str, links: list[dict]) -> None:
     connect_source(name, {})
     token = password_store.get("push_token")
     if not token:
@@ -153,7 +153,9 @@ def _show_links(name: str, links: list[dict]) -> None:
     if sys.platform == "win32":
         questionary.print("  If Windows asks, allow TFS on private networks.", style=_DIM)
     try:
-        server = setup_page.SetupServer(_BIND, config.HOME_WIFI_PORT, code, buttons, _phone_reached)
+        server = setup_page.SetupServer(
+            _BIND, config.HOME_WIFI_PORT, code, f"Connect {label}", buttons, _phone_reached
+        )
     except OSError:
         questionary.print("  Close TFS, then run tfs setup again.", style=_RED)
         return
