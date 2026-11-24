@@ -26,10 +26,10 @@ Mac and Linux:
 curl -fsSL https://raw.githubusercontent.com/PrabhjotSodhi/training-for-something/main/install.sh | sh
 ```
 
-Windows:
+Windows, in PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/PrabhjotSodhi/training-for-something/main/install.ps1 | iex"
+curl.exe -fsSLo install.ps1 https://raw.githubusercontent.com/PrabhjotSodhi/training-for-something/main/install.ps1; powershell -ExecutionPolicy ByPass -File install.ps1; del install.ps1
 ```
 
 Run the same line again to update. To install by hand, copy the command from the newest release on the [Releases page](https://github.com/PrabhjotSodhi/training-for-something/releases):
