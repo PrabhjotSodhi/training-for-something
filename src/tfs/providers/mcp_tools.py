@@ -1,6 +1,7 @@
 """AI tools that take TFS as a plain MCP server, by a command they run or a JSON file they read."""
 
 import json
+import re
 import shutil
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -14,6 +15,7 @@ class Tool:
     label: str
     command: str | None = None
     argv: tuple[str, ...] = ()
+    list_argv: tuple[str, ...] = ("mcp", "list")
     file: str = ""
     key: str = "mcpServers"
     entry: dict = field(default_factory=dict)
@@ -32,6 +34,7 @@ TOOLS = (
         "Kiro CLI",
         "kiro-cli",
         ("mcp", "add", "--name", "tfs", "--command", "{tfs}", "--args", "mcp", "--scope", "global"),
+        ("mcp", "list", "global"),
     ),
     Tool("Pi", "pi", (*_ADD, "--", *_RUN)),
     Tool(
@@ -53,11 +56,29 @@ def find(tool: Tool, home: Path) -> str | None:
     return str(folder) if folder.is_dir() else None
 
 
+def is_connected(
+    tool: Tool, program: str, home: Path, run: Callable[[list[str]], tuple[bool, str]]
+) -> bool:
+    """Say whether the tool already has the TFS server: its list names tfs, or its file holds our entry."""
+    if tool.command:
+        ok, output = run([program, *tool.list_argv])
+        return ok and re.search(r"\btfs\b", output) is not None
+    try:
+        servers = json.loads((home / tool.file).read_text(encoding="utf-8"))[tool.key]
+        return servers["tfs"] == {**tool.entry, "command": _tfs(), "args": ["mcp"]}
+    except (OSError, ValueError, LookupError, TypeError):
+        return False
+
+
+def _tfs() -> str:
+    return shutil.which("tfs") or "tfs"
+
+
 def add(
     tool: Tool, program: str, home: Path, run: Callable[[list[str]], tuple[bool, str]]
 ) -> str | None:
     """Add the TFS server to one tool. Return the problem, or None on success or when already added."""
-    tfs = shutil.which("tfs") or "tfs"
+    tfs = _tfs()
     if tool.command:
         ok, output = run([program, *(a.replace("{tfs}", tfs) for a in tool.argv)])
         lines = output.strip().splitlines()

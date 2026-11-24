@@ -53,9 +53,10 @@ class FakeQuestionary:
 class FakeCommands:
     """Stands in for the claude and codex programs and records every command."""
 
-    def __init__(self, found, plugin_list=""):
+    def __init__(self, found, plugin_list="", mcp_list=""):
         self.found = found
         self.plugin_list = plugin_list
+        self.mcp_list = mcp_list
         self.calls = []
 
     def which(self, command):
@@ -63,7 +64,9 @@ class FakeCommands:
 
     def run(self, argv):
         self.calls.append(list(argv))
-        return True, self.plugin_list if argv[1:3] == ["plugin", "list"] else ""
+        if argv[1:3] == ["plugin", "list"]:
+            return True, self.plugin_list
+        return True, self.mcp_list if argv[1:3] == ["mcp", "list"] else ""
 
 
 class TfsHomeTestCase(unittest.TestCase):
@@ -152,8 +155,10 @@ class SetupTest(TfsHomeTestCase):
         folder = self.cursor_config("{}")
         self.run_setup(FakeQuestionary([CURSOR], []), FakeCommands(found=set()))
         after_first = self.snapshot(folder)
-        self.run_setup(FakeQuestionary([CURSOR], []), FakeCommands(found=set()))
+        commands = FakeCommands(found={"opencode"}, mcp_list="tfs  connected")
+        self.run_setup(FakeQuestionary([]), commands)
         self.assertEqual(self.snapshot(folder), after_first)
+        self.assertNotIn("add", [word for call in commands.calls for word in call])
 
     def test_given_a_tfs_entry_with_another_command_then_setup_reports_it_and_leaves_it(self):
         entry = {"command": "/opt/other-tfs", "args": ["serve"]}

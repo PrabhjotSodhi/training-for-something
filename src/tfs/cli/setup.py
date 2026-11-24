@@ -146,6 +146,10 @@ def _connect_ai_tools() -> None:
         programs |= {tool: mcp_tools.find(tool, home) for tool in mcp_tools.TOOLS}
         connected = {
             p for p in providers.PROVIDERS if programs[p] and providers.is_connected(programs[p])
+        } | {
+            t
+            for t in mcp_tools.TOOLS
+            if programs[t] and mcp_tools.is_connected(t, programs[t], home, providers.run_command)
         }
     if not any(programs.values()):
         names = ", ".join(tool.label for tool in (*providers.PROVIDERS, *mcp_tools.TOOLS))
@@ -155,8 +159,8 @@ def _connect_ai_tools() -> None:
         return
     choices = [_tool_choice(t, programs[t], t in connected) for t in programs]
     if not any(choice.disabled is None for choice in choices):
-        for provider in connected:
-            questionary.print(f"  ✔ {provider.label:<13} TFS connected", style=_GREEN)
+        for tool in connected:
+            questionary.print(f"  ✔ {tool.label:<13} TFS connected", style=_GREEN)
         return
     picked = _ask(_checklist("Connect TFS to your AI tools", choices))
     for tool in picked:
