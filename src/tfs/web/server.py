@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import ClientDisconnect
+from uvicorn.protocols.http.h11_impl import H11Protocol
 
 from tfs.web.overview import Overview
 
@@ -180,11 +181,30 @@ def _make_app(
     return app
 
 
+def _timed_protocol(request_timeout_s: float) -> type[H11Protocol]:
+    # uvicorn limits neither how long headers take nor how long a whole request takes.
+    class TimedProtocol(H11Protocol):
+        def connection_made(self, transport: asyncio.Transport) -> None:
+            super().connection_made(transport)
+            self._deadline = self.loop.call_later(request_timeout_s, transport.close)
+
+        def on_response_complete(self) -> None:
+            self._deadline.cancel()
+            self._deadline = self.loop.call_later(request_timeout_s, self.transport.close)
+            super().on_response_complete()
+
+        def connection_lost(self, exc: Exception | None) -> None:
+            self._deadline.cancel()
+            super().connection_lost(exc)
+
+    return TimedProtocol
+
+
 class WebServer(uvicorn.Server):
     """A uvicorn server that holds its port from creation until stop()."""
 
-    def __init__(self, app: FastAPI, sock: socket.socket) -> None:
-        super().__init__(uvicorn.Config(app, lifespan="off", log_config=None, access_log=False))
+    def __init__(self, config: uvicorn.Config, sock: socket.socket) -> None:
+        super().__init__(config)
         self.sock = sock
         self._thread = threading.Thread(target=self.run, args=([sock],))
 
@@ -209,9 +229,19 @@ def make_server(
     overview: Callable[[], Overview] | None = None,
     max_body: int = 1 << 30,
     read_timeout_s: float = 30,
+    request_timeout_s: float = 15 * 60,
+    max_requests: int = 20,
+    shutdown_timeout_s: float = 10,
 ) -> WebServer:
     """Bind host and port, or raise OSError. push_only drops /ping and the screen routes. The caller starts and stops it."""
-    return WebServer(
+    config = uvicorn.Config(
         _make_app(push_handler, push_only, max_body, read_timeout_s, overview),
-        socket.create_server((host, port)),
+        lifespan="off",
+        log_config=None,
+        access_log=False,
+        http=_timed_protocol(request_timeout_s),
+        # uvicorn counts the arriving connection too, so this lets max_requests run.
+        limit_concurrency=max_requests + 1,
+        timeout_graceful_shutdown=shutdown_timeout_s,
     )
+    return WebServer(config, socket.create_server((host, port)))
