@@ -5,6 +5,7 @@ import os
 import tempfile
 import unittest
 from datetime import UTC, datetime
+from pathlib import Path
 from unittest import mock
 
 from tests.test_proposals import ADD, proposal
@@ -93,6 +94,7 @@ class SetupSyncTest(HevyTestCase):
             mock.patch("sys.stdin", mock.Mock(isatty=lambda: True)),
             mock.patch("tfs.cli.setup.questionary", FakeQuestionary(["hevy"], API_KEY)),
             mock.patch("tfs.providers.shutil.which", FakeCommands(found=set()).which),
+            mock.patch("pathlib.Path.home", return_value=Path("no-such-home")),
             mock.patch("tfs.cli.setup.webbrowser.open"),
             mock.patch("tfs.cli.setup.start.run", return_value=0),
             contextlib.redirect_stdout(out),

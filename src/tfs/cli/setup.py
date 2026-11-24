@@ -26,6 +26,7 @@ from tfs.connectors.core.contract import load_manifests, to_utc_text
 from tfs.importer.session import sync
 from tfs.persistence import sqlite
 from tfs.persistence.migrations import DatabaseTooNewError
+from tfs.providers import mcp_tools
 from tfs.web import setup_page
 from tfs.web.server import lan_address
 
@@ -139,39 +140,50 @@ def _ask(question: questionary.Question):
 
 
 def _connect_ai_tools() -> None:
-    with _spinner("Looking for Claude Code and Codex"):
-        programs = {provider: providers.find(provider) for provider in providers.PROVIDERS}
+    home = Path.home()
+    with _spinner("Looking for your AI tools"):
+        programs = {tool: providers.find(tool) for tool in providers.PROVIDERS}
+        programs |= {tool: mcp_tools.find(tool, home) for tool in mcp_tools.TOOLS}
         connected = {
-            p for p, program in programs.items() if program and providers.is_connected(program)
+            p for p in providers.PROVIDERS if programs[p] and providers.is_connected(programs[p])
+        } | {
+            t
+            for t in mcp_tools.TOOLS
+            if programs[t] and mcp_tools.is_connected(t, programs[t], home, providers.run_command)
         }
     if not any(programs.values()):
+        names = ", ".join(tool.label for tool in (*providers.PROVIDERS, *mcp_tools.TOOLS))
         questionary.print(
-            "TFS needs Claude Code or Codex. Install one, then run tfs setup again.", style=_RED
+            f"TFS works with {names}. Install one, then run tfs setup again.", style=_RED
         )
         return
-    choices = [_tool_choice(p, programs[p], p in connected) for p in providers.PROVIDERS]
+    choices = [_tool_choice(t, programs[t], t in connected) for t in programs]
     if not any(choice.disabled is None for choice in choices):
-        for provider in connected:
-            questionary.print(f"  ✔ {provider.label:<13} TFS connected", style=_GREEN)
+        for tool in connected:
+            questionary.print(f"  ✔ {tool.label:<13} TFS connected", style=_GREEN)
         return
     picked = _ask(_checklist("Connect TFS to your AI tools", choices))
-    for provider in picked:
-        with _spinner(f"Connecting {provider.label}") as say:
-            problem = providers.connect(programs[provider], provider, say)
+    for tool in picked:
+        with _spinner(f"Connecting {tool.label}") as say:
+            if isinstance(tool, providers.Provider):
+                problem = providers.connect(programs[tool], tool, say)
+            else:
+                problem = mcp_tools.add(tool, programs[tool], home, providers.run_command)
         if problem:
-            questionary.print(f"  ✘ Could not connect {provider.label}: {problem}", style=_RED)
+            questionary.print(f"  ✘ Could not connect {tool.label}: {problem}", style=_RED)
         else:
-            questionary.print(f"  ✔ {provider.label:<13} TFS connected", style=_GREEN)
+            questionary.print(f"  ✔ {tool.label:<13} TFS connected", style=_GREEN)
 
 
 def _tool_choice(
-    provider: providers.Provider, program: str | None, connected: bool
+    tool: providers.Provider | mcp_tools.Tool, program: str | None, connected: bool
 ) -> questionary.Choice:
     if program is None:
-        return questionary.Choice(provider.label, value=provider, disabled="not found")
+        return questionary.Choice(tool.label, value=tool, disabled="not found")
     if connected:
-        return questionary.Choice(provider.label, value=provider, disabled="TFS connected")
-    return questionary.Choice(f"{provider.label:<13} found", value=provider, checked=True)
+        return questionary.Choice(tool.label, value=tool, disabled="TFS connected")
+    tested = "tested" if isinstance(tool, providers.Provider) else "should work"
+    return questionary.Choice(f"{tool.label:<22} found, {tested}", value=tool, checked=True)
 
 
 def _set_up_app(name: str, manifest: dict) -> None:
