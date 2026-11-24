@@ -4,6 +4,16 @@ Versions follow Python's PEP 440. Each release starts with "Breaking changes". E
 
 ## Unreleased
 
+## 0.1.0a3, 2026-11-24
+
+The third alpha of 0.1.0. It adds guided setup and a one-line installer. Expect bugs and breaking changes before 0.1.0.
+
+### Added
+
+- One-line install for Mac, Linux and Windows. It installs uv if you do not have it, installs the newest TFS release, then runs `tfs setup`. Run the same line again to update.
+- `tfs setup` connects TFS to Claude Code and Codex, then walks you through each app you pick. For Apple Health export you drag the file onto the window. For Hevy you paste your API key. For Health Auto Export you scan one QR code, and your phone opens a page with a button for each automation.
+- `tfs start` turns on the home Wi-Fi listener when an app that sends from your phone is connected, so you no longer need `--home-wifi`.
+
 ## 0.1.0a2, 2026-11-24
 
 The second alpha of 0.1.0. It adds the dashboard and the morning scores. Expect bugs and breaking changes before 0.1.0.
