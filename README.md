@@ -18,15 +18,21 @@ Read more in the [high level design](docs/HLD.md), the [code map](docs/code-map.
 
 ## Ask about your data
 
-You need [uv](https://docs.astral.sh/uv/getting-started/installation/) and Claude Code or Codex on the same computer. uv brings Python 3.12 or later if you do not have it.
+You need Claude Code or Codex on the same computer. One line installs uv, the newest TFS release and then runs `tfs setup`.
 
-Copy the install command from the newest release on the [Releases page](https://github.com/PrabhjotSodhi/training-for-something/releases). It looks like this:
+Mac and Linux:
 
 ```sh
-uv tool install https://github.com/PrabhjotSodhi/training-for-something/releases/download/v0.1.0/training_for_something-0.1.0-py3-none-any.whl
+curl -fsSL https://raw.githubusercontent.com/PrabhjotSodhi/training-for-something/main/install.sh | sh
 ```
 
-The wheel includes the dashboard, so you need no Node and no git. To update or switch versions, run that release's command with `--force`:
+Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/PrabhjotSodhi/training-for-something/main/install.ps1 | iex"
+```
+
+Run the same line again to update. To install by hand, copy the command from the newest release on the [Releases page](https://github.com/PrabhjotSodhi/training-for-something/releases):
 
 ```sh
 uv tool install --force <the release's wheel URL>
