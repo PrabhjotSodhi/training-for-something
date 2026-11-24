@@ -10,6 +10,7 @@ from urllib.parse import quote
 
 import qrcode
 import questionary
+from questionary import Separator, Style
 
 from tfs import config, password_store, providers
 from tfs.cli import import_, start
@@ -29,6 +30,11 @@ if sys.platform == "win32":
 
 _BIND = "0.0.0.0"  # noqa: S104 (a phone on the Wi-Fi must reach it)
 _BOLD, _GREEN, _RED, _DIM = "bold", "fg:ansigreen", "fg:ansired", "fg:ansibrightblack"
+# prompt_toolkit draws ticked items reversed (white background) unless the style says otherwise.
+_CHECKLIST_STYLE = Style(
+    [("selected", f"noreverse {_GREEN}"), ("pointer", "fg:ansicyan bold"), ("separator", _DIM)]
+)
+_CHECKLIST_HINT = Separator("  ↑↓ move · space pick · enter continue")
 
 _CONNECT_ERRORS = (
     runner.ConnectorUserError,
@@ -54,9 +60,9 @@ def run(args: argparse.Namespace) -> int:
         _connect_ai_tools()
         manifests = load_manifests()
         picked = _ask(
-            questionary.checkbox(
+            _checklist(
                 "Which apps hold your data?",
-                choices=[questionary.Choice(m["label"], value=n) for n, m in manifests.items()],
+                [questionary.Choice(m["label"], value=n) for n, m in manifests.items()],
             )
         )
         for number, name in enumerate(picked, 1):
@@ -76,6 +82,15 @@ def fill_link(template: str, push_url: str, token: str) -> str:
     """Put the URL-encoded push address and token into a manifest link."""
     return template.replace("{push_url}", quote(push_url, safe="")).replace(
         "{token}", quote(token, safe="")
+    )
+
+
+def _checklist(message: str, choices: list) -> questionary.Question:
+    return questionary.checkbox(
+        message,
+        choices=[*choices, _CHECKLIST_HINT],
+        instruction="",
+        style=_CHECKLIST_STYLE,
     )
 
 
@@ -101,7 +116,7 @@ def _connect_ai_tools() -> None:
         for provider in connected:
             questionary.print(f"  ✔ {provider.label:<13} TFS connected", style=_GREEN)
         return
-    picked = _ask(questionary.checkbox("Connect TFS to your AI tools", choices=choices))
+    picked = _ask(_checklist("Connect TFS to your AI tools", choices))
     for provider in picked:
         problem = providers.connect(programs[provider], provider)
         if problem:
