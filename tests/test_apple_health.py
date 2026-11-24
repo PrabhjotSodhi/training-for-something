@@ -91,6 +91,35 @@ class AppleHealthReadTest(unittest.TestCase):
         self.assertEqual(by_metric["weight"]["values"]["unit"], "kg")
         self.assertIsNone(by_metric["weight"]["origin_device"])
 
+    def test_body_composition_types_are_read_in_stored_units_with_their_source(self) -> None:
+        path = self._export_with(
+            _record("HKQuantityTypeIdentifierLeanBodyMass", "lb", "100")
+            + _record("HKQuantityTypeIdentifierWaistCircumference", "in", "30")
+            + _record("HKQuantityTypeIdentifierBodyMassIndex", "count", "22.5")
+            + _record("HKQuantityTypeIdentifierHeight", "ft", "5")
+        )
+
+        _, records = self._read(path)
+
+        found = {
+            record["metric"]: record
+            for record in records
+            if record.get("metric") in ("lean_body_mass", "waist", "bmi", "height")
+        }
+        self.assertEqual(
+            {
+                name: (round(r["values"]["value"], 4), r["values"]["unit"])
+                for name, r in found.items()
+            },
+            {
+                "lean_body_mass": (45.3592, "kg"),
+                "waist": (76.2, "cm"),
+                "bmi": (22.5, "count"),
+                "height": (152.4, "cm"),
+            },
+        )
+        self.assertEqual({r["origin_app"] for r in found.values()}, {"Ana's iPhone"})
+
     def test_other_types_are_skipped_silently(self) -> None:
         path = self._export_with(_record("HKQuantityTypeIdentifierDietaryWater", "mL", "250"))
 

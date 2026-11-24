@@ -1,6 +1,7 @@
 import unittest
 
 from tests.helpers import insert_file, insert_measurement, open_database
+from tfs.connectors.core.contract import METRICS
 from tfs.importer.session import rebuild_pending
 from tfs.source_priority.daily_totals import rebuild
 
@@ -23,8 +24,7 @@ class DailyLatestTest(unittest.TestCase):
         local_date: str = DAY,
         **fields,
     ) -> None:
-        unit = {"weight": "kg", "resting_hr": "bpm", "hrv_sdnn": "ms"}[metric]
-        values = {"value": value, "unit": unit}
+        values = {"value": value, "unit": METRICS[metric].unit}
         insert_measurement(
             self.conn, key, connector, metric, start_utc, values, local_date=local_date, **fields
         )
@@ -104,6 +104,30 @@ class DailyLatestTest(unittest.TestCase):
                 [(fact[2], fact[4]) for fact in self.facts()],
                 [(70.3, "apple_health/weight/-/Alpha Scale")],
             )
+
+    def test_each_body_composition_metric_gets_one_day_value_from_two_routes(self) -> None:
+        for number, metric in enumerate(("lean_body_mass", "waist", "bmi", "height")):
+            self.add(f"a{number}", metric, "2026-10-01T07:00:00Z", 60.0, origin_app="Apple Health")
+            self.add(
+                f"b{number}",
+                metric,
+                "2026-10-01T08:00:00Z",
+                61.0,
+                connector="health_auto_export",
+                origin_app="Health Auto Export",
+            )
+
+        rebuild(self.conn, {DAY})
+
+        self.assertEqual(
+            [(fact[1], fact[2], fact[3]) for fact in self.facts()],
+            [
+                ("bmi", 61.0, "count"),
+                ("height", 61.0, "cm"),
+                ("lean_body_mass", 61.0, "kg"),
+                ("waist", 61.0, "cm"),
+            ],
+        )
 
     def test_other_dates_keep_their_rows(self) -> None:
         self.add("a", "weight", "2026-10-01T07:00:00Z", 70.1)
