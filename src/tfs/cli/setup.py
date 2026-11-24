@@ -55,15 +55,13 @@ def run(args: argparse.Namespace) -> int:
         manifests = load_manifests()
         picked = _ask(
             questionary.checkbox(
-                "Which apps hold your data? (space to pick)",
+                "Which apps hold your data?",
                 choices=[questionary.Choice(m["label"], value=n) for n, m in manifests.items()],
             )
         )
         for number, name in enumerate(picked, 1):
             print(f"\n── {manifests[name]['label']} ({number} of {len(picked)})")
             _set_up_app(name, manifests[name])
-        if not _yes("Start TFS and open the dashboard?"):
-            return 0
     except KeyboardInterrupt:
         print("\nSetup stopped.", file=sys.stderr)
         return 1
@@ -81,11 +79,6 @@ def fill_link(template: str, push_url: str, token: str) -> str:
     )
 
 
-def _yes(message: str) -> bool:
-    choices = [questionary.Choice("Yes", value=True), questionary.Choice("No", value=False)]
-    return _ask(questionary.select(message, choices=choices))
-
-
 def _ask(question: questionary.Question):
     answer = question.ask()
     if answer is None:
@@ -94,31 +87,37 @@ def _ask(question: questionary.Question):
 
 
 def _connect_ai_tools() -> None:
-    questionary.print("AI tools", style=_BOLD)
-    found = 0
-    for provider in providers.PROVIDERS:
-        program = providers.find(provider)
-        if program is None:
-            questionary.print(f"  ✘ {provider.label:<13} not found", style=_RED)
-            continue
-        found += 1
-        connected = providers.is_connected(program) or _offer_connect(program, provider)
-        status = "found, TFS connected" if connected else "found, TFS not connected"
+    programs = {provider: providers.find(provider) for provider in providers.PROVIDERS}
+    if not any(programs.values()):
         questionary.print(
-            f"  {'✔' if connected else '✘'} {provider.label:<13} {status}",
-            style=_GREEN if connected else _RED,
+            "TFS needs Claude Code or Codex. Install one, then run tfs setup again.", style=_RED
         )
-    if not found:
-        print("TFS needs Claude Code or Codex. Install one, then run tfs setup again.")
+        return
+    connected = {
+        p for p, program in programs.items() if program and providers.is_connected(program)
+    }
+    choices = [_tool_choice(p, programs[p], p in connected) for p in providers.PROVIDERS]
+    if not any(choice.disabled is None for choice in choices):
+        for provider in connected:
+            questionary.print(f"  ✔ {provider.label:<13} TFS connected", style=_GREEN)
+        return
+    picked = _ask(questionary.checkbox("Connect TFS to your AI tools", choices=choices))
+    for provider in picked:
+        problem = providers.connect(programs[provider], provider)
+        if problem:
+            questionary.print(f"  ✘ Could not connect {provider.label}: {problem}", style=_RED)
+        else:
+            questionary.print(f"  ✔ {provider.label:<13} TFS connected", style=_GREEN)
 
 
-def _offer_connect(program: str, provider: providers.Provider) -> bool:
-    if not _yes(f"Connect TFS to {provider.label}?"):
-        return False
-    problem = providers.connect(program, provider)
-    if problem:
-        print(f"  Could not connect {provider.label}: {problem}")
-    return problem is None
+def _tool_choice(
+    provider: providers.Provider, program: str | None, connected: bool
+) -> questionary.Choice:
+    if program is None:
+        return questionary.Choice(provider.label, value=provider, disabled="not found")
+    if connected:
+        return questionary.Choice(provider.label, value=provider, disabled="TFS connected")
+    return questionary.Choice(f"{provider.label:<13} found", value=provider, checked=True)
 
 
 def _set_up_app(name: str, manifest: dict) -> None:
