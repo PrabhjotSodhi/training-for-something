@@ -24,6 +24,21 @@ ITEM = {
     "parts": [{"part_kind": "set", "label": "Press", "reps": 8, "weight_kg": 30.125}],
 }
 VERSION = "2026-11-08T00:00:00Z"
+NAMED = {
+    "id": "routine-r",
+    "title": "Leg day",
+    "folder_id": 7,
+    "updated_at": "2026-11-01T00:00:00Z",
+    "exercises": [
+        {
+            "exercise_template_id": "squat",
+            "superset_id": None,
+            "rest_seconds": 90,
+            "notes": "Go deep",
+            "sets": [{"type": "normal", "weight_kg": 60, "reps": 5}],
+        }
+    ],
+}
 
 
 class FakeHevy:
@@ -47,7 +62,10 @@ class FakeHevy:
         elif method == "GET" and path == "/routines":
             value = {"page_count": 1 if self.saved else 0, "routines": list(self.saved.values())}
         elif method == "GET":
-            value = {"routine": self.saved[path.rsplit("/", 1)[1]]}
+            routine = self.saved.get(path.rsplit("/", 1)[1])
+            if routine is None:
+                return 404, {}, b'{"error":"not-found"}'
+            value = {"routine": routine}
         else:
             key = "routine-1" if method == "POST" else path.rsplit("/", 1)[1]
             self.saved[key] = {**json.loads(body)["routine"], "id": key, "updated_at": VERSION}
@@ -179,7 +197,11 @@ class HevySendTest(unittest.TestCase):
         self.assertEqual(len(writes), 1)
         self.assertEqual(writes[0][:2], ("POST", "/routines"))
         value = json.loads(writes[0][3])["routine"]
-        self.assertEqual(value["title"], "2026-11-08 Push café ✓ [TFS:operation-1]")
+        self.assertEqual(value["title"], "2026-11-08 Push café ✓")
+        self.assertEqual(
+            [exercise["notes"] for exercise in value["exercises"]],
+            ["[TFS:operation-1]", None, None],
+        )
         self.assertIsNone(value["folder_id"])
         self.assertEqual(
             [exercise["exercise_template_id"] for exercise in value["exercises"]],
@@ -193,6 +215,51 @@ class HevySendTest(unittest.TestCase):
         self.assertIsNone(sets[0]["distance_meters"])
         self.assertEqual(writes[0][2]["api-key"], "invented-key")
         self.assertEqual(self.http.calls[-1][:2], ("GET", "/routines/routine-1"))
+
+    def named(self, **changes):
+        self.http.saved[NAMED["id"]] = {**copy.deepcopy(NAMED), **changes}
+        return {"remote_id": NAMED["id"], "remote_version": NAMED["updated_at"]}
+
+    def test_named_routine_holds_the_session_and_keeps_its_title_and_folder(self):
+        # GIVEN an approved session that names routine R
+        args = self.named()
+        # WHEN TFS sends it
+        result = self.send(**args)
+        # THEN R holds the session, keeps its title and folder, and no routine is created
+        self.assertEqual(
+            result, {"status": "sent", "remote_id": NAMED["id"], "remote_version": VERSION}
+        )
+        stored = self.http.saved[NAMED["id"]]
+        self.assertEqual(
+            (stored["title"], stored["folder_id"]), (NAMED["title"], NAMED["folder_id"])
+        )
+        self.assertEqual([e["exercise_template_id"] for e in stored["exercises"]], ["press"])
+        self.assertEqual(list(self.http.saved), [NAMED["id"]])
+        self.assertEqual([call[0] for call in self.http.writes()], ["PUT"])
+
+    def test_lost_reply_from_named_routine_is_confirmed_by_its_tag(self):
+        # GIVEN a send to R whose reply was lost
+        args = self.named()
+        self.http.lose_ack = True
+        self.assertEqual(self.send(**args)["status"], "unknown")
+        # WHEN TFS retries
+        result = self.send(**args, in_doubt=True)
+        # THEN it finds the tag in R and writes nothing
+        self.assertEqual(result["status"], "sent")
+        self.assertEqual(len(self.http.writes()), 1)
+
+    def test_named_routine_changed_in_the_app_or_deleted_is_not_written(self):
+        for changes, status in (({"updated_at": VERSION}, "conflict"), (None, "needs_you")):
+            with self.subTest(changes=changes):
+                # GIVEN R changed in the app since TFS read it, or R was deleted
+                self.http = FakeHevy()
+                args = self.named(**changes) if changes else {**self.named(), "remote_id": "gone"}
+                # WHEN TFS sends
+                result = self.send(**args)
+                # THEN nothing is written
+                self.assertEqual(result["status"], status)
+                self.assertEqual(self.http.writes(), [])
+                self.assertNotIn("auth_failed", result)
 
     def test_lost_ack_reconciles_existing_marker_without_second_write(self):
         self.http.lose_ack = True
@@ -288,7 +355,8 @@ class HevySendTest(unittest.TestCase):
         self.assertEqual(self.send(http=bad_reply)["status"], "unknown")
         self.assertEqual(len(real.writes()), 1)
 
-    def test_routine_limit_is_not_an_authentication_failure(self):
+    def test_full_free_account_without_a_named_routine_writes_nothing(self):
+        # GIVEN no named routine and a full free account
         real = self.http
 
         def limited(method, url, headers, body):
@@ -296,8 +364,11 @@ class HevySendTest(unittest.TestCase):
                 return 403, {}, b'{"error":"routine-limit-exceeded","message":"invented-key"}'
             return real(method, url, headers, body)
 
+        # WHEN TFS sends
         result = self.send(http=limited)
+        # THEN nothing is written and the person is asked to pick an existing routine
         self.assertEqual(result["status"], "needs_you")
+        self.assertEqual(real.saved, {})
         self.assertNotIn("auth_failed", result)
-        self.assertIn("routine limit", result["message"])
+        self.assertIn("Pick an existing routine", result["message"])
         self.assertNotIn("invented-key", json.dumps(result))
