@@ -1,0 +1,180 @@
+import contextlib
+import io
+import json
+import os
+import tempfile
+import unittest
+from datetime import UTC, datetime
+from unittest import mock
+
+from tests.test_proposals import ADD, proposal
+from tests.test_setup import FakeCommands, FakeQuestionary
+from tfs import config, password_store
+from tfs.cli import main
+from tfs.connectors.core import runner
+from tfs.connectors.hevy import connector
+from tfs.engine import FETCH_INTERVAL, Engine
+from tfs.mcp.tool_access import open_reader, query
+from tfs.persistence.migrations import migrate
+from tfs.persistence.sqlite import connect
+from tfs.proposals.apply import save
+
+API_KEY = "invented-key-123"
+NOW = datetime(2026, 11, 20, 12, tzinfo=UTC)
+PLAN_TIME = datetime(2026, 11, 19, 12, tzinfo=UTC)
+PLAN_STAMP = "2026-11-19T12:00:00Z"
+WORKOUT = {
+    "id": "w-1",
+    "title": "Push A",
+    "routine_id": "routine-1",
+    "start_time": "2026-11-20T10:00:00+00:00",
+    "end_time": "2026-11-20T11:00:00+00:00",
+    "updated_at": "2026-11-20T11:01:00.000Z",
+    "exercises": [
+        {
+            "index": 0,
+            "title": "Bench Press",
+            "exercise_template_id": "t-1",
+            "sets": [{"index": 0, "type": "normal", "weight_kg": 60, "reps": 8}],
+        }
+    ],
+}
+
+
+class FakeHevy:
+    """Stands in for the Hevy API and for the connector child process."""
+
+    def __init__(self, *, accepts_key: bool = True) -> None:
+        self.accepts_key = accepts_key
+        self.fetches = 0
+
+    def http(self, url: str, headers: dict, timeout_s: float = 30) -> tuple[int, dict, bytes]:
+        if not self.accepts_key:
+            return 401, {}, b""
+        body = {"page": 1, "page_count": 1, "workouts": [WORKOUT], "events": []}
+        return 200, {}, json.dumps(body).encode("utf-8")
+
+    def run(self, name: str, op: str, payload: dict, **options) -> dict:
+        extra = {"http": self.http} if op == "fetch" else {}
+        self.fetches += op == "fetch"
+        return getattr(connector, op)(**payload, **extra)
+
+
+class HevyTestCase(unittest.TestCase):
+    def setUp(self) -> None:
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        environment = mock.patch.dict(os.environ, {"TFS_HOME": home.name})
+        environment.start()
+        self.addCleanup(environment.stop)
+        self.hevy = FakeHevy()
+
+    def use_hevy(self, hevy: FakeHevy) -> None:
+        patch = mock.patch.object(runner, "run", hevy.run)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def sources(self) -> list[tuple]:
+        with contextlib.closing(connect(config.db_path())) as conn:
+            return [tuple(row) for row in conn.execute("SELECT connector, enabled FROM sources")]
+
+
+class SetupSyncTest(HevyTestCase):
+    def run_setup(self) -> tuple[str, str]:
+        out, err = io.StringIO(), io.StringIO()
+        with (
+            mock.patch("sys.stdin", mock.Mock(isatty=lambda: True)),
+            mock.patch("tfs.cli.setup.questionary", FakeQuestionary(["hevy"], API_KEY)),
+            mock.patch("tfs.providers.shutil.which", FakeCommands(found=set()).which),
+            mock.patch("tfs.cli.setup.webbrowser.open"),
+            mock.patch("tfs.cli.setup.start.run", return_value=0),
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(err),
+        ):
+            main(["setup"])
+        return out.getvalue(), err.getvalue()
+
+    def test_given_a_valid_key_then_setup_stores_the_workouts_and_says_how_many(self):
+        # GIVEN a Hevy that accepts the key
+        self.use_hevy(self.hevy)
+        # WHEN setup connects Hevy
+        out, _ = self.run_setup()
+        # THEN the workout is stored and setup reports it
+        self.assertIn("1 record stored", out)
+        self.assertEqual(self.sources(), [("hevy", 1)])
+        with contextlib.closing(connect(config.db_path())) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM source_records").fetchone()[0], 1)
+
+    def test_given_a_rejected_key_then_setup_shows_the_error_and_hevy_is_not_connected(self):
+        # GIVEN a Hevy that rejects the key
+        self.use_hevy(FakeHevy(accepts_key=False))
+        # WHEN setup connects Hevy
+        out, err = self.run_setup()
+        # THEN setup shows the error and the source is off
+        self.assertIn("Reconnect Hevy", err)
+        self.assertNotIn("Connected Hevy", out)
+        self.assertEqual(self.sources(), [("hevy", 0)])
+
+
+class EngineFetchTest(HevyTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.use_hevy(self.hevy)
+        self.clock = NOW
+        self.engine = Engine(config.data_dir(), now_fn=lambda: self.clock)
+        config.data_dir().mkdir(parents=True, exist_ok=True)
+        password_store.set("hevy:api_key", API_KEY)
+        self.conn = connect(config.db_path())
+        self.addCleanup(self.conn.close)
+        migrate(self.conn)
+        self.conn.execute(
+            "INSERT INTO sources (connector, last_attempt_at) VALUES ('hevy', ?)",
+            (NOW.strftime("%Y-%m-%dT%H:%M:%SZ"),),
+        )
+
+    def test_given_tfs_running_when_an_hour_passes_then_hevy_is_fetched_once_and_the_cursor_moves(
+        self,
+    ):
+        # GIVEN Hevy was fetched a moment ago
+        self.engine._fetch_due()
+        self.assertEqual(self.hevy.fetches, 0)
+        # WHEN an hour passes and the engine checks twice
+        self.clock += FETCH_INTERVAL
+        self.engine._fetch_due()
+        self.engine._fetch_due()
+        # THEN Hevy is fetched once and the cursor moves
+        self.assertEqual(self.hevy.fetches, 1)
+        cursor = self.conn.execute("SELECT cursor_json FROM sources").fetchone()[0]
+        self.assertEqual(json.loads(cursor), {"since": "2026-11-20T12:55:00Z"})
+
+    def test_given_a_source_that_does_not_fetch_then_the_engine_leaves_it_alone(self):
+        # GIVEN an enabled push source that was never fetched
+        self.conn.execute("INSERT INTO sources (connector) VALUES ('health_auto_export')")
+        # WHEN an hour passes
+        self.clock += FETCH_INTERVAL
+        self.engine._fetch_due()
+        # THEN only Hevy was fetched
+        self.assertEqual(self.hevy.fetches, 1)
+
+    def test_given_a_workout_from_a_sent_routine_when_the_next_fetch_runs_then_the_plan_item_is_done(
+        self,
+    ):
+        # GIVEN a saved plan item that TFS sent to Hevy as routine-1
+        item = {**ADD, "date": "2026-11-20"}
+        save(config.db_path(), proposal(item), request_id="plan", approved_by="chat", now=PLAN_TIME)
+        state = dict(self.conn.execute("SELECT * FROM plan_items WHERE id = 'p1'").fetchone())
+        self.conn.execute(
+            "INSERT INTO jobs(id, item_id, plan_version, connector, payload_json, status,"
+            " next_attempt_at, created_at) VALUES ('sent-1', 'p1', ?, 'hevy', ?, 'sent', ?, ?)",
+            (state["plan_version"], json.dumps(state), PLAN_STAMP, PLAN_STAMP),
+        )
+        self.conn.execute(
+            "INSERT INTO remote_links VALUES ('p1', 'hevy', 'routine-1', 'version-1', 'sent-1')"
+        )
+        # WHEN the next fetch runs
+        self.clock += FETCH_INTERVAL
+        self.engine._fetch_due()
+        # THEN the plan item is done
+        with contextlib.closing(open_reader(config.db_path())) as reader:
+            rows = query(reader, "SELECT status FROM coach_v1_plan_items")["rows"]
+        self.assertEqual(rows, [["done"]])
