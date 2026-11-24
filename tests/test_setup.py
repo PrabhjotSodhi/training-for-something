@@ -10,7 +10,7 @@ import urllib.request
 from collections import deque
 from unittest import mock
 
-from tfs import config, password_store
+from tfs import config, password_store, providers
 from tfs.cli import main, setup, start
 from tfs.connectors.core.contract import load_manifests
 from tfs.persistence import sqlite
@@ -18,13 +18,16 @@ from tfs.persistence.migrations import migrate
 
 REPO = "PrabhjotSodhi/training-for-something"
 PLUGIN = "tfs@training-for-something"
+CLAUDE, CODEX = providers.PROVIDERS
 PUSH_URL = "http://studio.local:47824/push/health_auto_export"
 
 
 class FakeQuestionary:
     """Answers each question from a list, in order."""
 
-    Choice = staticmethod(lambda title, value: (title, value))
+    Choice = mock.Mock(
+        side_effect=lambda title, value, disabled=None, checked=False: mock.Mock(disabled=disabled)
+    )
 
     def __init__(self, *answers):
         self.answers = deque(answers)
@@ -84,7 +87,7 @@ class SetupTest(TfsHomeTestCase):
 
     def test_given_claude_not_connected_when_accepted_then_both_commands_run_in_order(self):
         commands = FakeCommands(found={"claude"})
-        code, out, _, _ = self.run_setup(FakeQuestionary(True, [], False), commands)
+        code, out, _, _ = self.run_setup(FakeQuestionary([CLAUDE], []), commands)
         self.assertEqual(code, 0)
         self.assertEqual(
             commands.calls,
@@ -94,18 +97,22 @@ class SetupTest(TfsHomeTestCase):
                 ["claude", "plugin", "install", PLUGIN],
             ],
         )
-        self.assertIn("Claude Code   found, TFS connected", out)
-        self.assertIn("Codex         not found", out)
+        self.assertIn("✔ Claude Code   TFS connected", out)
 
     def test_given_claude_already_connected_then_nothing_is_installed(self):
         commands = FakeCommands(found={"claude"}, plugin_list=f"  {PLUGIN}\n")
-        _, out, _, _ = self.run_setup(FakeQuestionary([], False), commands)
+        _, out, _, _ = self.run_setup(FakeQuestionary([]), commands)
         self.assertEqual(commands.calls, [["claude", "plugin", "list"]])
-        self.assertIn("Claude Code   found, TFS connected", out)
+        self.assertIn("✔ Claude Code   TFS connected", out)
+
+    def test_given_a_tool_left_unpicked_then_nothing_is_installed_for_it(self):
+        commands = FakeCommands(found={"claude", "codex"})
+        self.run_setup(FakeQuestionary([CODEX], []), commands)
+        self.assertNotIn(["claude", "plugin", "install", PLUGIN], commands.calls)
 
     def test_given_codex_not_connected_then_codex_uses_plugin_add(self):
         commands = FakeCommands(found={"codex"})
-        self.run_setup(FakeQuestionary(True, [], False), commands)
+        self.run_setup(FakeQuestionary([CODEX], []), commands)
         self.assertEqual(commands.calls[-1], ["codex", "plugin", "add", PLUGIN])
 
     def test_given_the_shipped_manifest_then_the_links_are_exact(self):
@@ -127,7 +134,7 @@ class SetupTest(TfsHomeTestCase):
 
     def test_given_a_quoted_path_then_the_import_receives_it_without_quotes(self):
         typed = '"C:\\Users\\ana\\Downloads\\export (2).zip"'
-        questionary = FakeQuestionary(["apple_health"], typed, False)
+        questionary = FakeQuestionary(["apple_health"], typed)
         with mock.patch("tfs.cli.setup.import_.run", return_value=0) as imported:
             self.run_setup(questionary, FakeCommands(found=set()))
         namespace = imported.call_args.args[0]
@@ -135,7 +142,7 @@ class SetupTest(TfsHomeTestCase):
         self.assertEqual(namespace.connector, "apple_health")
 
     def test_given_enter_on_the_file_question_then_nothing_is_imported(self):
-        questionary = FakeQuestionary(["apple_health"], "", False)
+        questionary = FakeQuestionary(["apple_health"], "")
         with mock.patch("tfs.cli.setup.import_.run") as imported:
             self.run_setup(questionary, FakeCommands(found=set()))
         imported.assert_not_called()
@@ -161,7 +168,7 @@ class PhonePageTest(TfsHomeTestCase):
     CODE = "k7q2abcd"
 
     def run_push_setup(self, picked, answers, port, on_enter=lambda: None):
-        questionary = FakeQuestionary(picked, *answers, False)
+        questionary = FakeQuestionary(picked, *answers)
         out, err = io.StringIO(), io.StringIO()
 
         def enter(*_):
