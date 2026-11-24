@@ -315,7 +315,7 @@ def load_manifest(path: Path | str) -> dict:
     except ValueError as error:
         raise ManifestError(f"{path}: not valid JSON: {error}") from error
     try:
-        _check_object("manifest", manifest, _MANIFEST_FIELDS)
+        _check_object("manifest", manifest, _MANIFEST_FIELDS, optional=("setup",))
     except ManifestError as error:
         raise ManifestError(f"{path}: {error}") from error
     return manifest
@@ -333,18 +333,19 @@ def load_manifests(root: Path | None = None) -> dict[str, dict]:
     }
 
 
-def _check_object(name: str, value: object, checks: dict) -> None:
+def _check_object(name: str, value: object, checks: dict, optional: tuple[str, ...] = ()) -> None:
     if not isinstance(value, dict):
         raise ManifestError(f"{name} must be an object")
     prefix = "" if name == "manifest" else f"{name}."
     for field in checks:
-        if field not in value:
+        if field not in value and field not in optional:
             raise ManifestError(f"{prefix}{field} is missing")
     for field in value:
         if field not in checks:
             raise ManifestError(f"{prefix}{field} is not a manifest field")
     for field, check in checks.items():
-        check(f"{prefix}{field}", value[field])
+        if field in value:
+            check(f"{prefix}{field}", value[field])
 
 
 def _check_text(name: str, value: object) -> None:
@@ -384,6 +385,13 @@ def _check_asks(name: str, value: object) -> None:
         _check_object(f"{name}[{index}]", ask, _ASK_FIELDS)
 
 
+def _check_links(name: str, value: object) -> None:
+    for index, link in enumerate(_check_list(name, value)):
+        _check_object(f"{name}[{index}]", link, _LINK_FIELDS)
+
+
+_LINK_FIELDS = {"label": _check_text, "url": _check_text}
+_SETUP_FIELDS = {"steps": _check_text_list, "links": _check_links, "opens": _check_text}
 _ROUTE_FIELDS = {"fetch": _check_flag, "push": _check_flag, "files": _check_text_list}
 _ASK_FIELDS = {"key": _check_text, "label": _check_text, "secret": _check_flag}
 _MANIFEST_FIELDS = {
@@ -395,4 +403,7 @@ _MANIFEST_FIELDS = {
     "app_ids": _check_text_list,
     "notices_deletes": _check_flag,
     "sends": _check_families,
+    "setup": lambda name, value: _check_object(
+        name, value, _SETUP_FIELDS, optional=tuple(_SETUP_FIELDS)
+    ),
 }

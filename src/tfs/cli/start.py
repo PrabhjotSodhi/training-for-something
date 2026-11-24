@@ -2,12 +2,16 @@
 
 import argparse
 import socket
+import sqlite3
 import sys
+import webbrowser
+from contextlib import closing
 from time import sleep
 
 from tfs import config, password_store
 from tfs.connectors.core.contract import load_manifests
 from tfs.engine import Engine, EngineAlreadyRunningError, PortInUseError
+from tfs.persistence import sqlite
 from tfs.persistence.migrations import DatabaseTooNewError
 
 
@@ -19,12 +23,14 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="also take pushes from phones on your home Wi-Fi",
     )
+    parser.add_argument("--open", action="store_true", help=argparse.SUPPRESS)
     parser.set_defaults(run=run)
 
 
 def run(args: argparse.Namespace) -> int:
     """Run the engine until Ctrl+C and return the exit code."""
-    engine = Engine(config.data_dir(), home_wifi=args.home_wifi)
+    home_wifi = args.home_wifi or _push_source_enabled()
+    engine = Engine(config.data_dir(), home_wifi=home_wifi)
     try:
         engine.start()
     except (
@@ -42,8 +48,8 @@ def run(args: argparse.Namespace) -> int:
             for name, manifest in manifests.items()
             if manifest["routes"]["push"]
         ]
-        home_wifi_host = f"{socket.gethostname()}.local" if args.home_wifi else None
-        home_wifi_port = config.HOME_WIFI_PORT if args.home_wifi else None
+        home_wifi_host = f"{socket.gethostname()}.local" if home_wifi else None
+        home_wifi_port = config.HOME_WIFI_PORT if home_wifi else None
         print(
             render_banner(
                 config.SCREEN_HOST,
@@ -55,6 +61,8 @@ def run(args: argparse.Namespace) -> int:
             ),
             flush=True,
         )
+        if args.open:
+            webbrowser.open(f"http://{config.SCREEN_HOST}:{config.SCREEN_PORT}/")
         # Ctrl+C interrupts sleep at once. The loop is only here because sleep needs a finite time.
         while True:
             sleep(1)
@@ -62,6 +70,21 @@ def run(args: argparse.Namespace) -> int:
         return 0
     finally:
         engine.stop()
+
+
+def _push_source_enabled() -> bool:
+    """Say whether any turned-on source takes pushes from a phone."""
+    if not config.db_path().exists():
+        return False
+    push_connectors = {
+        name for name, manifest in load_manifests().items() if manifest["routes"]["push"]
+    }
+    with closing(sqlite.connect(config.db_path(), "read_only")) as conn:
+        try:
+            rows = conn.execute("SELECT connector FROM sources WHERE enabled = 1").fetchall()
+        except sqlite3.OperationalError:
+            return False
+    return any(connector in push_connectors for (connector,) in rows)
 
 
 def render_banner(
