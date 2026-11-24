@@ -107,6 +107,28 @@ def _add_dashboard(
         app.mount("/assets", GuardedFiles(directory=DASHBOARD_DIR / "assets"))
 
 
+def lan_address() -> str:
+    """The address a phone on the same Wi-Fi reaches this computer at."""
+    # A UDP connect sends nothing. It only makes the OS pick the Wi-Fi address.
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        try:
+            probe.connect(("192.0.2.1", 9))
+        except OSError:
+            return socket.gethostbyname(socket.gethostname())
+        return probe.getsockname()[0]
+
+
+def own_addresses() -> set[str]:
+    """This computer's IPv4 addresses, including the one setup prints."""
+    try:
+        found = {
+            info[4][0] for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)
+        }
+    except socket.gaierror:
+        found = set()
+    return found | {lan_address()}
+
+
 def _make_app(
     push_handler: PushHandler,
     push_only: bool,
@@ -114,7 +136,7 @@ def _make_app(
     read_timeout_s: float,
     overview: Callable[[], Overview] | None,
 ) -> FastAPI:
-    own_names = {"localhost", "127.0.0.1", socket.gethostname().lower()}
+    own_names = {"localhost", "127.0.0.1", socket.gethostname().lower(), *own_addresses()}
 
     async def check_host(request: Request) -> None:
         host = request.headers.get("host", "").rsplit(":", 1)[0].lower()

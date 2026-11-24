@@ -1,5 +1,6 @@
 import argparse
 import contextlib
+import http.client
 import io
 import os
 import socket
@@ -15,6 +16,7 @@ from tfs.cli import main, setup, start
 from tfs.connectors.core.contract import load_manifests
 from tfs.persistence import sqlite
 from tfs.persistence.migrations import migrate
+from tfs.web.server import make_server
 
 REPO = "PrabhjotSodhi/training-for-something"
 PLUGIN = "tfs@training-for-something"
@@ -235,6 +237,28 @@ class PhonePageTest(TfsHomeTestCase):
         self.assertIn("Close TFS, then run tfs setup again.", out)
         self.assertIn("2 of 2", out)
         imported.assert_not_called()
+
+
+class PushUrlHostTest(unittest.TestCase):
+    def test_the_host_setup_prints_on_windows_passes_the_host_check(self):
+        # GIVEN a Windows computer whose Wi-Fi address is 192.0.2.7
+        with (
+            mock.patch("tfs.cli.setup.sys.platform", "win32"),
+            mock.patch("tfs.cli.setup.lan_address", return_value="192.0.2.7"),
+            mock.patch("tfs.web.server.lan_address", return_value="192.0.2.7"),
+            mock.patch("tfs.web.server.socket.getaddrinfo", side_effect=socket.gaierror),
+        ):
+            host = setup._host()
+            server = make_server(config.SCREEN_HOST, 0, push_handler=lambda *_: (200, {}))
+        server.start()
+        self.addCleanup(server.stop)
+        # WHEN a phone pushes to the URL setup prints
+        address, port = server.sock.getsockname()
+        client = http.client.HTTPConnection(address, port, timeout=10)
+        self.addCleanup(client.close)
+        client.request("POST", "/push/x", b"hi", {"Host": f"{host}:{config.HOME_WIFI_PORT}"})
+        # THEN the server accepts it
+        self.assertEqual(client.getresponse().status, 200)
 
 
 class StartHomeWifiTest(TfsHomeTestCase):

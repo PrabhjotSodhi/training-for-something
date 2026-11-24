@@ -172,6 +172,22 @@ class RoutesTest(ServerTestCase):
                 self.assertEqual(self.request("GET", "/ping", headers={"Host": host})[0], 200)
         self.assertEqual(self.calls, [])
 
+    def test_a_push_to_the_computers_own_ip_address_is_accepted(self):
+        # GIVEN a server on a computer whose address is 192.0.2.7
+        with mock.patch("tfs.web.server.own_addresses", return_value={"192.0.2.7"}):
+            self.start(push_only=True)
+        # WHEN a push arrives with that address as the Host
+        status = self.request("POST", "/push/x", b"hi", headers={"Host": "192.0.2.7:47824"})[0]
+        # THEN it is accepted
+        self.assertEqual(status, 200)
+        # AND another IP address or a made-up name gets 421
+        for host in ("192.0.2.8:47824", "evil.test"):
+            with self.subTest(host=host):
+                self.assertEqual(
+                    self.request("POST", "/push/x", b"hi", headers={"Host": host})[0], 421
+                )
+        self.assertEqual(len(self.calls), 1)
+
     def test_the_home_wifi_server_answers_pushes_only(self):
         # GIVEN a server for the home Wi-Fi door
         self.start(push_only=True, overview=lambda: None)
