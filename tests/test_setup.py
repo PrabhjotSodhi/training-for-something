@@ -1,9 +1,9 @@
 import argparse
-import builtins
 import contextlib
 import io
 import os
 import socket
+import sys
 import tempfile
 import unittest
 import urllib.request
@@ -31,7 +31,7 @@ class FakeQuestionary:
 
     @staticmethod
     def print(text, style=None):
-        builtins.print(text)
+        sys.stdout.write(f"{text}\n")
 
     def __getattr__(self, kind):
         def question(message, **options):
@@ -197,7 +197,10 @@ class PhonePageTest(TfsHomeTestCase):
         port = self.free_port()
         url = f"http://127.0.0.1:{port}/setup/{self.CODE}"
         _, out, _ = self.run_push_setup(
-            ["health_auto_export"], [], port, lambda: urllib.request.urlopen(url).read()
+            ["health_auto_export"],
+            [],
+            port,
+            lambda: urllib.request.urlopen(url).read(),  # noqa: S310
         )
         token = password_store.get("push_token")
         self.assertTrue(token)
@@ -205,7 +208,9 @@ class PhonePageTest(TfsHomeTestCase):
         self.assertIn("✔ Your phone reached this computer.", out)
         self.assertIn("Tap both buttons on the page, then press Enter.", out)
 
-    def test_given_enter_before_any_request_then_no_phone_line_and_the_address_stops_answering(self):
+    def test_given_enter_before_any_request_then_no_phone_line_and_the_address_stops_answering(
+        self,
+    ):
         port = self.free_port()
         _, out, _ = self.run_push_setup(["health_auto_export"], [], port)
         self.assertNotIn("Your phone reached", out)

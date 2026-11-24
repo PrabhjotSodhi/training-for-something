@@ -76,6 +76,7 @@ training-for-something/
     web/
       server.py               HTTP server on 127.0.0.1, request checks
       push.py                 the push endpoint for phone apps
+      setup_page.py           the phone setup page and the temporary server `tfs setup` runs
       catalogue.py            the cards, trend metrics and plate rows the Overview can show
       overview.py             GET /api/overview: the saved or default layout, read only from the coach views
       dashboard/              the built dashboard, served at / on the screen listener, not committed

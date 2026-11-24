@@ -12,7 +12,10 @@ from tfs.web import setup_page
 CODE = "k7q2abcd"
 BUTTONS = [
     ("Add health metrics", "com.HealthExport://automation?url=http%3A%2F%2Fa&name=A%20B&x=<1>"),
-    ("Add workouts", "com.HealthExport://automation?url=http%3A%2F%2Fa&name=W&headers=Bearer%20tok"),
+    (
+        "Add workouts",
+        "com.HealthExport://automation?url=http%3A%2F%2Fa&name=W&headers=Bearer%20tok",
+    ),
 ]
 
 
