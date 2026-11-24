@@ -223,8 +223,73 @@ class SizeLimitTest(ServerTestCase):
         self.assertEqual(status, 413)
         self.assertEqual(self.calls, [])
 
+    def test_a_push_the_size_of_the_largest_measured_phone_payload_is_accepted(self):
+        # GIVEN a server with the default limits
+        received = []
+
+        def handler(name, body, headers):
+            received.append(len(body.read()))
+            return 200, {"ok": True}
+
+        self.start(push_handler=handler)
+        # WHEN a phone pushes 22 MB, the largest payload measured from a phone
+        size = 22_000_000
+        status = self.request("POST", "/push/x", b"x" * size)[0]
+        # THEN it is accepted whole
+        self.assertEqual((status, received), (200, [size]))
+
+
+class RequestCapTest(ServerTestCase):
+    def test_a_request_over_the_cap_gets_503_and_the_running_one_finishes(self):
+        # GIVEN a server with a cap of one request, busy with a push whose body is still arriving
+        self.start(max_requests=1)
+        sock = self.connect()
+        sock.sendall(half_push())
+        self.assertTrue(self.started.wait(SAFETY_TIMEOUT_S))
+        # WHEN another client asks for /ping
+        status = self.request("GET", "/ping")[0]
+        # THEN it gets 503
+        self.assertEqual(status, 503)
+        # AND the running push finishes
+        sock.sendall(b"llo")
+        self.assertEqual(self.status_after_close(sock), 200)
+        self.assertEqual(self.calls, [("x", b"hello")])
+
 
 class StalledClientTest(ServerTestCase):
+    def test_a_body_still_arriving_when_the_request_limit_passes_is_closed(self):
+        # GIVEN a server whose request limit passes long before its read timeout
+        self.start(read_timeout_s=SAFETY_TIMEOUT_S * 3, request_timeout_s=0.2)
+        # WHEN a client sends half its body and stops
+        sock = self.connect()
+        sock.sendall(half_push())
+        # THEN the server closes the connection with no reply and the handler gets no body
+        self.assertEqual(self.status_after_close(sock), 0)
+        self.assertEqual(self.calls, [])
+
+    def test_headers_still_arriving_when_the_request_limit_passes_are_closed(self):
+        # GIVEN a server with a short request limit
+        self.start(request_timeout_s=0.2)
+        # WHEN a client sends part of its headers and stops
+        sock = self.connect()
+        sock.sendall(b"POST /push/x HTTP/1.1\r\nHost: localhost\r\n")
+        # THEN the server closes the connection with no reply
+        self.assertEqual(self.status_after_close(sock), 0)
+        self.assertEqual(self.calls, [])
+
+    def test_stop_returns_within_the_shutdown_deadline_while_a_request_is_stuck(self):
+        # GIVEN a request stuck in its body far longer than the shutdown deadline
+        self.start(read_timeout_s=SAFETY_TIMEOUT_S * 3, shutdown_timeout_s=0.2)
+        sock = self.connect()
+        sock.sendall(half_push())
+        self.assertTrue(self.started.wait(SAFETY_TIMEOUT_S))
+        # WHEN the server stops
+        stopping = threading.Thread(target=self.server.stop)
+        stopping.start()
+        stopping.join(SAFETY_TIMEOUT_S)
+        # THEN stop returns
+        self.assertFalse(stopping.is_alive())
+
     def test_a_body_that_stops_early_gets_400_after_the_read_timeout(self):
         # GIVEN a server with a short read timeout
         self.start(read_timeout_s=0.2)
