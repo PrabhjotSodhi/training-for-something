@@ -6,5 +6,21 @@
   "stale_after_hours": 48,
   "app_ids": [],
   "notices_deletes": false,
-  "sends": []
+  "sends": [],
+  "setup": {
+    "steps": [
+      "Needs Health Auto Export Premium.",
+      "Scan with your iPhone camera, then tap Enable."
+    ],
+    "links": [
+      {
+        "label": "health metrics",
+        "url": "com.HealthExport://automation?url={push_url}&name=TFS%20metrics&datatype=healthMetrics&format=json&exportversion=v2&period=lastsync&aggregatesleep=true&headers=Authorization,Bearer%20{token}"
+      },
+      {
+        "label": "workouts",
+        "url": "com.HealthExport://automation?url={push_url}&name=TFS%20workouts&datatype=workouts&format=json&exportversion=v2&period=lastsync&headers=Authorization,Bearer%20{token}"
+      }
+    ]
+  }
 }

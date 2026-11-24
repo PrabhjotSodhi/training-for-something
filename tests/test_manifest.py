@@ -92,6 +92,18 @@ class LoadManifestTest(ManifestTestCase):
         path = self.write_manifest({**HEVY, "asks": []})
         self.assertEqual(load_manifest(path)["asks"], [])
 
+    def test_setup_is_optional_and_its_fields_are_checked(self) -> None:
+        setup = {
+            "steps": ["Needs Pro."],
+            "links": [{"label": "one", "url": "app://x?u={push_url}"}],
+            "opens": "https://example.com/key",
+        }
+        path = self.write_manifest({**HEVY, "setup": setup})
+        self.assertEqual(load_manifest(path)["setup"], setup)
+        self.assert_refused({**HEVY, "setup": {"steps": "Needs Pro."}}, "setup.steps")
+        self.assert_refused({**HEVY, "setup": {"links": [{"label": "one"}]}}, "setup.links[0].url")
+        self.assert_refused({**HEVY, "setup": {"colour": "red"}}, "setup.colour")
+
     def test_file_that_is_not_json_is_refused(self) -> None:
         path = self.folder / "manifest.json"
         path.write_text("{not json", encoding="utf-8")

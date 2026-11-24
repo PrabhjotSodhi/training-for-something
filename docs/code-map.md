@@ -18,7 +18,7 @@ training-for-something/
     __main__.py               `python -m tfs` runs the CLI
     engine.py                 the background process: starts the web server, scheduler and job worker
     config.py                 where the data folder is, per OS
-    cli/                      one file per command: start, connect, import_, sync, status, mcp, query
+    cli/                      one file per command: start, connect, import_, setup, sync, status, mcp, query
     persistence/
       sqlite.py               opens tfs.db with the right settings, one place only
       migrations.py           runs numbered migrations, reads and sets user_version
@@ -57,6 +57,7 @@ training-for-something/
       server.py               the ask TFS tool over stdio
     providers/
       briefing.py             the briefing that starts every run TFS starts
+      __init__.py             finds each AI tool on the computer and connects the TFS plugin to it
       claude_code.py          one file per AI tool
       codex.py
     proposals/

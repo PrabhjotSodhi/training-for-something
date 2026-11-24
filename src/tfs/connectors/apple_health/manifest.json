@@ -6,5 +6,11 @@
   "stale_after_hours": 87600,
   "app_ids": ["com.apple.Health"],
   "notices_deletes": false,
-  "sends": []
+  "sends": [],
+  "setup": {
+    "steps": [
+      "On your iPhone: Health, your picture, Export All Health Data, Export.",
+      "Send the file to this computer with AirDrop, iCloud Drive or email."
+    ]
+  }
 }

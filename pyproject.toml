@@ -12,6 +12,8 @@ classifiers = ["License :: OSI Approved :: GNU Affero General Public License v3 
 dependencies = [
     "fastapi>=0.165.0",
     "mcp>=2.3,<3",
+    "qrcode>=8.2",
+    "questionary>=2.1.1",
     "uvicorn>=0.54.0",
 ]
 
