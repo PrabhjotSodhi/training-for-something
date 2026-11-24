@@ -136,7 +136,9 @@ def _make_app(
     read_timeout_s: float,
     overview: Callable[[], Overview] | None,
 ) -> FastAPI:
-    own_names = {"localhost", "127.0.0.1", socket.gethostname().lower(), *own_addresses()}
+    # Only phones on the Wi-Fi reach the server by IP address.
+    wifi_ips = own_addresses() if push_only else set()
+    own_names = {"localhost", "127.0.0.1", socket.gethostname().lower(), *wifi_ips}
 
     async def check_host(request: Request) -> None:
         host = request.headers.get("host", "").rsplit(":", 1)[0].lower()

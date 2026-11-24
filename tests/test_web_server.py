@@ -24,6 +24,9 @@ class ServerTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.calls: list[tuple[str, bytes]] = []
         self.started = threading.Event()
+        lookup = mock.patch("tfs.web.server.own_addresses", return_value=set())
+        lookup.start()
+        self.addCleanup(lookup.stop)
 
     def recording_handler(self, name, body, headers):
         self.started.set()

@@ -249,7 +249,9 @@ class PushUrlHostTest(unittest.TestCase):
             mock.patch("tfs.web.server.socket.getaddrinfo", side_effect=socket.gaierror),
         ):
             host = setup._host()
-            server = make_server(config.SCREEN_HOST, 0, push_handler=lambda *_: (200, {}))
+            server = make_server(
+                config.SCREEN_HOST, 0, push_handler=lambda *_: (200, {}), push_only=True
+            )
         server.start()
         self.addCleanup(server.stop)
         # WHEN a phone pushes to the URL setup prints
