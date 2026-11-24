@@ -27,6 +27,7 @@ from tfs.importer.session import sync
 from tfs.persistence import sqlite
 from tfs.persistence.migrations import DatabaseTooNewError
 from tfs.web import setup_page
+from tfs.web.server import lan_address
 
 # prompt_toolkit raises this on Windows when the terminal is not a real console, such as Git Bash.
 # Its module refuses to import on other systems, so the tuple stays empty there.
@@ -250,13 +251,7 @@ def _host() -> str:
     """The address a phone on the same Wi-Fi reaches this computer at."""
     if sys.platform == "darwin":
         return f"{socket.gethostname()}.local"
-    # A UDP connect sends nothing. It only makes the OS pick the Wi-Fi address.
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-        try:
-            probe.connect(("192.0.2.1", 9))
-        except OSError:
-            return socket.gethostbyname(socket.gethostname())
-        return probe.getsockname()[0]
+    return lan_address()
 
 
 def _connect_with_asks(name: str, manifest: dict, opens: str | None) -> None:
