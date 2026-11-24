@@ -12,23 +12,13 @@ A free, open source coach for your goal. It runs on your computer, reads your he
 
 ## Features
 
-Now:
+![Ask your coach in Claude Code or Codex and approve each change. Each workout is counted once. One line installs TFS. Works with Apple Health, Health Auto Export and Hevy. Your data stays on your computer.](docs/images/features-now.webp)
 
-- One line installs TFS. A guided setup connects your AI tools and apps.
-- Brings in your workouts, sleep and health data, and counts each workout once.
-- Shows your goal, your week, your sleep and your trends on a dashboard that runs on your computer.
-- Answers questions about your data in Claude Code or Codex.
-- Plans changes to your training in chat. You see every change before it saves.
-- Keeps all your data in one folder on your computer.
+### Coming soon
 
-Coming soon:
+![A missed session reworks the rest of your week. Effort load from your workout ratings. Plans sent to Hevy as routines. A coach that checks your data each morning.](docs/images/features-soon.webp)
 
-- Missed a session? Your coach reviews the rest of your week and has a new plan waiting for your OK.
-- Your coach works in the background, so you don't have to open a chat.
-- A daily effort load from your workout ratings, shown against your own normal.
-- Plans sent straight to Hevy as routines.
-- Log food with a photo, and read lab results from a PDF.
-- Android phones through Health Connect, and Fitbit through Apple Health.
+Also coming: log food with a photo, read lab results from a PDF, Android phones through Health Connect, and Fitbit through Apple Health.
 
 ## Install
 
