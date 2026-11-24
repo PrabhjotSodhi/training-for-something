@@ -2,6 +2,7 @@ import argparse
 import contextlib
 import http.client
 import io
+import json
 import os
 import socket
 import sys
@@ -9,6 +10,7 @@ import tempfile
 import unittest
 import urllib.request
 from collections import deque
+from pathlib import Path
 from unittest import mock
 
 from tfs import config, password_store, providers
@@ -16,11 +18,13 @@ from tfs.cli import main, setup, start
 from tfs.connectors.core.contract import load_manifests
 from tfs.persistence import sqlite
 from tfs.persistence.migrations import migrate
+from tfs.providers import mcp_tools
 from tfs.web.server import make_server
 
 REPO = "PrabhjotSodhi/training-for-something"
 PLUGIN = "tfs@training-for-something"
 CLAUDE, CODEX = providers.PROVIDERS
+CURSOR = mcp_tools.TOOLS[0]
 PUSH_URL = "http://studio.local:47824/push/health_auto_export"
 
 
@@ -69,6 +73,10 @@ class TfsHomeTestCase(unittest.TestCase):
         environment = mock.patch.dict(os.environ, {"TFS_HOME": home.name})
         environment.start()
         self.addCleanup(environment.stop)
+        self.home = Path(home.name)
+        fake_home = mock.patch("pathlib.Path.home", return_value=self.home)
+        fake_home.start()
+        self.addCleanup(fake_home.stop)
 
 
 class SetupTest(TfsHomeTestCase):
@@ -116,6 +124,52 @@ class SetupTest(TfsHomeTestCase):
         commands = FakeCommands(found={"codex"})
         self.run_setup(FakeQuestionary([CODEX], []), commands)
         self.assertEqual(commands.calls[-1], ["codex", "plugin", "add", PLUGIN])
+
+    def cursor_config(self, text):
+        folder = self.home / ".cursor"
+        folder.mkdir()
+        (folder / "mcp.json").write_text(text, encoding="utf-8")
+        return folder
+
+    def snapshot(self, folder):
+        return {p.name: p.read_bytes() for p in folder.iterdir()}
+
+    def test_given_a_config_with_other_servers_when_setup_adds_tfs_then_they_stay_and_a_backup_exists(
+        self,
+    ):
+        others = {"files": {"command": "npx", "args": ["files"]}}
+        original = json.dumps({"theme": "dark", "mcpServers": others})
+        folder = self.cursor_config(original)
+        self.run_setup(FakeQuestionary([CURSOR], []), FakeCommands(found=set()))
+        saved = json.loads((folder / "mcp.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved["theme"], "dark")
+        self.assertEqual({k: saved["mcpServers"][k] for k in others}, others)
+        self.assertIn("tfs", saved["mcpServers"])
+        backups = [p for p in folder.iterdir() if p.name != "mcp.json"]
+        self.assertEqual([p.read_text(encoding="utf-8") for p in backups], [original])
+
+    def test_given_setup_ran_once_when_it_runs_again_then_no_file_changes(self):
+        folder = self.cursor_config("{}")
+        self.run_setup(FakeQuestionary([CURSOR], []), FakeCommands(found=set()))
+        after_first = self.snapshot(folder)
+        self.run_setup(FakeQuestionary([CURSOR], []), FakeCommands(found=set()))
+        self.assertEqual(self.snapshot(folder), after_first)
+
+    def test_given_a_tfs_entry_with_another_command_then_setup_reports_it_and_leaves_it(self):
+        entry = {"command": "/opt/other-tfs", "args": ["serve"]}
+        folder = self.cursor_config(json.dumps({"mcpServers": {"tfs": entry}}))
+        before = self.snapshot(folder)
+        _, out, _, _ = self.run_setup(FakeQuestionary([CURSOR], []), FakeCommands(found=set()))
+        self.assertEqual(self.snapshot(folder), before)
+        self.assertIn(entry["command"], out)
+
+    def test_given_no_supported_tools_then_setup_names_them_and_continues(self):
+        code, out, _, started = self.run_setup(FakeQuestionary([]), FakeCommands(found=set()))
+        labels = [p.label for p in providers.PROVIDERS] + [t.label for t in mcp_tools.TOOLS]
+        for label in labels:
+            self.assertIn(label, out)
+        self.assertEqual(code, 0)
+        started.assert_called_once()
 
     def test_given_the_shipped_manifest_then_the_links_are_exact(self):
         links = load_manifests()["health_auto_export"]["setup"]["links"]

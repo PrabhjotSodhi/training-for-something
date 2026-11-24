@@ -49,7 +49,7 @@ Also coming: log food with a photo, read lab results from a PDF, Android phones 
 
 ## Install
 
-You need Claude Code or Codex. One line installs TFS and starts setup.
+You need one of the AI tools listed under Works with. One line installs TFS and starts setup.
 
 Mac and Linux:
 
@@ -69,9 +69,15 @@ Setup connects your AI tools and your apps, then opens the dashboard. Run the sa
 
 | AI tools | Apps |
 |---|---|
-| Claude Code | Apple Health export |
-| Codex | Health Auto Export |
-| | Hevy |
+| Claude Code (tested) | Apple Health export |
+| Codex (tested) | Health Auto Export |
+| Cursor (should work) | Hevy |
+| OpenCode (should work) | |
+| Grok Build (should work) | |
+| Google Antigravity CLI (should work) | |
+| Kiro CLI (should work) | |
+| Pi (should work) | |
+| Meta Muse Code (should work) | |
 
 ## How it works
 

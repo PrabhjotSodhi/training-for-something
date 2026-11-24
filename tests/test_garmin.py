@@ -155,6 +155,7 @@ class GarminSetupTest(unittest.TestCase):
             mock.patch("sys.stdin", mock.Mock(isatty=lambda: True)),
             mock.patch("tfs.cli.setup.questionary", FakeQuestionary(["garmin"], API_KEY)),
             mock.patch("tfs.providers.shutil.which", FakeCommands(found=set()).which),
+            mock.patch("pathlib.Path.home", return_value=Path(home.name)),
             mock.patch("tfs.cli.setup.webbrowser.open"),
             mock.patch("tfs.cli.setup.start.run", return_value=0),
             contextlib.redirect_stdout(out),
