@@ -85,7 +85,7 @@ FROM main.sources;
 
 CREATE TEMP VIEW coach_v1_plan_items AS
 SELECT p.id AS plan_item_id, p.version, p.plan_version, p.local_date, p.start_hint,
-  p.family, p.label, p.goal_ids_json, p.why, p.sources_json,
+  p.family, p.label, p.goal_ids_json, p.why, p.sources_json, p.send_into_json,
   CASE WHEN m.item_id IS NOT NULL THEN 'done' ELSE p.status END AS status,
   m.group_id AS matched_workout_id, m.reason AS match_reason,
   (SELECT json_group_array(id) FROM (
@@ -121,6 +121,9 @@ SELECT layout_json FROM main.overview_layout;
 
 CREATE TEMP VIEW coach_v1_limits AS
 SELECT id AS limit_id, kind, values_json FROM main.limits;
+
+CREATE TEMP VIEW coach_v1_app_targets AS
+SELECT connector, remote_id, title, folder, remote_version FROM main.app_targets;
 
 
 CREATE TEMP VIEW coach_v1_deliveries AS

@@ -20,7 +20,19 @@ def preview(db_path: Path, proposal: dict, *, now: datetime) -> dict:
         _, items = actions.prepare(conn, proposal, now.date())
         delivery, labels = jobs.destinations(conn, items["items"])
         jobs.prepare(conn, items["items"], delivery, to_utc_text(now))
+        titles = {
+            item: {
+                name: conn.execute(
+                    "SELECT (SELECT title FROM app_targets WHERE connector = ? AND remote_id = ?)",
+                    (name, remote_id),
+                ).fetchone()[0]
+                for name, remote_id in state["send_into"].items()
+            }
+            for item, state in items["items"].items()
+            if state["send_into"]
+        }
     result = _summary(proposal["plan_version"], items, delivery, labels)
+    result["send_into_titles"] = titles
     result["creates_new_copies"] = [
         action["item"]
         for action in proposal["actions"]
@@ -53,17 +65,18 @@ def _write(conn: sqlite3.Connection, state: dict, version: int) -> None:
         "plan_version": version,
         "goal_ids_json": journal.encode(state["goal_ids"]),
         "sources_json": journal.encode(state["sources"]),
+        "send_into_json": journal.encode(state["send_into"]),
     }
     conn.execute(
         "INSERT INTO plan_items"
         " (id, version, plan_version, local_date, start_hint, family, label,"
-        " goal_ids_json, why, sources_json, status)"
+        " goal_ids_json, why, sources_json, send_into_json, status)"
         " VALUES (:id, :version, :plan_version, :local_date, :start_hint, :family, :label,"
-        " :goal_ids_json, :why, :sources_json, :status)"
+        " :goal_ids_json, :why, :sources_json, :send_into_json, :status)"
         " ON CONFLICT(id) DO UPDATE SET version=excluded.version,"
         " plan_version=excluded.plan_version, local_date=excluded.local_date,"
         " start_hint=excluded.start_hint, label=excluded.label, why=excluded.why, sources_json=excluded.sources_json,"
-        " status=excluded.status",
+        " send_into_json=excluded.send_into_json, status=excluded.status",
         row,
     )
     conn.execute("DELETE FROM session_parts WHERE plan_item_id = ?", (state["id"],))

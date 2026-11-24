@@ -47,7 +47,8 @@ VIEWS = {
         "One row per saved plan item, including removed items; filter status as needed."
         " version is the item's version; plan_version is the global version at its last"
         " change. goal_ids_json and sources_json hold JSON arrays; why explains the plan."
-        " local_date is YYYY-MM-DD and start_hint is an optional local time."
+        " local_date is YYYY-MM-DD and start_hint is an optional local time. send_into_json"
+        " maps a connector to the coach_v1_app_targets remote_id the session goes into."
         " status includes automatic workout completion; matched_workout_id and match_reason"
         " identify its evidence. matched_record_ids_json lists its active source IDs, sorted,"
         " for unlink_plan_match. Pending rebuilds hide automatic matches; manual done remains."
@@ -76,6 +77,11 @@ VIEWS = {
     "coach_v1_limits": (
         "One row per user-approved training constraint. values_json holds the kind's"
         " fields, such as minutes, a date or user-recorded injury text; not a diagnosis."
+    ),
+    "coach_v1_app_targets": (
+        "One row per object in a connected app that a session can be sent into, such as a"
+        " Hevy routine, as of the last sync. folder is the app's folder ID. Name one in"
+        " send_into on add_session or change_session."
     ),
 }
 MAX_ROWS = 500

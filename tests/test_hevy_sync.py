@@ -22,7 +22,6 @@ from tfs.proposals.apply import save
 API_KEY = "invented-key-123"
 NOW = datetime(2026, 11, 20, 12, tzinfo=UTC)
 PLAN_TIME = datetime(2026, 11, 19, 12, tzinfo=UTC)
-PLAN_STAMP = "2026-11-19T12:00:00Z"
 WORKOUT = {
     "id": "w-1",
     "title": "Push A",
@@ -39,6 +38,10 @@ WORKOUT = {
         }
     ],
 }
+ROUTINES = [
+    {"id": "routine-1", "title": "Push A", "folder_id": 7, "updated_at": "2026-11-18T09:00:00Z"},
+    {"id": "routine-2", "title": "Legs", "folder_id": None, "updated_at": "2026-11-19T09:00:00Z"},
+]
 
 
 class FakeHevy:
@@ -47,10 +50,14 @@ class FakeHevy:
     def __init__(self, *, accepts_key: bool = True) -> None:
         self.accepts_key = accepts_key
         self.fetches = 0
+        self.routines = [{**routine, "exercises": []} for routine in ROUTINES]
 
     def http(self, url: str, headers: dict, timeout_s: float = 30) -> tuple[int, dict, bytes]:
         if not self.accepts_key:
             return 401, {}, b""
+        if "/routines?" in url:
+            body = {"page": 1, "page_count": 1, "routines": self.routines}
+            return 200, {}, json.dumps(body).encode("utf-8")
         body = {"page": 1, "page_count": 1, "workouts": [WORKOUT], "events": []}
         return 200, {}, json.dumps(body).encode("utf-8")
 
@@ -147,6 +154,23 @@ class EngineFetchTest(HevyTestCase):
         cursor = self.conn.execute("SELECT cursor_json FROM sources").fetchone()[0]
         self.assertEqual(json.loads(cursor), {"since": "2026-11-20T12:55:00Z"})
 
+    def test_given_a_routine_deleted_in_hevy_when_the_next_fetch_runs_then_it_drops_out(self):
+        # GIVEN TFS has read two Hevy routines
+        self.clock += FETCH_INTERVAL
+        self.engine._fetch_due()
+        # WHEN one is deleted in Hevy and the next fetch runs
+        self.hevy.routines.pop()
+        self.clock += FETCH_INTERVAL
+        self.engine._fetch_due()
+        # THEN the ask TFS tool lists only the routine that is left
+        with contextlib.closing(open_reader(config.db_path())) as reader:
+            sql = "SELECT connector, remote_id, title, folder, remote_version FROM coach_v1_app_targets"
+            rows = query(reader, sql)["rows"]
+        first = ROUTINES[0]
+        self.assertEqual(
+            rows, [["hevy", first["id"], first["title"], first["folder_id"], first["updated_at"]]]
+        )
+
     def test_given_a_source_that_does_not_fetch_then_the_engine_leaves_it_alone(self):
         # GIVEN an enabled push source that was never fetched
         self.conn.execute("INSERT INTO sources (connector) VALUES ('health_auto_export')")
@@ -161,15 +185,12 @@ class EngineFetchTest(HevyTestCase):
     ):
         # GIVEN a saved plan item that TFS sent to Hevy as routine-1
         item = {**ADD, "date": "2026-11-20"}
-        save(config.db_path(), proposal(item), request_id="plan", approved_by="chat", now=PLAN_TIME)
-        state = dict(self.conn.execute("SELECT * FROM plan_items WHERE id = 'p1'").fetchone())
+        value = {**proposal(item), "delivery_targets": {"p1": ["hevy"]}}
+        save(config.db_path(), value, request_id="plan", approved_by="chat", now=PLAN_TIME)
+        job = self.conn.execute("SELECT id FROM jobs").fetchone()[0]
+        self.conn.execute("UPDATE jobs SET status = 'sent'")
         self.conn.execute(
-            "INSERT INTO jobs(id, item_id, plan_version, connector, payload_json, status,"
-            " next_attempt_at, created_at) VALUES ('sent-1', 'p1', ?, 'hevy', ?, 'sent', ?, ?)",
-            (state["plan_version"], json.dumps(state), PLAN_STAMP, PLAN_STAMP),
-        )
-        self.conn.execute(
-            "INSERT INTO remote_links VALUES ('p1', 'hevy', 'routine-1', 'version-1', 'sent-1')"
+            "INSERT INTO remote_links VALUES ('p1', 'hevy', 'routine-1', 'version-1', ?)", (job,)
         )
         # WHEN the next fetch runs
         self.clock += FETCH_INTERVAL

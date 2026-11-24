@@ -22,6 +22,7 @@ def _load(conn: sqlite3.Connection, item: str) -> dict | None:
     result = dict(row)
     result["goal_ids"] = json.loads(result.pop("goal_ids_json"))
     result["sources"] = json.loads(result.pop("sources_json"))
+    result["send_into"] = json.loads(result.pop("send_into_json"))
     result["parts"] = [
         {key: value for key, value in dict(part).items() if value is not None}
         for part in conn.execute(
@@ -78,6 +79,7 @@ def _add(conn: sqlite3.Connection, action: dict, today: date, pending_goals: dic
         "goal_ids": list(dict.fromkeys(goals)),
         "status": "saved",
         "parts": copy.deepcopy(action["parts"]),
+        "send_into": dict(action.get("send_into", {})),
     }
 
 
@@ -96,6 +98,8 @@ def _edit(state: dict | None, action: dict, today: date) -> None:
             state["label"] = action["label"]
         if "parts" in action:
             state["parts"] = copy.deepcopy(action["parts"])
+        if "send_into" in action:
+            state["send_into"] = dict(action["send_into"])
     else:
         state["status"] = "removed" if name == "remove_session" else "done"
 
@@ -113,6 +117,12 @@ def _session(
     conn: sqlite3.Connection, action: dict, today: date, before: dict, after: dict
 ) -> None:
     item = action["item"]
+    for connector, remote_id in action.get("send_into", {}).items():
+        if not conn.execute(
+            "SELECT 1 FROM app_targets WHERE connector = ? AND remote_id = ?",
+            (connector, remote_id),
+        ).fetchone():
+            raise ValueError("Unknown send_into target. Read coach_v1_app_targets again.")
     if item not in before["items"]:
         before["items"][item] = _load(conn, item)
         after["items"][item] = copy.deepcopy(before["items"][item])

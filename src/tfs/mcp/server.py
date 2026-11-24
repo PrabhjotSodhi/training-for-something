@@ -71,13 +71,13 @@ def query(sql: str) -> dict[str, Any]:
 
 @mcp.tool(annotations=PREVIEWS)
 def propose(proposal: Proposal) -> dict[str, Any]:
-    """Preview a local plan, goal or training-limit proposal without saving. Read coach_v1_plan_state first. Parts use seconds, metres, kg and beats/minute. Dates use the computer's local day; start_hint is an optional local HH:MM time, or null to clear it. Goal dates must be future. Show the exact changes, reason, sources and delivery apps before requesting Save approval. Copy the returned delivery_targets into the proposal."""
+    """Preview a local plan, goal or training-limit proposal without saving. Read coach_v1_plan_state first. Parts use seconds, metres, kg and beats/minute. Dates use the computer's local day; start_hint is an optional local HH:MM time, or null to clear it. Goal dates must be future. To send a session into an existing app routine, read coach_v1_app_targets and set send_into to {connector: remote_id}; the preview returns its title in send_into_titles. Show the exact changes, routine titles, reason, sources and delivery apps before requesting Save approval. Copy the returned delivery_targets into the proposal."""
     return _change(apply.preview, proposal.model_dump(exclude_unset=True))
 
 
 @mcp.tool(annotations=WRITES)
 def save(proposal: Proposal, request_id: Text) -> dict[str, Any]:
-    """Save the exact reviewed proposal only through the AI client's user permission prompt. This changes local state and queues the explicitly approved delivery targets. Provider sending is not enabled yet. Never treat an AI-generated approved flag as consent. Reuse request_id for retries of identical content; a changed proposal needs a new ID. Always-allow client permissions can skip the prompt."""
+    """Save the exact reviewed proposal only through the AI client's user permission prompt. This changes local state and queues the explicitly approved delivery targets, which TFS then sends to those apps. Never treat an AI-generated approved flag as consent. Reuse request_id for retries of identical content; a changed proposal needs a new ID. Always-allow client permissions can skip the prompt."""
     return _change(
         apply.save,
         proposal.model_dump(exclude_unset=True),

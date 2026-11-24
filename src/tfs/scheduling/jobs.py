@@ -33,7 +33,9 @@ def destinations(conn: sqlite3.Connection, items: dict) -> tuple[dict, dict]:
         if state["status"] in ("saved", "sent", "removed"):
             if linked - eligible:
                 raise ValueError("Reconnect the previously linked app before changing this plan.")
-            names = sorted(linked if state["status"] == "removed" else eligible)
+            # TFS never deletes a target the person named, so its removal sends nothing.
+            removable = linked - state["send_into"].keys()
+            names = sorted(removable if state["status"] == "removed" else eligible)
         if names:
             targets[item] = names
     labels = {name: manifests[name]["label"] for names in targets.values() for name in names}
@@ -61,8 +63,21 @@ def _pending(conn: sqlite3.Connection, items: dict, *, allow_sent: bool = False)
                 linked = conn.execute(
                     "SELECT 1 FROM remote_links WHERE item_id = ? AND connector = ?"
                     " UNION ALL SELECT 1 FROM jobs WHERE item_id = ? AND connector = ?"
-                    " AND plan_version > ? AND json_extract(result_json, '$.manual_action') = 'delete'",
-                    (item, row["connector"], item, row["connector"], row["plan_version"]),
+                    " AND plan_version > ? AND json_extract(result_json, '$.manual_action') = 'delete'"
+                    # Another item took over this routine, so this item can be changed again.
+                    " UNION ALL SELECT 1 FROM jobs WHERE item_id != ? AND connector = ?"
+                    " AND status = 'sent'"
+                    " AND json_extract(result_json, '$.remote_id') = json_extract(?, '$.remote_id')",
+                    (
+                        item,
+                        row["connector"],
+                        item,
+                        row["connector"],
+                        row["plan_version"],
+                        item,
+                        row["connector"],
+                        row["result_json"],
+                    ),
                 ).fetchone()
                 if linked:
                     continue
@@ -143,6 +158,14 @@ def _claim(conn: sqlite3.Connection, now: str, manifests: dict) -> dict | None:
             if manifest is None or item["family"] not in manifest["sends"]:
                 continue
             job = {**dict(row), "item": item, "in_doubt": row["status"] == "in_doubt"}
+            # Payloads queued before send_into existed lack the key.
+            named = item.get("send_into", {}).get(row["connector"])
+            if named:
+                version = conn.execute(
+                    "SELECT remote_version FROM app_targets WHERE connector = ? AND remote_id = ?",
+                    (row["connector"], named),
+                ).fetchone()
+                job.update(remote_id=named, remote_version=version and version[0])
             conn.execute(
                 "UPDATE jobs SET status = 'sending', attempts = attempts + 1 WHERE id = ?",
                 (row["id"],),
@@ -168,6 +191,22 @@ def _finish(conn: sqlite3.Connection, job: dict, outcome: dict, now: str) -> Non
                 (job["item_id"], job["connector"]),
             )
         if status == "sent":
+            # A target holds one session, so other items sent into it show as not sent.
+            target = (job["connector"], outcome["remote_id"], job["item_id"])
+            conn.execute(
+                "UPDATE plan_items SET status = 'saved' WHERE status = 'sent' AND id IN"
+                " (SELECT item_id FROM remote_links WHERE connector = ? AND remote_id = ?"
+                " AND item_id != ?)",
+                target,
+            )
+            conn.execute(
+                "DELETE FROM remote_links WHERE connector = ? AND remote_id = ? AND item_id != ?",
+                target,
+            )
+            conn.execute(
+                "UPDATE app_targets SET remote_version = ? WHERE connector = ? AND remote_id = ?",
+                (outcome["remote_version"], job["connector"], outcome["remote_id"]),
+            )
             conn.execute(
                 "INSERT INTO remote_links(item_id, connector, remote_id, remote_version, last_job_id)"
                 " VALUES (?, ?, ?, ?, ?) ON CONFLICT(item_id, connector) DO UPDATE SET"

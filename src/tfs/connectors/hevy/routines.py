@@ -1,4 +1,4 @@
-"""Hevy routine mapping and reconciliation; real writes await provider proof."""
+"""Hevy routine mapping, writes and reconciliation."""
 
 import json
 from collections.abc import Callable
@@ -6,7 +6,6 @@ from functools import partial
 from http.client import HTTPException
 from urllib.parse import quote
 
-_WRITES_PROVEN = False
 _API = "https://api.hevyapp.com/v1"
 _SET_FIELDS = (
     "type",
@@ -258,11 +257,6 @@ def send(
             "manual_action": "delete",
             "remote_id": remote_id,
             "message": "Delete this routine in Hevy, then report its deletion in TFS. TFS cannot delete it for you.",
-        }
-    if not _WRITES_PROVEN:
-        return {
-            "status": "needs_you",
-            "message": "Hevy routine delivery awaits provider verification.",
         }
     request = partial(_request, http, secrets, uncertain=in_doubt)
     try:
