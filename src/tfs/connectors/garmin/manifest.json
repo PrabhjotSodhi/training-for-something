@@ -1,0 +1,17 @@
+{
+  "label": "Garmin",
+  "about": "Reads your Garmin Connect activities, sleep, HRV, resting heart rate, steps, weight and VO2 max with your Garmin Personal API key. TFS only reads.",
+  "routes": {"fetch": true, "push": false, "files": []},
+  "asks": [{"key": "api_key", "label": "Personal API key", "secret": true}],
+  "stale_after_hours": 48,
+  "app_ids": ["com.garmin.connect.mobile", "Garmin Connect"],
+  "notices_deletes": false,
+  "sends": [],
+  "setup": {
+    "steps": [
+      "Sign in to Garmin Connect, open Personal API Key settings and create a key.",
+      "Garmin shows the key once. Paste it here."
+    ],
+    "opens": "https://connect.garmin.com/app/settings/personalApiToken"
+  }
+}

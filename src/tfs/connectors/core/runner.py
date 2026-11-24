@@ -86,9 +86,13 @@ def run(
     return result
 
 
-def http_get(url: str, headers: dict, timeout_s: float = 30) -> tuple[int, dict, bytes]:
-    """GET an https URL and return status, headers and body. 4xx and 5xx are returned, not raised."""
-    return _request("GET", url, headers, None, timeout_s, _HttpsOnlyRedirects)
+def http_get(
+    url: str, headers: dict, timeout_s: float = 30, method: str = "GET", body: bytes | None = None
+) -> tuple[int, dict, bytes]:
+    """GET an https URL, or POST when method says so, and return status, headers and body. 4xx and 5xx are returned, not raised."""
+    if method not in ("GET", "POST"):
+        raise ValueError("Fetch requests support GET and POST only.")
+    return _request(method, url, headers, body, timeout_s, _HttpsOnlyRedirects)
 
 
 def http_request(

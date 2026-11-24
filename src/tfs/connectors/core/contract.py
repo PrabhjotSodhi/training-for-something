@@ -73,6 +73,7 @@ METRICS = {
     "vo2_max": Metric("mL/kg/min", "latest", True),
     "heart_rate": Metric("bpm", "none", True),
     "hrv_sdnn": Metric("ms", "mean", True),
+    "hrv_rmssd": Metric("ms", "mean", True),
 }
 
 SESSION_VALUES = (

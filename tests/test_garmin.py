@@ -185,11 +185,20 @@ class GarminDuplicateTest(unittest.TestCase):
         connector.read(str(page), "activities", str(out_path))
         run = json.loads(out_path.read_text(encoding="utf-8"))
         insert_workout(
-            conn, "garmin-1", "garmin", run["start_utc"], run["end_utc"], run["values"],
+            conn,
+            "garmin-1",
+            "garmin",
+            run["start_utc"],
+            run["end_utc"],
+            run["values"],
             family=run["family"],
         )
         insert_workout(
-            conn, "apple-1", "apple_health", "2026-11-20T06:00:20Z", "2026-11-20T06:30:20Z",
+            conn,
+            "apple-1",
+            "apple_health",
+            "2026-11-20T06:00:20Z",
+            "2026-11-20T06:30:20Z",
             family=run["family"],
         )
         # WHEN both import
