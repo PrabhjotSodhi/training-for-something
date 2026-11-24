@@ -84,7 +84,7 @@ def _connect_ai_tools() -> None:
         found += 1
         connected = providers.is_connected(program) or _offer_connect(program, provider)
         status = "found, TFS connected" if connected else "found, TFS not connected"
-        print(f"  ✔ {provider.label:<13} {status}")
+        print(f"  {'✔' if connected else '✘'} {provider.label:<13} {status}")
     if not found:
         print("TFS needs Claude Code or Codex. Install one, then run tfs setup again.")
 
