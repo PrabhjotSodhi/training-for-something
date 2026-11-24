@@ -4,6 +4,12 @@ Versions follow Python's PEP 440. Each release starts with "Breaking changes". E
 
 ## Unreleased
 
+### Added
+
+- `coach_v1_app_targets` lists your Hevy routines after each sync, and `coach_v1_plan_items` has `send_into_json`.
+- `add_session` and `change_session` take `send_into` to send a strength session into a Hevy routine you pick. The preview shows its title in `send_into_titles`.
+- Approved strength sessions are sent to Hevy (#185). An update keeps the routine's title and folder. Removing a session sent into a routine you picked leaves the routine as it is.
+
 ## 0.1.0a3, 2026-11-24
 
 The third alpha of 0.1.0. It adds guided setup and a one-line installer. Expect bugs and breaking changes before 0.1.0.

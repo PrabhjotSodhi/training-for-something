@@ -10,7 +10,10 @@ functions.
 
 `fetch(cursor: dict | None, secrets: dict, out_dir: str, http, now: str) -> dict`
     Downloads new raw files into `out_dir`. Returns `{"files": [{"path", "fmt", "ext"}],
-    "cursor": dict | None, "auth_failed": bool, "wait_until": str | None}`.
+    "cursor": dict | None, "auth_failed": bool, "wait_until": str | None}`. An app that
+    can receive sessions may add `"targets": [{"remote_id", "title", "folder",
+    "remote_version"}]`, its full list of objects a session can be sent into. It replaces
+    the stored list.
 
 `connect(answers: dict) -> dict`
     Turns what the user typed into `{"secrets": {...}}` for the engine to store.
@@ -22,8 +25,9 @@ functions.
     error may mean the app received the request; reconcile before another write.
     Returns status sent/not_sent/unknown/conflict/needs_you, optional message and
     auth_failed. sent requires remote_id and remote_version; not_sent means definite
-    non-delivery. in_doubt requires reconciliation before any write. Hevy sends
-    remain disabled until their provider proof passes.
+    non-delivery. in_doubt requires reconciliation before any write. The item's
+    send_into maps a connector to the target the person named; remote_id is that
+    target and remote_version is the one stored from the last fetch.
 """
 
 import hashlib

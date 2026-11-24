@@ -411,6 +411,8 @@ def _fetch_and_save(
         if reply["wait_until"]:
             return f"try again after {reply['wait_until']}."
         next_cursor = None if reply["cursor"] is None else json.dumps(reply["cursor"])
+        if "targets" in reply:
+            _replace_targets(conn, connector, reply["targets"])
         files = reply["files"]
         for number, file in enumerate(files, start=1):
             with Path(file["path"]).open("rb") as source:
@@ -434,6 +436,19 @@ def _fetch_and_save(
                 (next_cursor, now, connector),
             )
     return None
+
+
+def _replace_targets(conn: sqlite3.Connection, connector: str, targets: list[dict]) -> None:
+    with transaction(conn):
+        conn.execute("DELETE FROM app_targets WHERE connector = ?", (connector,))
+        conn.executemany(
+            "INSERT INTO app_targets (connector, remote_id, title, folder, remote_version)"
+            " VALUES (?, ?, ?, ?, ?)",
+            [
+                (connector, t["remote_id"], t["title"], t["folder"], t["remote_version"])
+                for t in targets
+            ],
+        )
 
 
 def _count(number: int, noun: str) -> str:

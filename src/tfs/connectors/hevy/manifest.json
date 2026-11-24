@@ -6,7 +6,7 @@
   "stale_after_hours": 168,
   "app_ids": ["com.hevyapp.hevy", "Hevy"],
   "notices_deletes": true,
-  "sends": [],
+  "sends": ["strength"],
   "setup": {
     "steps": ["Needs Hevy Pro."],
     "opens": "https://developers.hevy.com/api-key"

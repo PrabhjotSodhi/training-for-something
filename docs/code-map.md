@@ -41,7 +41,7 @@ training-for-something/
         connector.py          fetch(), read(), send(), connect() as the app supports
       health_auto_export/
       hevy/
-        routines.py           Hevy-only routine mapping/readback; writes stay disabled pending proof
+        routines.py           Hevy-only routine mapping, writes and readback
     duplicates/
       workouts.py             links the same workout from two apps into one session group
       review.py               the "Possible duplicates" screen: your links and unlinks
@@ -108,7 +108,7 @@ Module names are short and lowercase, as PEP 8 asks. The folder carries the cont
 
 ## 2. Database tables
 
-Each milestone adds one numbered migration for the tables it needs. `0001_init.sql` creates the "Your data in" tables: `files`, `sources`, `source_records`, `source_deletes`, `session_parts`, `session_groups`, `session_group_members`, `day_facts` and `rebuild_dates`. `0002_plans.sql` adds `journal`, `goals`, `limits` and `plan_items`, and lets `session_parts` belong to a plan item. `0008_scores.sql` adds `scores`, `0009_coach_forecasts.sql` adds `coach_forecasts`, `0010_rules.sql` adds `rules` and `rule_runs`, and `0011_overview_layout.sql` adds `overview_layout`. A merged migration is never edited. Later changes are new numbered files.
+Each milestone adds one numbered migration for the tables it needs. `0001_init.sql` creates the "Your data in" tables: `files`, `sources`, `source_records`, `source_deletes`, `session_parts`, `session_groups`, `session_group_members`, `day_facts` and `rebuild_dates`. `0002_plans.sql` adds `journal`, `goals`, `limits` and `plan_items`, and lets `session_parts` belong to a plan item. `0008_scores.sql` adds `scores`, `0009_coach_forecasts.sql` adds `coach_forecasts`, `0010_rules.sql` adds `rules` and `rule_runs`, `0011_overview_layout.sql` adds `overview_layout`, and `0012_app_targets.sql` adds `app_targets` and the `send_into_json` column on `plan_items`. A merged migration is never edited. Later changes are new numbered files.
 
 | Table | Kind | Holds |
 |---|---|---|
@@ -131,6 +131,7 @@ Each milestone adds one numbered migration for the tables it needs. `0001_init.s
 | `plan_matches` | Derived | One workout group per completed plan item, with matching reason |
 | `plan_match_exclusions` | Yours | Stable source-record IDs the user excluded from matching a plan item |
 | `remote_links` | Yours | Plan item, connector, remote id, remote version |
+| `app_targets` | Sync state | One row per app object a session can be sent into, such as a Hevy routine: connector, remote id, title, folder, remote version. Each fetch replaces the connector's rows. |
 | `source_order` | Yours | Your source list per data type |
 | `chat` | Yours | Visible chat turns |
 | `jobs` | Work | Approved send payloads with stable op id, item/journal version, status, next due, attempts, and result; AI/trigger jobs follow later |

@@ -71,6 +71,7 @@ class AddSession(_Action):
     parts: list[Part]
     goal_ids: list[Text] = None
     start_hint: StartHint = None
+    send_into: dict[Text, Text] = None
 
 
 class MoveSession(_Action):
@@ -82,17 +83,18 @@ class MoveSession(_Action):
 
 
 class ChangeSession(_Action):
-    """Change the label, parts or start time of a planned session."""
+    """Change the label, parts, start time or app target of a planned session."""
 
     action: Literal["change_session"]
     label: Text = None
     parts: list[Part] = None
     start_hint: StartHint = None
+    send_into: dict[Text, Text] = None
 
     @model_validator(mode="after")
     def _changes_something(self) -> Self:
         if self.model_fields_set <= {"action", "item"}:
-            raise ValueError("A change needs a label, parts or start_hint.")
+            raise ValueError("A change needs a label, parts, start_hint or send_into.")
         return self
 
 

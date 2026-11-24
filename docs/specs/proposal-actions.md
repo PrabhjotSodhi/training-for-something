@@ -82,15 +82,24 @@ and a stable `item` ID. Unknown fields are errors.
 
 | Action | Additional fields |
 |---|---|
-| add_session | date, family, label, parts; optional goal_ids naming existing goals, start_hint |
+| add_session | date, family, label, parts; optional goal_ids naming existing goals, start_hint, send_into |
 | move_session, restore_session | to; optional start_hint |
-| change_session | at least one of label, parts, start_hint |
+| change_session | at least one of label, parts, start_hint, send_into |
 | remove_session, mark_done | none |
 | unlink_plan_match | record_ids: complete sorted unique non-empty list from matched_record_ids_json |
 
 `start_hint` is a local 24-hour HH:MM time, or null for no preferred time.
 Omission on add means null; omission on move/change keeps the previous hint.
 Explicit null clears it. Seconds and timezone offsets are not accepted.
+
+`send_into` maps a connector ID to the `remote_id` of one of its rows in
+`coach_v1_app_targets`, such as a Hevy routine. Preview and Save refuse a target
+that is not listed. Preview returns `send_into_titles`, the title of each named
+target per item. Omission on change keeps the previous value. Delivery updates the
+named target, keeps its title and folder, and checks the version from the last
+sync. Removing an item sends nothing to a target the person named. A target holds
+one session: when a later item is sent into it, earlier items lose their link and
+show as not sent.
 
 Dates are local YYYY-MM-DD dates, today or later. The caller passes an aware
 `now` in the person's local zone; journal time is stored in UTC. Parts are an
@@ -149,8 +158,8 @@ proposals fail without a write. Reuse a request ID only for an identical retry.
 A JSON-RPC notification has no reply ID and is ignored before tool dispatch,
 so it cannot save. Tool annotations describe behavior to the client;
 they do not enforce approval. Always-allow client settings can skip prompts.
-These tools perform no provider delivery yet. Real installed-client approval
-and refusal remain a separate proof from synthetic protocol tests.
+Real installed-client approval and refusal remain a separate proof from synthetic
+protocol tests.
 
 
 ## Queued delivery approval
@@ -164,7 +173,7 @@ current targets differ. A newly connected app cannot silently receive a plan.
 Save cancels superseded pending/not-sent jobs and queues the exact final item in
 the same transaction as its plan and journal. Removed items target only existing
 linked copies; unlinked removals and done items enqueue nothing. Jobs keep a stable operation ID and immutable approved payload; secrets
-never enter them. Provider sends are not enabled yet.
+never enter them.
 
 The before-state `jobs` map holds each job ID with its prior status and
 next-attempt time, or null for a newly created job.
@@ -178,8 +187,7 @@ between preview and Save can turn the next dispatch into an update of the known
 remote object without changing that approved content or those destinations.
 Sending, in-doubt, unknown, conflict and needs-you jobs still block overlapping
 changes. Manual deletion tasks and the copies they name
-remain history and do not block later work. Invented delivery tests do
-not satisfy real-provider proof #29.
+remain history and do not block later work.
 
 
 ## Unlink a wrong plan match

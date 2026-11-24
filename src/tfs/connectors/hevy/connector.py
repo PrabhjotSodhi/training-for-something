@@ -1,6 +1,7 @@
 """Fetches Hevy workout pages and reads saved pages into session records and delete records."""
 
 import json
+from collections.abc import Iterator
 from datetime import timedelta
 from pathlib import Path
 from urllib.parse import quote
@@ -26,8 +27,13 @@ def connect(answers: dict) -> dict:
     return {"secrets": {"api_key": api_key}}
 
 
+class _StopError(Exception):
+    def __init__(self, result: dict) -> None:
+        self.result = result
+
+
 def fetch(cursor: dict | None, secrets: dict, out_dir: str, http, now: str) -> dict:
-    """Download every workout page, or the events since the cursor, and return the files and next cursor."""
+    """Download every workout page, or the events since the cursor, and the routine list."""
     now_time = parse_iso_time(now)
     if cursor is None:
         fmt, url = "workouts_page", f"{_API}/workouts?page={{page}}&pageSize={_PAGE_SIZE}"
@@ -37,24 +43,44 @@ def fetch(cursor: dict | None, secrets: dict, out_dir: str, http, now: str) -> d
         url = f"{_API}/workouts/events?page={{page}}&pageSize={_PAGE_SIZE}&since={since}"
     headers = {"api-key": secrets["api_key"], "accept": "application/json"}
     files = []
+    try:
+        for page, body in enumerate(_pages(http, url, headers, cursor, now_time), start=1):
+            path = Path(out_dir) / f"{fmt}-{page}.json"
+            path.write_bytes(body)
+            files.append({"path": str(path), "fmt": fmt, "ext": "json"})
+        routines_url = f"{_API}/routines?page={{page}}&pageSize={_PAGE_SIZE}"
+        targets = [
+            {
+                "remote_id": routine["id"],
+                "title": routine["title"],
+                "folder": routine.get("folder_id"),
+                "remote_version": routine["updated_at"],
+            }
+            for body in _pages(http, routines_url, headers, cursor, now_time)
+            for routine in json.loads(body)["routines"]
+        ]
+    except _StopError as stop:
+        return stop.result
+    result = _fetch_result(files, {"since": to_utc_text(now_time - _OVERLAP)})
+    return {**result, "targets": targets}
+
+
+def _pages(http, url: str, headers: dict, cursor: dict | None, now_time) -> Iterator[bytes]:
     page, page_count = 1, 1
     while page <= page_count:
         status, reply_headers, body = http(url.format(page=page), headers)
         if status in (401, 403):
-            return _fetch_result([], cursor, auth_failed=True)
+            raise _StopError(_fetch_result([], cursor, auth_failed=True))
         if status == 429:
             wait = _retry_after_seconds(reply_headers)
             wait_until = to_utc_text(now_time + timedelta(seconds=wait))
-            return _fetch_result([], cursor, wait_until=wait_until)
+            raise _StopError(_fetch_result([], cursor, wait_until=wait_until))
         if status != 200:
             raise ValueError(f"Hevy answered status {status} for page {page}.")
-        path = Path(out_dir) / f"{fmt}-{page}.json"
-        path.write_bytes(body)
-        files.append({"path": str(path), "fmt": fmt, "ext": "json"})
         if page == 1:
             page_count = _page_count(body)
+        yield body
         page += 1
-    return _fetch_result(files, {"since": to_utc_text(now_time - _OVERLAP)})
 
 
 def _fetch_result(

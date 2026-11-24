@@ -498,6 +498,7 @@ class ToolAccessTest(unittest.TestCase):
                 "goal_ids_json",
                 "why",
                 "sources_json",
+                "send_into_json",
                 "status",
                 "matched_workout_id",
                 "match_reason",

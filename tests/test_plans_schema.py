@@ -45,7 +45,7 @@ class PlansSchemaTest(unittest.TestCase):
         insert(conn, "session_parts", reps=8, weight_kg=30, extras_json='{"rest_s":90}')
         source = tuple(conn.execute("SELECT * FROM source_records").fetchone())
         part = tuple(conn.execute("SELECT * FROM session_parts").fetchone())
-        self.assertEqual(migrate(conn), 11)
+        self.assertEqual(migrate(conn), 12)
         self.assertEqual(tuple(conn.execute("SELECT * FROM source_records").fetchone()), source)
         upgraded = conn.execute("SELECT * FROM session_parts").fetchone()
         self.assertEqual(tuple(upgraded)[:-1], part)
@@ -73,13 +73,14 @@ class PlansSchemaTest(unittest.TestCase):
         )
         queries = (
             "SELECT * FROM journal",
-            "SELECT * FROM plan_items",
+            "SELECT id, version, plan_version, local_date, start_hint, family, label,"
+            " goal_ids_json, why, sources_json, status FROM plan_items",
             "SELECT * FROM session_parts",
             "SELECT * FROM goals",
             "SELECT * FROM limits",
         )
         before = [[tuple(row) for row in conn.execute(query)] for query in queries]
-        self.assertEqual(migrate(conn), 11)
+        self.assertEqual(migrate(conn), 12)
         self.assertEqual([[tuple(row) for row in conn.execute(query)] for query in queries], before)
         self.assertEqual(conn.execute("SELECT count(*) FROM jobs").fetchone()[0], 0)
         self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
