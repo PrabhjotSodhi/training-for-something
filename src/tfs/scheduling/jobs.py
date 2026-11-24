@@ -64,6 +64,7 @@ def _pending(conn: sqlite3.Connection, items: dict, *, allow_sent: bool = False)
                     "SELECT 1 FROM remote_links WHERE item_id = ? AND connector = ?"
                     " UNION ALL SELECT 1 FROM jobs WHERE item_id = ? AND connector = ?"
                     " AND plan_version > ? AND json_extract(result_json, '$.manual_action') = 'delete'"
+                    # Another item took over this routine, so this item can be changed again.
                     " UNION ALL SELECT 1 FROM jobs WHERE item_id != ? AND connector = ?"
                     " AND status = 'sent'"
                     " AND json_extract(result_json, '$.remote_id') = json_extract(?, '$.remote_id')",

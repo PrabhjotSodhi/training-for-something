@@ -147,6 +147,15 @@ class HevySendTest(unittest.TestCase):
         # THEN the preview shows that routine's title
         self.assertEqual(shown["send_into_titles"], {"p1": {"hevy": NAMED["title"]}})
 
+    def test_preview_refuses_a_routine_tfs_has_not_read(self):
+        # GIVEN Hevy is connected and TFS has read the person's routines
+        _, path = self.plan_with_hevy()
+        # WHEN a session names a routine that is not in that list
+        unknown = {**ADD, "send_into": {"hevy": NAMED["id"] + "-other"}}
+        # THEN the preview refuses it
+        with self.assertRaises(ValueError):
+            preview(path, proposal(unknown), now=NOW)
+
     def test_approved_session_goes_into_the_named_routine(self):
         # GIVEN an approved session that names a routine
         _, path = self.plan_with_hevy()
