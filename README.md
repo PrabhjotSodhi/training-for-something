@@ -1,24 +1,38 @@
 # Training For Something
 
-A free, open source coach for one person's goal. A small engine runs on your computer, reads your health and training apps, and builds numbers you can trust. The AI tool you already use reads those numbers and answers questions.
+A free, open source coach for your goal. It runs on your computer, reads your health and training apps, and answers your questions through the AI tool you already use.
 
-**Status:** in development. Data imports, questions and local plan/goal/limit preview and save tools are available. Sending plans to connected apps is still being built.
+[Install](#install) · [Releases](https://github.com/PrabhjotSodhi/training-for-something/releases) · [License](#license)
 
-## Not medical advice
+[![tests](https://github.com/PrabhjotSodhi/training-for-something/actions/workflows/tests.yml/badge.svg)](https://github.com/PrabhjotSodhi/training-for-something/actions/workflows/tests.yml)
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/PrabhjotSodhi/training-for-something?include_prereleases)](https://github.com/PrabhjotSodhi/training-for-something/releases)
 
-Training For Something gives no medical advice, diagnoses or doses, and never changes a clinician's targets. Its answers are not a substitute for a doctor or physio. If something feels like an emergency, call your local emergency number.
+![The TFS Overview, filled with made-up data](docs/images/overview.webp)
 
-## How it works
+## Features
 
-- Your data is stored on your computer, in one folder. It is shared only with the apps you connect and the AI tool you choose.
-- Plain code stores data, counts each workout once and builds daily totals.
-- Your AI tool reads those numbers through the local ask TFS tool.
+Now:
 
-Read more in the [high level design](docs/HLD.md), the [code map](docs/code-map.md) and the [specs](docs/specs/).
+- One line installs TFS. A guided setup connects your AI tools and apps.
+- Brings in your workouts, sleep and health data, and counts each workout once.
+- Shows your goal, your week, your sleep and your trends on a dashboard that runs on your computer.
+- Answers questions about your data in Claude Code or Codex.
+- Plans changes to your training in chat. You see every change before it saves.
+- Keeps all your data in one folder on your computer.
 
-## Ask about your data
+Coming soon:
 
-You need Claude Code or Codex on the same computer. One line installs uv, the newest TFS release and then runs `tfs setup`.
+- Missed a session? Your coach reviews the rest of your week and has a new plan waiting for your OK.
+- Your coach works in the background, so you don't have to open a chat.
+- A daily effort load from your workout ratings, shown against your own normal.
+- Plans sent straight to Hevy as routines.
+- Log food with a photo, and read lab results from a PDF.
+- Android phones through Health Connect, and Fitbit through Apple Health.
+
+## Install
+
+You need Claude Code or Codex. One line installs TFS and starts setup.
 
 Mac and Linux:
 
@@ -32,75 +46,62 @@ Windows, in PowerShell:
 curl.exe -fsSLo install.ps1 https://raw.githubusercontent.com/PrabhjotSodhi/training-for-something/main/install.ps1; powershell -ExecutionPolicy ByPass -File install.ps1; del install.ps1
 ```
 
-Run the same line again to update. To install by hand, copy the command from the newest release on the [Releases page](https://github.com/PrabhjotSodhi/training-for-something/releases):
+Setup connects your AI tools and your apps, then opens the dashboard. Run the same line again to update.
 
-```sh
-uv tool install --force <the release's wheel URL>
+## Works with
+
+| AI tools | Apps |
+|---|---|
+| Claude Code | Apple Health export |
+| Codex | Health Auto Export |
+| | Hevy |
+
+## How it works
+
+```mermaid
+flowchart LR
+  A[Your apps] --> B[TFS on your computer] --> C[Your AI tool]
 ```
 
-Both clients need `tfs` on PATH. Open a new terminal and check:
+Plain code stores your data, counts each workout once and builds daily totals. Your AI tool reads those numbers through the local TFS tool. Your data goes only to the apps you connect and the AI tool you choose.
 
-```sh
-tfs --version
-```
+Read more in the [high level design](docs/HLD.md), the [code map](docs/code-map.md) and the [specs](docs/specs/).
 
-If the terminal cannot find `tfs`, run `uv tool update-shell` and open a new terminal. Import data first, for example with `tfs import /path/to/export.zip` for an Apple Health export. The tool reports a missing database until you import data or start TFS.
+## Plan changes in chat
 
-### Claude Code
+Ask for a change, like "Limit my sessions to 45 minutes and add an easy run tomorrow." TFS shows the exact changes and the reason for each. Nothing saves until you approve it in your AI tool's permission prompt. Sending plans to your connected apps is still being built.
 
-Run these commands inside Claude Code:
+Keep the `save` tool set to ask for permission. An always allow setting skips that prompt. Your AI tool runs with your computer's permissions, so TFS cannot stop it from writing a change you refused through another route.
 
-```text
-/plugin marketplace add PrabhjotSodhi/training-for-something
-/plugin install tfs@training-for-something
-```
+## Not medical advice
 
-Enable the plugin and its local TFS MCP server when prompted. Start a new chat and ask, "What do my latest workouts show?"
+Training For Something gives no medical advice, diagnoses or doses, and never changes a clinician's targets. Its answers are not a substitute for a doctor or physio. If something feels like an emergency, call your local emergency number.
 
-### Codex
+## Set up by hand
 
-Download the skill with `git clone https://github.com/PrabhjotSodhi/training-for-something.git`. Copy its `plugins/tfs/skills/tfs` folder, including `SKILL.md` and its `references` folder, to your personal skills folder. [Current Codex documentation](https://developers.openai.com/codex/skills) uses `~/.agents/skills/tfs`. For installations using the older Codex skills location, copy it to `~/.codex/skills/tfs`, or `$CODEX_HOME/skills/tfs` if you set `CODEX_HOME`. Use the location supported by your installed version.
+Skip this if you ran `tfs setup`.
 
-Register the local MCP server from a terminal where `tfs --version` works:
+1. Install the wheel from the newest [release](https://github.com/PrabhjotSodhi/training-for-something/releases): `uv tool install --force <wheel URL>`
+2. Add the plugin to Claude Code:
+   ```sh
+   claude plugin marketplace add PrabhjotSodhi/training-for-something
+   claude plugin install tfs@training-for-something
+   ```
+3. Or add it to Codex:
+   ```sh
+   codex plugin marketplace add PrabhjotSodhi/training-for-something
+   codex plugin add tfs@training-for-something
+   ```
+4. Import your data, for example `tfs import export.zip` for an Apple Health export.
+5. Run `tfs start` to open the dashboard.
 
-```sh
-codex mcp add tfs -- tfs mcp
-```
+If your terminal cannot find `tfs`, run `uv tool update-shell` and open a new terminal.
 
-Restart Codex, select the TFS skill with `$tfs`, and ask about your data. If the skill is missing, check the skills folder for your Codex version. If the server cannot start, check that `tfs` is on PATH in the terminal that launches Codex.
-
-### From source
-
-Contributors clone the repository, then run:
+## From source
 
 ```sh
 npm --prefix dashboard install && npm --prefix dashboard run build && uv tool install --editable .
 ```
-
-
-## Plan changes in chat
-
-Ask for a plan or a change. The coach reads your current plan version, calls
-`propose` and shows the exact changes with their reason and sources. Preview
-saves nothing. Approve `save` through your AI client's permission prompt to
-store the proposal. To take back a saved change, ask for the opposite change,
-such as removing an added session or moving a session back, and approve it like
-any other change. Existing delivered edits use new queued updates, preserving
-their original receipts. A removal can create a manual deletion task. An approved report records that you deleted the exact copy;
-it is not provider verification. Restoring it creates a new copy after approval.
-Provider writes remain disabled pending verification.
-
-Keep `save` configured to ask for permission. An always-allow setting
-can skip the prompt. TFS records the calling route but does not independently
-prove consent; check the approval/refusal behavior in your installed client.
-The installed AI CLI has your operating-system rights, and the SQL reader is
-not an OS sandbox. A refused change must not be written through another route.
-
-For example, ask: "Set a marathon goal for a future date, limit sessions to
-60 minutes, and propose an easy 6 km run tomorrow." The tools can save that
-local goal, limit and session together. They do not send it to a connected app
-yet. Goal units are explicit; planned targets use metres and seconds when
-writing, while the read views show km and minutes.
 
 ## Contributing
 
