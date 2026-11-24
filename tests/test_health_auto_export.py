@@ -110,6 +110,44 @@ class HealthAutoExportReadTest(unittest.TestCase):
             ],
         )
 
+    def test_body_composition_metrics_are_read_in_stored_units_with_their_source(self) -> None:
+        def metric(name: str, units: str, qty: float) -> dict:
+            sample = {"date": "2026-03-02 08:00:00 +1300", "qty": qty, "source": "Ana's Scale"}
+            return {"name": name, "units": units, "data": [sample]}
+
+        body = json.dumps(
+            {
+                "data": {
+                    "metrics": [
+                        metric("lean_body_mass", "lb", 100),
+                        metric("waist_circumference", "in", 30),
+                        metric("body_mass_index", "count", 22.5),
+                        metric("height", "ft", 5),
+                    ]
+                }
+            }
+        )
+
+        _, records = self._read_body(body)
+
+        self.assertEqual(
+            [
+                (
+                    r["metric"],
+                    round(r["values"]["value"], 4),
+                    r["values"]["unit"],
+                    r["origin_device"],
+                )
+                for r in records
+            ],
+            [
+                ("lean_body_mass", 45.3592, "kg", "Ana's Scale"),
+                ("waist", 76.2, "cm", "Ana's Scale"),
+                ("bmi", 22.5, "count", "Ana's Scale"),
+                ("height", 152.4, "cm", "Ana's Scale"),
+            ],
+        )
+
     def test_other_json_is_unreadable(self) -> None:
         result, records = self._read_body('{"foo": 1}')
 
