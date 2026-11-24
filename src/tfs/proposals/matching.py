@@ -12,6 +12,8 @@ WITH refs AS (
   FROM remote_links l JOIN source_records r
     ON r.connector = l.connector AND r.plan_ref = l.remote_id AND r.deleted_at IS NULL
   JOIN session_group_members m ON m.record_id = r.id
+  JOIN session_groups g ON g.id = m.group_id
+  JOIN plan_items p ON p.id = l.item_id AND p.local_date = g.local_date
 ), pairs AS (
   SELECT item_id, group_id, 0 AS fallback FROM refs
   UNION ALL

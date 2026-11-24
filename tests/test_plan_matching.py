@@ -181,9 +181,7 @@ class PlanMatchingTest(unittest.TestCase):
         )
 
     def test_reference_is_connector_qualified_and_wins_over_date_and_family(self):
-        self.save(
-            self.plan("fallback", "07:30"), self.plan("linked", family="run", day="2026-11-09")
-        )
+        self.save(self.plan("fallback", "07:30"), self.plan("linked", family="run"))
         self.link("linked", "provider", "routine-1")
         self.import_records([self.workout(plan_ref="routine-1")], connector="wrong-provider")
         self.assertEqual([r[0] for r in self.matches()], ["fallback"])
@@ -192,6 +190,16 @@ class PlanMatchingTest(unittest.TestCase):
         self.assertEqual(
             [r[:2] for r in self.visible()], [["fallback", "saved"], ["linked", "done"]]
         )
+
+    def test_reused_routine_does_not_complete_a_later_plan_item(self):
+        # GIVEN a workout done last week from the routine this week's item is linked to
+        self.save(self.plan("this-week", family="run", day="2026-11-15"))
+        self.link("this-week", "provider", "routine-1")
+        # WHEN matching runs
+        self.import_records([self.workout(plan_ref="routine-1")], connector="provider")
+        # THEN this week's item stays open
+        self.assertEqual(self.matches(), [])
+        self.assertEqual([r[:2] for r in self.visible()], [["this-week", "saved"]])
 
     def test_pending_delete_hides_match_and_manual_done_survives(self):
         self.save(self.plan())

@@ -140,12 +140,17 @@ def _request(
         status, _, response = http(method, _API + path, headers, body)
         if status == 403 and _routine_limit(response):
             raise _DeliveryError(
-                "needs_you", "Hevy's routine limit was reached. Review your routines in the app."
+                "needs_you",
+                "Hevy allows 4 routines on the free plan. Pick an existing routine for TFS to update.",
             )
         if status in (401, 403):
             raise _DeliveryError("needs_you", "Reconnect Hevy before sending.", auth_failed=True)
         if status == 429 and write:
             raise _DeliveryError("not_sent", "Hevy rejected the request due to its rate limit.")
+        if status == 404 and path.startswith("/routines/"):
+            raise _DeliveryError(
+                "needs_you", "This Hevy routine no longer exists. Pick another routine."
+            )
         if status in (400, 404) and write:
             raise _DeliveryError(
                 "needs_you", "Hevy refused the routine. Review the plan and app connection."
@@ -186,10 +191,13 @@ def _readback(request: Callable, reply: dict, expected: dict, remote_id: str | N
     return _confirmed(stored, expected)
 
 
+def _tagged(routine: dict, marker: str) -> bool:
+    exercises = routine["exercises"]
+    return bool(exercises) and (exercises[0].get("notes") or "").endswith(marker)
+
+
 def _create(request: Callable, expected: dict, marker: str, in_doubt: bool) -> dict:
-    matches = [
-        routine for routine in _pages(request, "routines", 10) if routine["title"].endswith(marker)
-    ]
+    matches = [routine for routine in _pages(request, "routines", 10) if _tagged(routine, marker)]
     if len(matches) > 1:
         raise _DeliveryError(
             "needs_you", "Several Hevy routines have this operation marker. Review them in the app."
@@ -216,10 +224,11 @@ def _update(
     current = request("GET", path)["routine"]
     if current["id"] != remote_id:
         raise _DeliveryError("unknown", "Hevy returned an unexpected routine ID.")
+    expected["title"] = current["title"]
     expected["folder_id"] = current.get("folder_id")
     if "notes" in current:
         expected["notes"] = current["notes"]
-    if current["title"].endswith(marker):
+    if _tagged(current, marker):
         return _confirmed(current, expected)
     if in_doubt:
         raise _DeliveryError(
@@ -263,10 +272,12 @@ def send(
             )
         marker = f"[TFS:{op_id}]"
         expected = {
-            "title": f"{item['local_date']} {item['label']} {marker}",
+            "title": f"{item['local_date']} {item['label']}",
             "folder_id": None,
             "exercises": _exercises(item["parts"], _pages(request, "exercise_templates", 100)),
         }
+        # Hevy does not return routine notes, so the tag that proves this operation goes here.
+        expected["exercises"][0]["notes"] = marker
         if remote_id:
             return _update(request, expected, marker, remote_id, remote_version, in_doubt)
         return _create(request, expected, marker, in_doubt)
