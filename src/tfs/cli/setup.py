@@ -18,6 +18,14 @@ from tfs.connectors.core import runner
 from tfs.connectors.core.contract import load_manifests
 from tfs.persistence.migrations import DatabaseTooNewError
 
+# prompt_toolkit raises this on Windows when the terminal is not a real console, such as Git Bash.
+# Its module refuses to import on other systems, so the tuple stays empty there.
+_NO_CONSOLE: tuple[type[Exception], ...] = ()
+if sys.platform == "win32":
+    from prompt_toolkit.output.win32 import NoConsoleScreenBufferError
+
+    _NO_CONSOLE = (NoConsoleScreenBufferError,)
+
 _CONNECT_ERRORS = (
     runner.ConnectorUserError,
     runner.RunnerTimeoutError,
@@ -54,6 +62,9 @@ def run(args: argparse.Namespace) -> int:
             return 0
     except KeyboardInterrupt:
         print("\nSetup stopped.", file=sys.stderr)
+        return 1
+    except _NO_CONSOLE:
+        print("\nRun tfs setup in PowerShell, Windows Terminal or Command Prompt.", file=sys.stderr)
         return 1
     print("Keep this window open. TFS receives phone data only while it runs.")
     return start.run(argparse.Namespace(home_wifi=False, open=True))
