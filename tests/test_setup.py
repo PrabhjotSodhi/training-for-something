@@ -133,6 +133,17 @@ class SetupTest(TfsHomeTestCase):
             self.run_setup(questionary, FakeCommands(found=set()))
         imported.assert_not_called()
 
+    def test_given_a_terminal_that_is_not_a_windows_console_then_it_names_one_and_exits_1(self):
+        class NoConsoleError(Exception):
+            pass
+
+        questionary = FakeQuestionary()
+        questionary.checkbox = mock.Mock(side_effect=NoConsoleError)
+        with mock.patch("tfs.cli.setup._NO_CONSOLE", (NoConsoleError,)):
+            code, _, err, _ = self.run_setup(questionary, FakeCommands(found=set()))
+        self.assertEqual(code, 1)
+        self.assertIn("Run tfs setup in PowerShell, Windows Terminal or Command Prompt.", err)
+
     def test_given_no_terminal_then_it_says_so_and_exits_1(self):
         code, out, err, _ = self.run_setup(FakeQuestionary(), FakeCommands(found=set()), tty=False)
         self.assertEqual(code, 1)
