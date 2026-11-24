@@ -413,6 +413,8 @@ def _fetch_and_save(
         next_cursor = None if reply["cursor"] is None else json.dumps(reply["cursor"])
         if "targets" in reply:
             _replace_targets(conn, connector, reply["targets"])
+        if "muscles" in reply:
+            _replace_muscles(conn, connector, reply["muscles"])
         files = reply["files"]
         for number, file in enumerate(files, start=1):
             with Path(file["path"]).open("rb") as source:
@@ -448,6 +450,15 @@ def _replace_targets(conn: sqlite3.Connection, connector: str, targets: list[dic
                 (connector, t["remote_id"], t["title"], t["folder"], t["remote_version"])
                 for t in targets
             ],
+        )
+
+
+def _replace_muscles(conn: sqlite3.Connection, connector: str, muscles: dict[str, str]) -> None:
+    with transaction(conn):
+        conn.execute("DELETE FROM exercise_muscles WHERE connector = ?", (connector,))
+        conn.executemany(
+            "INSERT INTO exercise_muscles (connector, template_id, muscle) VALUES (?, ?, ?)",
+            [(connector, template_id, muscle) for template_id, muscle in muscles.items()],
         )
 
 

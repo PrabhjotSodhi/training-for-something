@@ -13,7 +13,8 @@ functions.
     "cursor": dict | None, "auth_failed": bool, "wait_until": str | None}`. An app that
     can receive sessions may add `"targets": [{"remote_id", "title", "folder",
     "remote_version"}]`, its full list of objects a session can be sent into. It replaces
-    the stored list.
+    the stored list. An app with exercise tags may add `"muscles": {exercise id: primary
+    muscle}`, which also replaces the stored map.
 
 `connect(answers: dict) -> dict`
     Turns what the user typed into `{"secrets": {...}}` for the engine to store.

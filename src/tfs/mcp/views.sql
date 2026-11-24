@@ -76,6 +76,23 @@ JOIN main.session_parts p ON p.record_id = (
   LIMIT 1)
 JOIN main.source_records r ON r.id = p.record_id;
 
+CREATE TEMP VIEW coach_v1_sets_by_muscle AS
+SELECT date(g.local_date, '-' || ((strftime('%w', g.local_date) + 6) % 7) || ' days') AS week_start,
+  coalesce(m.muscle, 'other') AS muscle, count(*) AS sets
+FROM main.session_groups g
+JOIN main.session_parts p ON p.record_id = (
+  SELECT x.record_id FROM main.session_group_members x
+  JOIN main.source_records live ON live.id = x.record_id AND live.deleted_at IS NULL
+  WHERE x.group_id = g.id
+  ORDER BY (SELECT count(*) FROM main.session_parts WHERE record_id = x.record_id) DESC,
+    x.record_id
+  LIMIT 1)
+JOIN main.source_records r ON r.id = p.record_id
+LEFT JOIN main.exercise_muscles m ON m.connector = r.connector
+  AND m.template_id = json_extract(p.extras_json, '$.exercise_template_id')
+WHERE p.part_kind = 'set' AND coalesce(json_extract(p.extras_json, '$.set_type'), '') != 'warmup'
+GROUP BY 1, 2;
+
 CREATE TEMP VIEW coach_v1_sources AS
 SELECT connector, enabled, last_received_at, last_error,
   (SELECT MAX(COALESCE(end_utc, start_utc)) FROM main.source_records

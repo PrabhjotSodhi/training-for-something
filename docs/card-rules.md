@@ -78,3 +78,9 @@ Plus Jakarta Sans for everything, with tabular figures on numbers. The font file
 4. Training load never shows load points. The line is the last 7 days over the usual week, with the band at 0.88 to 1.1. The value reads like "+16% last 7 days vs your usual". State words are Below normal, Normal and Above normal.
 5. Training load has one part each for Cardio, Strength and Effort. A part shows only when its first load day is 28 or more days ago and its usual week is above 0. Cardio also needs heart rate on at least 3 in 4 of the workouts in the 35 days it looks at. Chips show only for two or more parts, in that order, and the card opens on the layout's `first` part, else Cardio, else the first part that shows. A card with no part, or a metric with no reading, is left out.
 6. The hover shows the date, the day's value and the band's low and high, and opens on keyboard focus.
+
+## Sets by muscle card
+
+1. The headline is the number of working sets this week, like "21 sets". With none it says "No sets this week" and shows no rows.
+2. One row per muscle, most sets first: name, a bar scaled to the top muscle and the count. A muscle with no sets has no row.
+3. Only the primary muscle of each exercise counts. Warmup sets do not count. An exercise with no muscle tag counts under "other".

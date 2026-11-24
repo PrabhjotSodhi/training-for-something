@@ -1,5 +1,6 @@
 import { createElement, type ReactNode } from "react";
 import type { components } from "./api";
+import { Muscles } from "./cards/Muscles";
 import { Sleep } from "./cards/Sleep";
 import { Trend } from "./cards/Trend";
 import { Week } from "./cards/Week";
@@ -35,6 +36,13 @@ export const catalogue: Record<string, { full: boolean; draw: (card: Card) => Re
     draw: (card) =>
       "data" in card && card.data && "parts" in card.data
         ? createElement(Trend, { trend: card.data })
+        : placeholder(card),
+  },
+  sets_by_muscle: {
+    full: false,
+    draw: (card) =>
+      "data" in card && card.data && "muscles" in card.data
+        ? createElement(Muscles, { muscles: card.data })
         : placeholder(card),
   },
 };

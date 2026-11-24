@@ -13,6 +13,7 @@ _STREAM = "workouts"
 _ORIGIN_APP = "com.hevyapp.hevy"
 _API = "https://api.hevyapp.com/v1"
 _PAGE_SIZE = 10
+_TEMPLATE_PAGE_SIZE = 100
 _OVERLAP = timedelta(minutes=5)
 _DEFAULT_WAIT_S = 300
 
@@ -33,7 +34,7 @@ class _StopError(Exception):
 
 
 def fetch(cursor: dict | None, secrets: dict, out_dir: str, http, now: str) -> dict:
-    """Download every workout page, or the events since the cursor, and the routine list."""
+    """Download every workout page, or the events since the cursor, plus the routine list and each exercise's muscle."""
     now_time = parse_iso_time(now)
     if cursor is None:
         fmt, url = "workouts_page", f"{_API}/workouts?page={{page}}&pageSize={_PAGE_SIZE}"
@@ -59,10 +60,17 @@ def fetch(cursor: dict | None, secrets: dict, out_dir: str, http, now: str) -> d
             for body in _pages(http, routines_url, headers, cursor, now_time)
             for routine in json.loads(body)["routines"]
         ]
+        templates_url = f"{_API}/exercise_templates?page={{page}}&pageSize={_TEMPLATE_PAGE_SIZE}"
+        muscles = {
+            template["id"]: template["primary_muscle_group"]
+            for body in _pages(http, templates_url, headers, cursor, now_time)
+            for template in json.loads(body)["exercise_templates"]
+            if template.get("primary_muscle_group")
+        }
     except _StopError as stop:
         return stop.result
     result = _fetch_result(files, {"since": to_utc_text(now_time - _OVERLAP)})
-    return {**result, "targets": targets}
+    return {**result, "targets": targets, "muscles": muscles}
 
 
 def _pages(http, url: str, headers: dict, cursor: dict | None, now_time) -> Iterator[bytes]:

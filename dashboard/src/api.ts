@@ -82,13 +82,23 @@ export interface components {
             detail?: components["schemas"]["ValidationError"][];
         };
         /**
+         * MuscleSets
+         * @description One muscle and its working sets this week.
+         */
+        MuscleSets: {
+            /** Name */
+            name: string;
+            /** Sets */
+            sets: number;
+        };
+        /**
          * Overview
          * @description The plate and the cards to draw.
          */
         Overview: {
             plate: components["schemas"]["PlateOverview"] | null;
             /** Cards */
-            cards: (components["schemas"]["WeekOverviewCard"] | components["schemas"]["SleepOverviewCard"] | components["schemas"]["TrendOverviewCard"])[];
+            cards: (components["schemas"]["WeekOverviewCard"] | components["schemas"]["SleepOverviewCard"] | components["schemas"]["TrendOverviewCard"] | components["schemas"]["SetsByMuscleOverviewCard"])[];
         };
         /**
          * PlateData
@@ -156,6 +166,26 @@ export interface components {
             name: string;
             /** Value */
             value: string;
+        };
+        /**
+         * SetsByMuscleData
+         * @description This week's muscles, most sets first. Empty when the week has no sets.
+         */
+        SetsByMuscleData: {
+            /** Muscles */
+            muscles: components["schemas"]["MuscleSets"][];
+        };
+        /**
+         * SetsByMuscleOverviewCard
+         * @description The sets by muscle card with its numbers.
+         */
+        SetsByMuscleOverviewCard: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "sets_by_muscle";
+            data?: components["schemas"]["SetsByMuscleData"] | null;
         };
         /**
          * SleepData

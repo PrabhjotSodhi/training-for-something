@@ -192,11 +192,19 @@ class TrendCard(_Model):
     first: Literal["cardio", "strength", "effort"] = None
 
 
+class SetsByMuscleCard(_Model):
+    """The sets by muscle card."""
+
+    type: Literal["sets_by_muscle"]
+
+
 class Layout(_Model):
     """The plate and the cards below it."""
 
     plate: Plate
-    cards: list[Annotated[WeekCard | SleepCard | TrendCard, Field(discriminator="type")]]
+    cards: list[
+        Annotated[WeekCard | SleepCard | TrendCard | SetsByMuscleCard, Field(discriminator="type")]
+    ]
 
 
 class SetOverview(_Action):
