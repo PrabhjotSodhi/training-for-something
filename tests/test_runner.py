@@ -153,6 +153,18 @@ class HttpGetTest(unittest.TestCase):
             with self.subTest(url=url), self.assertRaises(ValueError):
                 http_get(url, {})
 
+    def test_sends_a_post_with_a_body_and_refuses_other_methods(self) -> None:
+        with mock.patch.object(runner.urllib.request, "build_opener") as build:
+            reply = build.return_value.open.return_value.__enter__.return_value
+            reply.status, reply.headers = 200, {}
+            reply.read.return_value = b"token"
+            result = http_get("https://example.invalid/", {}, method="POST", body=b"data")
+            request = build.return_value.open.call_args.args[0]
+            self.assertEqual((request.get_method(), request.data), ("POST", b"data"))
+            self.assertEqual(result, (200, {}, b"token"))
+            with self.assertRaises(ValueError):
+                http_get("https://example.invalid/", {}, method="PUT")
+
 
 class HttpRequestTest(unittest.TestCase):
     def test_exact_request_and_response(self) -> None:
