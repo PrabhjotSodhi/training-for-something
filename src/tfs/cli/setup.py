@@ -62,7 +62,7 @@ def run(args: argparse.Namespace) -> int:
         for number, name in enumerate(picked, 1):
             print(f"\n── {manifests[name]['label']} ({number} of {len(picked)})")
             _set_up_app(name, manifests[name])
-        if not _ask(questionary.confirm("Start TFS and open the dashboard?", default=True)):
+        if not _yes("Start TFS and open the dashboard?"):
             return 0
     except KeyboardInterrupt:
         print("\nSetup stopped.", file=sys.stderr)
@@ -79,6 +79,11 @@ def fill_link(template: str, push_url: str, token: str) -> str:
     return template.replace("{push_url}", quote(push_url, safe="")).replace(
         "{token}", quote(token, safe="")
     )
+
+
+def _yes(message: str) -> bool:
+    choices = [questionary.Choice("Yes", value=True), questionary.Choice("No", value=False)]
+    return _ask(questionary.select(message, choices=choices))
 
 
 def _ask(question: questionary.Question):
@@ -108,7 +113,7 @@ def _connect_ai_tools() -> None:
 
 
 def _offer_connect(program: str, provider: providers.Provider) -> bool:
-    if not _ask(questionary.confirm(f"Connect TFS to {provider.label}?", default=True)):
+    if not _yes(f"Connect TFS to {provider.label}?"):
         return False
     problem = providers.connect(program, provider)
     if problem:
