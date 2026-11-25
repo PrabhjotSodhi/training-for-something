@@ -10,7 +10,7 @@ import sys
 import threading
 import webbrowser
 from collections.abc import Callable, Iterator
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from urllib.parse import quote
 
@@ -68,7 +68,7 @@ def run(args: argparse.Namespace) -> int:
         print("Run tfs setup in a terminal.", file=sys.stderr)
         return 1
     try:
-        _connect_ai_tools()
+        first_tool = _connect_ai_tools()
         manifests = load_manifests()
         picked = _ask(
             _checklist(
@@ -86,6 +86,7 @@ def run(args: argparse.Namespace) -> int:
         print("\nRun tfs setup in PowerShell, Windows Terminal or Command Prompt.", file=sys.stderr)
         return 1
     print("Keep this window open. TFS receives phone data only while it runs.")
+    _print_next_step(first_tool)
     return start.run(argparse.Namespace(home_wifi=False, open=True))
 
 
@@ -140,7 +141,8 @@ def _ask(question: questionary.Question):
     return answer
 
 
-def _connect_ai_tools() -> None:
+def _connect_ai_tools() -> providers.Provider | mcp_tools.Tool | None:
+    """Connect the tools the person picks. Return the first tool that ends up connected, or None."""
     home = Path.home()
     with _spinner("Looking for your AI tools"):
         programs = {tool: providers.find(tool) for tool in providers.PROVIDERS}
@@ -157,12 +159,12 @@ def _connect_ai_tools() -> None:
         questionary.print(
             f"TFS works with {names}. Install one, then run tfs setup again.", style=_RED
         )
-        return
+        return None
     choices = [_tool_choice(t, programs[t], t in connected) for t in programs]
     if not any(choice.disabled is None for choice in choices):
         for tool in connected:
             questionary.print(f"  ✔ {tool.label:<13} TFS connected", style=_GREEN)
-        return
+        return next(tool for tool in programs if tool in connected)
     picked = _ask(_checklist("Connect TFS to your AI tools", choices))
     for tool in picked:
         with _spinner(f"Connecting {tool.label}") as say:
@@ -173,7 +175,21 @@ def _connect_ai_tools() -> None:
         if problem:
             questionary.print(f"  ✘ Could not connect {tool.label}: {problem}", style=_RED)
         else:
+            connected.add(tool)
             questionary.print(f"  ✔ {tool.label:<13} TFS connected", style=_GREEN)
+    return next((tool for tool in programs if tool in connected), None)
+
+
+def _print_next_step(tool: providers.Provider | mcp_tools.Tool | None) -> None:
+    if tool is None:
+        print("To connect your AI tool, run tfs setup again.")
+        return
+    if tool.command:
+        print(f"Open a new terminal and run `{tool.command}`.")
+    else:
+        print(f"Open {tool.label} and start a new chat.")
+    print("If it was already open, restart it so it loads TFS.")
+    print(f"Paste this: {providers.FIRST_MESSAGE}")
 
 
 def _tool_choice(
@@ -276,18 +292,28 @@ def _connect_with_asks(name: str, manifest: dict, opens: str | None) -> None:
         answers[ask["key"]] = _ask(prompt(f"{ask['label']}:"))
     with _spinner(f"Connecting {manifest['label']}"):
         connect_source(name, answers)
-        summary = _first_sync(name) if manifest["routes"]["fetch"] else None
-    print(f"  Connected {manifest['label']}.")
-    if summary:
-        print(f"  {summary}")
+        summary = _first_sync(name, manifest["label"]) if manifest["routes"]["fetch"] else None
+    print(f"  ✔ {summary}" if summary else f"  Connected {manifest['label']}.")
 
 
-def _first_sync(name: str) -> str:
-    """Fetch once so a rejected key shows now. A failed sync turns the source off and raises."""
+def _first_sync(name: str, label: str) -> str | None:
+    """Fetch once so a rejected key shows now. A failed sync turns the source off and raises.
+
+    Return what arrived, or None when the app holds no workouts yet.
+    """
     with contextlib.closing(sqlite.connect(config.db_path())) as conn:
         result = sync(conn, config.data_dir(), name, now=to_utc_text(datetime.now(UTC)))
         if result.needs_you:
             with sqlite.transaction(conn):
                 conn.execute("UPDATE sources SET enabled = 0 WHERE connector = ?", (name,))
             raise runner.ConnectorUserError(result.needs_you)
-    return result.summary
+        count, latest = conn.execute(
+            "SELECT COUNT(*), MAX(local_date) FROM source_records"
+            " WHERE connector = ? AND kind = 'session' AND deleted_at IS NULL",
+            (name,),
+        ).fetchone()
+    if not count:
+        return None
+    day = date.fromisoformat(latest)
+    noun = "workout" if count == 1 else "workouts"
+    return f"{label}: {count} {noun}, most recent {day:%A} {day.day} {day:%b}"

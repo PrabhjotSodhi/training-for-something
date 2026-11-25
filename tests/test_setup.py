@@ -176,6 +176,55 @@ class SetupTest(TfsHomeTestCase):
         self.assertEqual(code, 0)
         started.assert_called_once()
 
+    def test_given_claude_connected_when_setup_finishes_then_it_names_the_command_and_first_message(
+        self,
+    ):
+        # GIVEN Claude Code is connected
+        commands = FakeCommands(found={"claude"}, plugin_list=PLUGIN)
+        # WHEN setup finishes
+        _, out, _, _ = self.run_setup(FakeQuestionary([]), commands)
+        # THEN the next step names `claude` and holds the first message
+        self.assertIn("Open a new terminal and run `claude`.", out)
+        self.assertIn(providers.FIRST_MESSAGE, out)
+
+    def test_given_no_ai_tool_connected_when_setup_finishes_then_it_says_how_to_connect_one(self):
+        # GIVEN no AI tool is installed
+        # WHEN setup finishes
+        _, out, _, _ = self.run_setup(FakeQuestionary([]), FakeCommands(found=set()))
+        # THEN it says how to connect one and gives no first message
+        self.assertIn("To connect your AI tool, run tfs setup again.", out)
+        self.assertNotIn(providers.FIRST_MESSAGE, out)
+
+    def test_given_hevy_stored_workouts_when_setup_finishes_then_it_gives_the_count_and_latest_date(
+        self,
+    ):
+        # GIVEN a first sync that stored 3 workouts, the latest on Tuesday 24 Nov 2026
+        def first_sync(conn, *_, **__):
+            migrate(conn)
+            conn.execute(
+                "INSERT INTO files VALUES ('f', 1, 'hevy', 'json', 'json', 1, '2026-11-24', NULL, 'ok', NULL)"
+            )
+            for number, day in enumerate(["2026-11-20", "2026-11-22", "2026-11-24"]):
+                conn.execute(
+                    "INSERT INTO source_records (id, connector, stream, key, kind, revision_at,"
+                    " arrival_seq, file_sha256, reader_version, start_utc, local_date, values_json)"
+                    " VALUES (?, 'hevy', 's', ?, 'session', ?, 1, 'f', '1', ?, ?, '{}')",
+                    (f"r{number}", f"k{number}", day, day, day),
+                )
+            conn.commit()
+            return mock.Mock(needs_you=None)
+
+        # WHEN setup connects Hevy
+        with (
+            mock.patch("tfs.cli.setup.connect_source"),
+            mock.patch("tfs.cli.setup.sync", first_sync),
+        ):
+            _, out, _, _ = self.run_setup(
+                FakeQuestionary(["hevy"], "key-invented"), FakeCommands(found=set())
+            )
+        # THEN it prints the count and the latest date
+        self.assertIn("✔ Hevy: 3 workouts, most recent Tuesday 24 Nov", out)
+
     def test_given_the_shipped_manifest_then_the_links_are_exact(self):
         links = load_manifests()["health_auto_export"]["setup"]["links"]
         filled = [setup.fill_link(link["url"], PUSH_URL, "tok-invented") for link in links]
