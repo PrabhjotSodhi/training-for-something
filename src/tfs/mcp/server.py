@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from contextlib import closing
 from datetime import UTC, datetime
+from importlib import metadata
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,8 @@ from pydantic import ConfigDict
 
 from tfs import __version__, config
 from tfs.mcp import tool_access
+from tfs.persistence import sqlite
+from tfs.persistence.migrations import newest_schema
 from tfs.proposals import apply
 from tfs.proposals.models import Proposal, Text
 
@@ -35,6 +38,8 @@ If a message suggests an emergency, such as chest pain, fainting, an extreme rea
 """
 
 mcp = MCPServer("tfs", version=__version__, instructions=INSTRUCTIONS)
+# Read once at start, because an update replaces these files under a running helper.
+KNOWN_SCHEMA = newest_schema()
 
 
 def _db_path() -> Path:
@@ -42,7 +47,18 @@ def _db_path() -> Path:
     path = config.db_path()
     if not path.exists():
         raise ToolError(NO_DATA)
+    with closing(sqlite.connect(path, "read_only")) as conn:
+        if conn.execute("PRAGMA user_version").fetchone()[0] > KNOWN_SCHEMA:
+            raise ToolError(_updated())
     return path
+
+
+def _updated() -> str:
+    try:
+        version = f" to {metadata.version('training-for-something')}"
+    except metadata.PackageNotFoundError:
+        version = ""
+    return f"TFS was updated{version}. Restart your AI tool to keep using it."
 
 
 def _change(operation: Callable[..., dict], *arguments: Any, **options: Any) -> dict[str, Any]:

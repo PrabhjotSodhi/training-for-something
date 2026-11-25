@@ -125,6 +125,8 @@ export interface components {
             first_run: components["schemas"]["FirstRun"] | null;
             /** Cards */
             cards: (components["schemas"]["WeekOverviewCard"] | components["schemas"]["SleepOverviewCard"] | components["schemas"]["TrendOverviewCard"] | components["schemas"]["SetsByMuscleOverviewCard"])[];
+            /** New Version */
+            new_version?: string | null;
         };
         /**
          * PlateData

@@ -47,6 +47,11 @@ def migrate(
     return newest
 
 
+def newest_schema() -> int:
+    """Return the schema number that the migrations shipped inside TFS reach."""
+    return len(_numbered_files(_folder(None)))
+
+
 def _folder(migrations_dir: Path | None) -> Traversable:
     """Return the given folder, or the migrations shipped inside TFS."""
     if migrations_dir is not None:

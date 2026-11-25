@@ -126,6 +126,16 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIn("limit", await self.refused(client, "query", {"sql": sql, "limit": 5}))
 
+    async def test_a_database_newer_than_the_helper_asks_for_an_ai_tool_restart(self) -> None:
+        # GIVEN a database that a newer TFS migrated
+        with closing(connect(make_database(self.folder))) as conn:
+            conn.execute("PRAGMA user_version = 9999")
+        # WHEN
+        async with Client(tfs_mcp(self.folder)) as client:
+            reply = await self.refused(client, "describe", {})
+        # THEN
+        self.assertIn("Restart your AI tool to keep using it.", reply)
+
     async def test_propose_refuses_a_wrong_shape_before_any_proposal_code_runs(self) -> None:
         unknown_action = plan()
         unknown_action["actions"][0]["action"] = "erase_session"

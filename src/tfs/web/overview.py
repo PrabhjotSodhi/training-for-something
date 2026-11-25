@@ -221,6 +221,7 @@ class Overview(BaseModel):
             Field(discriminator="type"),
         ]
     ]
+    new_version: str | None = None
 
 
 def _rows(connection, sql: str) -> list[list]:

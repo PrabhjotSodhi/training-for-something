@@ -62,7 +62,7 @@ Windows, in PowerShell:
 curl.exe -fsSLo install.ps1 https://raw.githubusercontent.com/PrabhjotSodhi/training-for-something/main/install.ps1; powershell -ExecutionPolicy ByPass -File install.ps1; del install.ps1
 ```
 
-Setup connects your AI tools and your apps, then opens the dashboard. Run `tfs start --open` any time to open it again. Run the same line again to update.
+Setup connects your AI tools and your apps, then opens the dashboard. Run `tfs start --open` any time to open it again. Run `tfs update` to update.
 
 ## Works with
 

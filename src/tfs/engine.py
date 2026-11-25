@@ -51,8 +51,10 @@ class Engine:
         home_wifi_port: int = HOME_WIFI_PORT,
         now_fn: Callable[[], datetime] | None = None,
         tz: tzinfo | None = None,
+        new_version: Callable[[], str | None] = lambda: None,
     ) -> None:
         self._data_dir = data_dir
+        self._new_version = new_version
         self._home_wifi = home_wifi
         self._screen_port = screen_port
         self._home_wifi_port = home_wifi_port
@@ -79,7 +81,9 @@ class Engine:
         )
 
         def overview() -> Overview:
-            return read_overview(db_path, self._now_fn().astimezone(self._tz).date())
+            result = read_overview(db_path, self._now_fn().astimezone(self._tz).date())
+            result.new_version = self._new_version()
+            return result
 
         servers: list[WebServer] = []
         try:
@@ -211,14 +215,15 @@ def _bind(
     try:
         return make_server(host, port, push_handler=handler, push_only=home_wifi, overview=overview)
     except OSError as error:
-        if not home_wifi and _tfs_answers_ping(port):
+        if not home_wifi and tfs_answers_ping(port):
             raise EngineAlreadyRunningError("TFS is already running.") from error
         raise PortInUseError(
             f"Port {port} is used by another app. Close it and try again."
         ) from error
 
 
-def _tfs_answers_ping(port: int) -> bool:
+def tfs_answers_ping(port: int) -> bool:
+    """Say whether a TFS engine answers on this computer's port."""
     connection = http.client.HTTPConnection(SCREEN_HOST, port, timeout=PING_TIMEOUT_S)
     try:
         connection.request("GET", "/ping")
