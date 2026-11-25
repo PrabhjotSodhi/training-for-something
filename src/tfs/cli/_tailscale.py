@@ -1,6 +1,8 @@
 """Find private phone links and set up Tailscale Serve."""
 
 import json
+import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -9,55 +11,48 @@ from pathlib import Path
 from tfs import config
 
 _TARGET = f"http://{config.SCREEN_HOST}:{config.SCREEN_PORT}"
+_APPROVAL_PREFIX = "https://login.tailscale.com/"
 _INSTALL_PATHS = {
     "win32": Path("C:/Program Files/Tailscale/tailscale.exe"),
     "darwin": Path("/Applications/Tailscale.app/Contents/MacOS/Tailscale"),
 }
 
 
-def _run(*args: str) -> str | None:
-    program = shutil.which("tailscale")
-    if not program:
-        path = _INSTALL_PATHS.get(sys.platform)
-        if not path or not path.is_file():
-            return None
-        program = str(path)
+def _program() -> str | None:
+    if program := shutil.which("tailscale"):
+        return program
+    path = _INSTALL_PATHS.get(sys.platform)
+    return str(path) if path and path.is_file() else None
+
+
+def _run(program: str, *args: str) -> str | None:
+    env = {**os.environ, "TAILSCALE_BE_CLI": "1"} if sys.platform == "darwin" else None
     try:
-        if args[-1] == "--json":
-            result = subprocess.run(
-                [program, *args],
-                capture_output=True,
-                stdin=subprocess.DEVNULL,
-                encoding="utf-8",
-                errors="replace",
-                timeout=5,
-                check=False,
-            )
-            return result.stdout if result.returncode == 0 else None
-        with subprocess.Popen(
+        result = subprocess.run(
             [program, *args],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            capture_output=True,
             stdin=subprocess.DEVNULL,
-            encoding="utf-8",
-            errors="replace",
-        ) as process:
-            try:
-                for line in process.stdout:
-                    # The CLI can wait indefinitely after printing its approval link.
-                    if line.strip().startswith("https://login.tailscale.com/"):
-                        return line.strip()
-                return "" if process.wait() == 0 else None
-            finally:
-                if process.poll() is None:
-                    process.kill()
-    except (OSError, subprocess.TimeoutExpired):
+            timeout=5,
+            env=env,
+            check=False,
+        )
+        stdout, stderr = result.stdout, result.stderr
+        succeeded = result.returncode == 0
+    except subprocess.TimeoutExpired as error:
+        stdout, stderr = error.stdout or b"", error.stderr or b""
+        succeeded = False
+    except OSError:
         return None
+    output = stdout.decode("utf-8", errors="replace")
+    for line in (output + "\n" + stderr.decode("utf-8", errors="replace")).splitlines():
+        if line.strip().startswith(_APPROVAL_PREFIX):
+            return line.strip()
+    return output if succeeded else None
 
 
-def _read(*args: str) -> dict | None:
+def _read(program: str, *args: str) -> dict | None:
     try:
-        data = json.loads(_run(*args, "--json") or "")
+        data = json.loads(_run(program, *args, "--json") or "")
     except ValueError:
         return None
     # Tailscale can return JSON null when no Serve config exists.
@@ -66,8 +61,8 @@ def _read(*args: str) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-def _hostname() -> str:
-    status = _read("status") or {}
+def _hostname(program: str) -> str:
+    status = _read(program, "status") or {}
     if status.get("BackendState") == "Running":
         name = (status.get("Self") or {}).get("DNSName")
         if isinstance(name, str):
@@ -75,9 +70,9 @@ def _hostname() -> str:
     return ""
 
 
-def _ports(host: str) -> dict[int, bool] | None:
+def _ports(program: str, host: str) -> dict[int, bool] | None:
     """Map occupied ports to whether they privately serve the dashboard."""
-    status = _read("serve", "status")
+    status = _read(program, "serve", "status")
     if status is None:
         return None
     ports = {}
@@ -109,21 +104,29 @@ def _link(host: str, ports: dict[int, bool]) -> str | None:
 
 def phone_link() -> str | None:
     """Read the private HTTPS address of the running dashboard."""
-    host = _hostname()
-    return _link(host, _ports(host) or {}) if host else None
+    if (program := _program()) and (host := _hostname(program)):
+        return _link(host, _ports(program, host) or {})
+    return None
+
+
+def _shell_program(program: str) -> str:
+    if sys.platform == "win32":
+        return "& '" + program.replace("'", "''") + "'"
+    prefix = "TAILSCALE_BE_CLI=1 " if sys.platform == "darwin" else ""
+    return prefix + shlex.quote(program)
 
 
 def set_up() -> None:
     """Enable private phone access when the default port is free."""
-    host = _hostname()
-    if not host:
+    program = _program()
+    if not program or not (host := _hostname(program)):
         print(
             "Install Tailscale on this computer and your phone from https://tailscale.com/download."
         )
         print("Sign in on both with the same account, then run tfs setup again.")
         return
     for attempt in range(2):
-        ports = _ports(host)
+        ports = _ports(program, host)
         if ports is None:
             print("Could not read Tailscale Serve settings. Run tfs setup again.")
             return
@@ -135,15 +138,15 @@ def set_up() -> None:
             print("Port 443 is in use. TFS kept its settings.")
             if port:
                 print(
-                    f"To use another private port, run: tailscale serve --bg --https={port} {_TARGET}"
+                    f"To use another private port, run: {_shell_program(program)} serve --bg --https={port} {_TARGET}"
                 )
             return
-        approval = _run("serve", "--bg", _TARGET)
-        if approval and attempt == 0:
-            print(f"Open this link to approve Tailscale Serve: {approval}", flush=True)
+        output = _run(program, "serve", "--bg", _TARGET)
+        if output and output.startswith(_APPROVAL_PREFIX) and attempt == 0:
+            print(f"Open this link to approve Tailscale Serve: {output}", flush=True)
             input("Press Enter after approval to try again. ")
             continue
-        if approval == "" and (url := _link(host, _ports(host) or {})):
+        if output is not None and (url := _link(host, _ports(program, host) or {})):
             print(f"Open this link on your phone: {url}")
             return
         break

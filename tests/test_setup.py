@@ -4,7 +4,9 @@ import http.client
 import io
 import json
 import os
+import shutil
 import socket
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -15,7 +17,7 @@ from pathlib import Path
 from unittest import mock
 
 from tfs import config, password_store, providers
-from tfs.cli import main, setup, start
+from tfs.cli import _tailscale, main, setup, start
 from tfs.connectors.core.contract import load_manifests
 from tfs.persistence import sqlite
 from tfs.persistence.migrations import migrate
@@ -303,6 +305,42 @@ class SetupTest(TfsHomeTestCase):
         self.assertNotIn(providers.FIRST_MESSAGE, footer)
 
 
+class TailscaleRunnerTest(unittest.TestCase):
+    def test_mac_command_runs_in_cli_mode(self):
+        # GIVEN the bundled macOS program
+        program = str(_tailscale._INSTALL_PATHS["darwin"])
+        with (
+            mock.patch.object(sys, "platform", "darwin"),
+            mock.patch.object(
+                subprocess, "run", return_value=subprocess.CompletedProcess([], 0, b"{}", b"")
+            ) as run,
+        ):
+            # WHEN the runner reads status
+            self.assertEqual(_tailscale._run(program, "status", "--json"), "{}")
+        # THEN the child runs in CLI mode
+        self.assertEqual(run.call_args.kwargs["env"]["TAILSCALE_BE_CLI"], "1")
+
+    def test_timeout_keeps_only_a_printed_approval_link(self):
+        # GIVEN a fake command that hangs silently or after printing the approval link
+        link = "https://login.tailscale.com/f/serve?node=invented"
+        for output, error, expected in (
+            (None, None, None),
+            (None, link.encode(), link),
+            (f"Approval needed\n  {link}\n".encode(), None, link),
+        ):
+            with (
+                self.subTest(output=output, error=error),
+                mock.patch.object(
+                    subprocess, "run", side_effect=subprocess.TimeoutExpired([], 5, output, error)
+                ) as run,
+            ):
+                # WHEN setup tries to serve the dashboard
+                result = _tailscale._run("invented-cli", "serve", "--bg", "http://127.0.0.1:47823")
+                # THEN it uses a timeout and returns only an available approval link
+                self.assertEqual(result, expected)
+                self.assertGreater(run.call_args.kwargs["timeout"], 0)
+
+
 class TailscaleTest(TfsHomeTestCase):
     host = "laptop.example-tailnet.ts.net"
     target = "http://127.0.0.1:47823"
@@ -312,6 +350,7 @@ class TailscaleTest(TfsHomeTestCase):
         self.state = {"BackendState": "Running", "Self": {"DNSName": self.host + "."}}
         self.routes = {}
         self.approval = ""
+        self.which = self.enterContext(mock.patch.object(shutil, "which", return_value="tailscale"))
         self.commands = self.enterContext(
             mock.patch("tfs.cli._tailscale._run", side_effect=self.run_command)
         )
@@ -322,7 +361,7 @@ class TailscaleTest(TfsHomeTestCase):
             "Web": {f"{self.host}:{port}": {"Handlers": {"/": {"Proxy": target}}}},
         }
 
-    def run_command(self, *args):
+    def run_command(self, program, *args):
         if args == ("status", "--json"):
             return json.dumps(self.state) if self.state else None
         if args == ("serve", "status", "--json"):
@@ -331,7 +370,7 @@ class TailscaleTest(TfsHomeTestCase):
         if self.approval:
             return self.approval
         self.routes = self.route(self.target)
-        return ""
+        return "Available within your tailnet"
 
     def run_cli(self, command="setup", phone=True):
         output = io.StringIO()
@@ -356,7 +395,10 @@ class TailscaleTest(TfsHomeTestCase):
         banner = self.run_cli("start")
         # THEN only the first setup changed Serve and start shows both links
         self.assertEqual(
-            self.commands.call_args_list.count(mock.call("serve", "--bg", self.target)), 1
+            self.commands.call_args_list.count(
+                mock.call("tailscale", "serve", "--bg", self.target)
+            ),
+            1,
         )
         self.assertIn(f"https://{self.host}/\n", banner)
         self.assertIn(f"https://{self.host}/push/health_auto_export", banner)
@@ -377,7 +419,10 @@ class TailscaleTest(TfsHomeTestCase):
                 ):
                     self.assertIn(text, output)
         self.assertTrue(
-            all(call == mock.call("status", "--json") for call in self.commands.call_args_list)
+            all(
+                call == mock.call("tailscale", "status", "--json")
+                for call in self.commands.call_args_list
+            )
         )
 
     def test_busy_or_public_port_stays_untouched(self):
@@ -391,9 +436,29 @@ class TailscaleTest(TfsHomeTestCase):
                 # WHEN setup checks the port
                 output = self.run_cli()
                 # THEN it suggests a private port without changing or advertising the existing route
-                self.assertIn(f"tailscale serve --bg --https=8443 {self.target}", output)
+                program = "& 'tailscale'" if sys.platform == "win32" else "tailscale"
+                self.assertIn(f"{program} serve --bg --https=8443 {self.target}", output)
                 self.assertNotIn(f"https://{self.host}/", output)
-        self.assertNotIn(mock.call("serve", "--bg", self.target), self.commands.call_args_list)
+        self.assertNotIn(
+            mock.call("tailscale", "serve", "--bg", self.target), self.commands.call_args_list
+        )
+
+    def test_busy_port_hint_uses_the_quoted_fallback_path(self):
+        # GIVEN only a Windows installation outside PATH and an occupied port
+        program = self.home / "Program Files" / "Tailscale" / "tailscale.exe"
+        program.parent.mkdir(parents=True)
+        program.touch()
+        self.which.return_value = None
+        self.routes = self.route("http://127.0.0.1:5199")
+        # WHEN setup prints the alternate port command
+        with (
+            mock.patch.object(_tailscale.sys, "platform", "win32"),
+            mock.patch.dict(_tailscale._INSTALL_PATHS, win32=program),
+        ):
+            output = self.run_cli()
+        # THEN the hint runs in PowerShell with the same executable used by setup
+        self.assertIn(f"& '{program}' serve --bg --https=8443 {self.target}", output)
+        self.commands.assert_any_call(str(program), "serve", "status", "--json")
 
     def test_declining_phone_access_skips_all_commands(self):
         # GIVEN the person declines phone access
@@ -417,7 +482,10 @@ class TailscaleTest(TfsHomeTestCase):
         self.assertIn(link, output)
         self.assertIn(f"https://{self.host}/", output)
         self.assertEqual(
-            self.commands.call_args_list.count(mock.call("serve", "--bg", self.target)), 2
+            self.commands.call_args_list.count(
+                mock.call("tailscale", "serve", "--bg", self.target)
+            ),
+            2,
         )
 
 
