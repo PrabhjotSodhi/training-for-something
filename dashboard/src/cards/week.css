@@ -19,6 +19,10 @@
   min-height: 170px;
 }
 
+.week-day-heading {
+  display: contents;
+}
+
 .week-label {
   margin-bottom: 6px;
   font: var(--caption);
@@ -42,6 +46,7 @@
 }
 
 .week-tile {
+  height: var(--tile-height);
   position: relative;
   box-sizing: border-box;
   min-width: 0;
@@ -208,4 +213,105 @@
 
 .week-total.swim :is(.week-swatch, .week-bar span) {
   background: var(--goal-light);
+}
+
+.week-day-button {
+  display: none;
+}
+
+@media (max-width: 699px) {
+  .week-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+
+  .week-days {
+    gap: 4px 0;
+    text-align: center;
+  }
+
+  .week-day {
+    display: contents;
+  }
+
+  .week-day-heading,
+  .week-day-button {
+    display: grid;
+    grid-row: 1;
+    align-content: start;
+    gap: 4px;
+  }
+
+  .week-day-heading:has(+ button) {
+    display: none;
+  }
+
+  .week-label {
+    margin: 0;
+  }
+
+  .week-label span {
+    display: block;
+  }
+
+  .week-day-button {
+    min-height: 44px;
+    padding: 0 2px 4px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: inherit;
+    font: var(--caption);
+    cursor: pointer;
+  }
+
+  .week-day-button[aria-expanded="true"] {
+    background: var(--fill);
+  }
+
+  .week-day-button .week-tile {
+    height: 12px;
+    padding: 0;
+    border-radius: 4px;
+  }
+
+  .week-day-button .planned {
+    background: none;
+    box-shadow: inset 0 0 0 1.5px var(--muted);
+  }
+
+  .week-day > .week-tile {
+    display: none;
+  }
+
+  .week-day[data-open="true"] > .week-tile {
+    display: block;
+    grid-column: 1 / -1;
+    height: auto;
+    padding: 0;
+    background: none;
+    box-shadow: none;
+    outline-offset: 0;
+    text-align: left;
+  }
+
+  .week-name,
+  .week-amount {
+    display: none;
+  }
+
+  .week-tile .week-hover {
+    position: static;
+    display: block;
+    width: auto;
+    max-width: none;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 375px) {
+  .card:has(.week) {
+    padding-inline: 8px;
+  }
 }

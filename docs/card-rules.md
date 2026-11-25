@@ -20,6 +20,12 @@ Plus Jakarta Sans for everything, with tabular figures on numbers. The font file
 3. The page follows the system setting for light or dark.
 4. Desktop width comes first.
 
+## Phone
+
+Below 700 px, cards fill one column with 16 px page margins. The goal name and date sit above the road, followed by the forecast and Today rows.
+
+Keep all seven days on one row. Show up to two small session tiles per day with their sport and state styles. Show any extra sessions as +N. Tap the day to read all its sessions below the row. Put weekly totals underneath. Hover details must also open on tap. Give each touch target at least 44 px in both directions.
+
 ## Colour
 
 | Part | Light | Dark |
