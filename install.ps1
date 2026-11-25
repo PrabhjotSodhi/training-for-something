@@ -21,6 +21,38 @@ try {
 if (-not $wheel) { Fail 'Could not find the newest TFS release.' }
 
 Write-Host '3/4 Installing TFS'
+$toolDir = uv tool dir
+if ($LASTEXITCODE -or -not $toolDir) { Fail 'Could not find the uv tool folder.' }
+$python = Join-Path $toolDir 'training-for-something\Scripts\python.exe'
+$helperCommand = '^"?' + [regex]::Escape($python) + '"?\s+.*\s+"?mcp"?\s*$'
+$toolNames = @{
+    'claude' = 'Claude Code'; 'codex' = 'Codex'; 'opencode' = 'OpenCode'; 'grok' = 'Grok Build'
+    'agy' = 'Google Antigravity CLI'; 'kiro-cli' = 'Kiro CLI'; 'pi' = 'Pi'; 'muse' = 'Meta Muse Code'
+}
+
+function Get-TfsHelperNames {
+    $processes = @{}
+    foreach ($process in Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,Name,CommandLine) {
+        $processes[$process.ProcessId] = $process
+    }
+    foreach ($process in $processes.Values) {
+        if ($process.CommandLine -notmatch $helperCommand) { continue }
+        $launcher = $processes[$process.ParentProcessId]
+        if ($launcher.Name -ne 'tfs.exe') { continue }
+        $parent = $processes[$launcher.ParentProcessId]
+        $name = $toolNames[([string]$parent.Name -replace '\.exe$')]
+        if ($name) { $name } else { 'An AI tool' }
+    }
+}
+
+$announced = @()
+while ($names = @(Get-TfsHelperNames | Sort-Object -Unique)) {
+    foreach ($name in $names) {
+        if ($name -notin $announced) { Write-Host "$name is using TFS. Close it, and the install continues." }
+    }
+    $announced = $names
+    Start-Sleep -Seconds 1
+}
 uv tool install --force $wheel
 if ($LASTEXITCODE) { Fail 'Could not install TFS.' }
 uv tool update-shell
