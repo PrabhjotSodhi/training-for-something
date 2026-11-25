@@ -15,37 +15,36 @@ and answers your questions through the AI tool you already use.
 
 </div>
 
+## Know where you stand every morning
+
+- Fall behind and your coach adjusts the plan. You ask in chat and approve the change.
+- A recovery score from your HRV, resting heart rate and sleep, against your own normal.
+- How much sleep you need tonight. `Coming soon` Today the sleep card shows your nights against a target.
+- Food from a photo, with protein, carbs and fat. `Coming soon`
+- Lab results over time. `Coming soon`
+
 ## Features
 
 <table>
 <tr>
-<td width="50%" valign="top"><img src="docs/images/feature-ask.webp" alt="A question about long runs answered with the person's own numbers"><br><b>Ask your coach</b><br>Ask in Claude Code or Codex. Answers come from your own numbers.</td>
-<td width="50%" valign="top"><img src="docs/images/feature-approve.webp" alt="A prompt asking to save one added easy run, with Yes and No"><br><b>Approve every change</b><br>Your coach shows each change first. Nothing saves without your yes.</td>
+<td width="50%" valign="top"><img src="docs/images/feature-goal.webp" alt="The goal plate with a forecast range of 0:48 to 0:50"><br><b>Know where you stand</b><br>See your forecast for your goal and your week at a glance. The dashboard runs on your computer.</td>
+<td width="50%" valign="top"><img src="docs/images/feature-ask.webp" alt="A question about long runs answered with the person's own numbers"><br><b>Ask anything</b><br>Ask in your AI tool. Answers come from your own data and the research.</td>
 </tr>
 <tr>
-<td width="50%" valign="top"><img src="docs/images/feature-goal.webp" alt="The goal plate with a forecast range of 0:48 to 0:50"><br><b>Your goal, front and centre</b><br>A dashboard on your computer shows your forecast, today and your week.</td>
-<td width="50%" valign="top"><img src="docs/images/feature-once.webp" alt="The same run from Apple Health and Health Auto Export kept as one run"><br><b>Counted once</b><br>The same run from two apps stays one run.</td>
+<td width="50%" valign="top"><img src="docs/images/feature-approve.webp" alt="A prompt asking to save one added easy run, with Yes and No"><br><b>A plan that updates</b><br>Say yes and your coach saves the change. Nothing changes without your yes.</td>
+<td width="50%" valign="top"><img src="docs/images/feature-hevy.webp" alt="An upper body routine marked as sent to Hevy"><br><b>Your plan in Hevy</b><br>Today's strength session waits for you in Hevy. Sending plans to Garmin <code>Coming soon</code></td>
 </tr>
 <tr>
-<td width="50%" valign="top"><img src="docs/images/feature-install.webp" alt="The setup checklist with Claude Code and Codex found"><br><b>One line to install</b><br>Setup finds your AI tools and connects your apps.</td>
-<td width="50%" valign="top"><img src="docs/images/feature-apps.webp" alt="Apple Health, Hevy, Health Auto Export, Claude Code and Codex"><br><b>Works with your apps</b><br>Apple Health, Health Auto Export and Hevy, with Claude Code or Codex.</td>
+<td width="50%" valign="top"><b>Train the right muscles</b><br>See your sets by muscle each week. Ask your coach how your lean mass and waist are changing.</td>
+<td width="50%" valign="top"><img src="docs/images/feature-apps.webp" alt="Apple Health, Hevy, Health Auto Export, Claude Code and Codex"><br><b>Runs on the AI subscription you already pay for</b><br>Pick from 9 AI tools, including Claude Code and Codex.</td>
+</tr>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/feature-morning.webp" alt="A morning note that changes today's intervals to an easy run"><br><b>A coach in the background</b> <code>Coming soon</code><br>It checks your data each morning, so you do not have to ask.</td>
+<td width="50%" valign="top"><img src="docs/images/feature-effort.webp" alt="Effort up 12 percent this week against the normal"><br><b>Know how hard your week was</b><br>Your workout ratings against your own normal.</td>
 </tr>
 </table>
 
-### Coming soon
-
-<table>
-<tr>
-<td width="50%" valign="top"><img src="docs/images/feature-missed.webp" alt="A missed Tuesday session moved to Thursday, waiting for approval"><br><b>Missed a session?</b><br>Your coach reworks the rest of your week.</td>
-<td width="50%" valign="top"><img src="docs/images/feature-effort.webp" alt="Effort up 12 percent this week against the normal"><br><b>Effort load</b><br>Your workout ratings, shown against your own normal.</td>
-</tr>
-<tr>
-<td width="50%" valign="top"><img src="docs/images/feature-hevy.webp" alt="An upper body routine marked as sent to Hevy"><br><b>Plans sent to Hevy</b><br>Strength sessions arrive in Hevy as routines.</td>
-<td width="50%" valign="top"><img src="docs/images/feature-morning.webp" alt="A morning note that changes today's intervals to an easy run"><br><b>A coach in the background</b><br>It checks your data each morning. No chat needed.</td>
-</tr>
-</table>
-
-Also coming: log food with a photo, read lab results from a PDF, Android phones through Health Connect, and Fitbit through Apple Health.
+See the [roadmap](ROADMAP.md) for what comes after 0.1.0.
 
 ## Install
 
@@ -63,7 +62,7 @@ Windows, in PowerShell:
 curl.exe -fsSLo install.ps1 https://raw.githubusercontent.com/PrabhjotSodhi/training-for-something/main/install.ps1; powershell -ExecutionPolicy ByPass -File install.ps1; del install.ps1
 ```
 
-Setup connects your AI tools and your apps, then opens the dashboard. Run the same line again to update.
+Setup connects your AI tools and your apps, then opens the dashboard. Run `tfs start --open` any time to open it again. Run the same line again to update.
 
 ## Works with
 
@@ -72,12 +71,16 @@ Setup connects your AI tools and your apps, then opens the dashboard. Run the sa
 | Claude Code (tested) | Apple Health export |
 | Codex (tested) | Health Auto Export |
 | Cursor (should work) | Hevy |
-| OpenCode (should work) | |
+| OpenCode (should work) | Garmin (read only, with a Garmin Connect Personal API key) |
 | Grok Build (should work) | |
 | Google Antigravity CLI (should work) | |
 | Kiro CLI (should work) | |
 | Pi (should work) | |
 | Meta Muse Code (should work) | |
+
+Windows and macOS are tested. Linux should work but is untested.
+
+TFS works next to other MCP servers in the same AI tool. Strava runs an [official MCP server](https://support.strava.com/en-us/articles/15401531-what-is-the-strava-mcp-connector) for subscribers.
 
 ## How it works
 
@@ -86,7 +89,7 @@ flowchart LR
   A[Your apps] --> B[TFS on your computer] --> C[Your AI tool]
 ```
 
-Plain code stores your data, counts each workout once and builds daily totals. Your AI tool reads those numbers through the local TFS tool. Your data goes only to the apps you connect and the AI tool you choose.
+Plain code stores your data, counts each workout once and builds daily totals. The same workout from two apps counts once. Your AI tool reads those numbers through the local TFS tool. Your data goes only to the apps you connect and the AI tool you choose.
 
 Read more in the [high level design](docs/HLD.md), the [code map](docs/code-map.md) and the [specs](docs/specs/).
 
@@ -116,7 +119,7 @@ Skip this if you ran `tfs setup`.
    codex plugin add tfs@training-for-something
    ```
 4. Import your data, for example `tfs import export.zip` for an Apple Health export.
-5. Run `tfs start` to open the dashboard.
+5. Run `tfs start --open` to open the dashboard.
 
 If your terminal cannot find `tfs`, run `uv tool update-shell` and open a new terminal.
 
