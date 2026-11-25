@@ -183,6 +183,8 @@ class EngineWorkerTest(unittest.TestCase):
                 lambda data_dir, **kwargs: Engine(data_dir, screen_port=free_port(), **kwargs),
             ),
             mock.patch.object(start, "sleep", side_effect=KeyboardInterrupt),
+            # The update check would reach GitHub.
+            mock.patch("tfs.cli.update.watch"),
             contextlib.redirect_stdout(out),
         ):
             code = main(["start"])

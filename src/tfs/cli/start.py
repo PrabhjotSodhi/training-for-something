@@ -5,17 +5,17 @@ import os
 import socket
 import sqlite3
 import sys
+import threading
 import webbrowser
 from contextlib import closing
 from time import sleep
 
 from tfs import config, password_store
+from tfs.cli import update
 from tfs.connectors.core.contract import load_manifests
 from tfs.engine import Engine, EngineAlreadyRunningError, PortInUseError
 from tfs.persistence import sqlite
 from tfs.persistence.migrations import BackupFailedError, DatabaseTooNewError
-
-RUNNING_FILE = "running"
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -33,7 +33,8 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
 def run(args: argparse.Namespace, *, footer: str = "") -> int:
     """Run the engine until Ctrl+C and return the exit code. Print the footer under the banner."""
     home_wifi = args.home_wifi or _push_source_enabled()
-    engine = Engine(config.data_dir(), home_wifi=home_wifi)
+    data_dir = config.data_dir()
+    engine = Engine(data_dir, home_wifi=home_wifi, new_version=lambda: update.available(data_dir))
     try:
         engine.start()
     except (
@@ -47,7 +48,7 @@ def run(args: argparse.Namespace, *, footer: str = "") -> int:
         return 1
     if engine.backup_path is not None:
         print(f"Saved a backup of your database before updating it: {engine.backup_path}")
-    running = config.data_dir() / RUNNING_FILE
+    running = data_dir / update.RUNNING_FILE
     try:
         running.write_text(str(os.getpid()))
         manifests = load_manifests()
@@ -71,6 +72,7 @@ def run(args: argparse.Namespace, *, footer: str = "") -> int:
         )
         if footer:
             print(footer, flush=True)
+        threading.Thread(target=update.watch, args=(data_dir,), daemon=True).start()
         if args.open:
             webbrowser.open(f"http://{config.SCREEN_HOST}:{config.SCREEN_PORT}/")
         # Ctrl+C interrupts sleep at once. `tfs update` stops TFS by deleting the running file.

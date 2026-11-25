@@ -5,6 +5,7 @@ import contextlib
 import ctypes
 import hashlib
 import json
+import logging
 import os
 import re
 import shlex
@@ -17,12 +18,16 @@ from pathlib import Path
 from time import monotonic, sleep
 
 from tfs import __version__, config
-from tfs.cli.start import RUNNING_FILE
 from tfs.connectors.core.runner import http_get
 from tfs.engine import tfs_answers_ping
 from tfs.providers import PROVIDERS, mcp_tools
 
+logger = logging.getLogger(__name__)
+
 RELEASES_URL = "https://api.github.com/repos/PrabhjotSodhi/training-for-something/releases"
+RUNNING_FILE = "running"
+CHECK_FILE = "update-check.json"
+CHECK_EVERY_SECONDS = 24 * 60 * 60
 POLL_SECONDS = 1
 STOP_TIMEOUT_SECONDS = 30
 PROCESS_QUERY_SECONDS = 30
@@ -195,6 +200,52 @@ def _fetch(url: str) -> bytes:
     if status != 200:
         raise OSError(f"GitHub answered {status} for {url}")
     return body
+
+
+def watch(data_dir: Path) -> None:
+    """Check for a newer release now and every 24 hours, and print each new notice."""
+    while True:
+        if notice := check(data_dir):
+            print(notice, flush=True)
+        sleep(CHECK_EVERY_SECONDS)
+
+
+def check(data_dir: Path, *, fetch: Callable[[str], bytes] = _fetch) -> str | None:
+    """Look for a newer release and keep the answer in the data folder.
+
+    Return the notice the first time a version is found. Offline or with
+    TFS_NO_UPDATE_CHECK=1, return None.
+    """
+    if os.environ.get("TFS_NO_UPDATE_CHECK") == "1":
+        return None
+    try:
+        found = _newest(json.loads(fetch(RELEASES_URL)), __version__)
+    except (OSError, ValueError, LookupError, TypeError):
+        return None
+    newer = found[0] if found else None
+    told = _cache(data_dir).get("told")
+    cache = {"current": __version__, "newer": newer, "told": newer or told}
+    unfinished = data_dir / f"{CHECK_FILE}.tmp"
+    try:
+        unfinished.write_text(json.dumps(cache), encoding="utf-8")
+        unfinished.replace(data_dir / CHECK_FILE)
+    except OSError as error:
+        logger.warning("TFS could not save its update check, and tries again tomorrow: %s", error)
+    return f"TFS {newer} is ready. Run tfs update." if newer and newer != told else None
+
+
+def available(data_dir: Path) -> str | None:
+    """Return the newer version that the last check found for this install, or None."""
+    cache = _cache(data_dir)
+    return cache.get("newer") if cache.get("current") == __version__ else None
+
+
+def _cache(data_dir: Path) -> dict:
+    try:
+        cache = json.loads((data_dir / CHECK_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return cache if isinstance(cache, dict) else {}
 
 
 def _processes() -> dict[int, dict]:

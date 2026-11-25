@@ -31,6 +31,7 @@ export function Overview() {
 
   return (
     <>
+      {overview.new_version && <NewVersion version={overview.new_version} />}
       {overview.plate && <Plate plate={overview.plate} />}
       <div className="cards">
         {overview.cards.map((card, index) => {
@@ -47,5 +48,23 @@ export function Overview() {
         })}
       </div>
     </>
+  );
+}
+
+function NewVersion({ version }: { version: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <p className="new-version">
+      <span>
+        TFS {version} is ready. Run <code>tfs update</code>.
+      </span>
+      <button
+        type="button"
+        aria-label="Copy tfs update"
+        onClick={() => navigator.clipboard.writeText("tfs update").then(() => setCopied(true))}
+      >
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </p>
   );
 }

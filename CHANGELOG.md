@@ -7,6 +7,7 @@ Versions follow Python's PEP 440. Each release starts with "Breaking changes". E
 ### Added
 
 - `tfs update` installs the newest release after checking its SHA-256, then starts TFS again if it was running (#287). On Windows it waits until your AI tools are closed, because a reinstall breaks a running `tfs mcp` there. An AI tool left open on Mac or Linux asks you to restart it.
+- `tfs start` checks GitHub for a newer release at start and every 24 hours. The terminal says "TFS {version} is ready. Run tfs update." once per version, and the dashboard shows it with a copy button. Set `TFS_NO_UPDATE_CHECK=1` to turn the check off.
 - Before an update changes your database, TFS saves a copy in the `backups` folder of the data folder and keeps the 2 newest (#288). `tfs start` prints the path.
 - `coach_v1_app_targets` lists your Hevy routines after each sync, and `coach_v1_plan_items` has `send_into_json`.
 - `add_session` and `change_session` take `send_into` to send a strength session into a Hevy routine you pick. The preview shows its title in `send_into_titles`.

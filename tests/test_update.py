@@ -260,5 +260,69 @@ class HelpersTest(unittest.TestCase):
         self.assertEqual(names, ["Claude Code"])
 
 
+class UpdateCheckTest(unittest.TestCase):
+    def setUp(self) -> None:
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.data_dir = Path(folder.name)
+        self.requests: list[str] = []
+
+    def github(self, url: str) -> bytes:
+        self.requests.append(url)
+        return json.dumps([release("9.1.0", prerelease=False)]).encode()
+
+    def check(self, fetch=None, turned_off: str = "") -> str | None:
+        """Run the check that tfs start makes, as TFS 9.0.0."""
+        with (
+            mock.patch.dict(os.environ, {"TFS_NO_UPDATE_CHECK": turned_off}),
+            mock.patch.object(update, "__version__", "9.0.0"),
+        ):
+            return update.check(self.data_dir, fetch=fetch or self.github)
+
+    def test_a_newer_release_shows_the_notice_once_for_that_version(self) -> None:
+        # GIVEN a newer release
+        # WHEN tfs start checks at start and a day later
+        notices = [self.check(), self.check()]
+        # THEN the terminal tells once, and the dashboard can show the version
+        self.assertEqual(notices[0], "TFS 9.1.0 is ready. Run tfs update.")
+        self.assertIsNone(notices[1])
+        with mock.patch.object(update, "__version__", "9.0.0"):
+            self.assertEqual(update.available(self.data_dir), "9.1.0")
+
+    def test_no_network_is_silent(self) -> None:
+        # GIVEN
+        def offline(url: str) -> bytes:
+            raise OSError("no network")
+
+        # WHEN
+        notice = self.check(fetch=offline)
+        # THEN
+        self.assertIsNone(notice)
+
+    def test_a_saved_answer_that_is_not_an_object_counts_as_none(self) -> None:
+        # GIVEN
+        (self.data_dir / update.CHECK_FILE).write_text("[]", encoding="utf-8")
+        # WHEN
+        notice = self.check()
+        # THEN
+        self.assertEqual(notice, "TFS 9.1.0 is ready. Run tfs update.")
+
+    def test_a_folder_it_cannot_write_still_gives_the_notice(self) -> None:
+        # GIVEN a data folder that is gone
+        self.data_dir = self.data_dir / "gone"
+        # WHEN
+        with self.assertLogs(update.logger):
+            notice = self.check()
+        # THEN
+        self.assertEqual(notice, "TFS 9.1.0 is ready. Run tfs update.")
+
+    def test_turned_off_makes_no_request(self) -> None:
+        # WHEN
+        notice = self.check(turned_off="1")
+        # THEN
+        self.assertIsNone(notice)
+        self.assertEqual(self.requests, [])
+
+
 if __name__ == "__main__":
     unittest.main()
