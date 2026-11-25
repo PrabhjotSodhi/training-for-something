@@ -1,6 +1,7 @@
 """`tfs start`: run the engine in the foreground until Ctrl+C."""
 
 import argparse
+import os
 import socket
 import sqlite3
 import sys
@@ -48,7 +49,7 @@ def run(args: argparse.Namespace, *, footer: str = "") -> int:
         print(f"Saved a backup of your database before updating it: {engine.backup_path}")
     running = config.data_dir() / RUNNING_FILE
     try:
-        running.touch()
+        running.write_text(str(os.getpid()))
         manifests = load_manifests()
         push_connectors = [
             (name, manifest["label"])
