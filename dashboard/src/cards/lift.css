@@ -1,27 +1,57 @@
-.lift .trend-head,
-.lift-controls {
-  flex-wrap: wrap;
-}
-
-.lift select {
-  max-width: 100%;
-  padding: 5px 8px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--card);
-  color: var(--ink);
-  font: var(--body);
-  cursor: pointer;
-}
-
-.lift-controls {
+.lift-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-top: 16px;
+  margin-top: 12px;
 }
 
-.lift-unit {
-  margin-top: 16px;
+.lift-pick {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  border-radius: 999px;
+  background: var(--fill);
+}
+
+.lift-pick select {
+  min-width: 0;
+  max-width: 100%;
+  padding: 7px 30px 7px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink);
+  font: var(--caption);
+  font-weight: 700;
+  appearance: none;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.lift-pick select:focus-visible {
+  outline: 2px solid var(--goal);
+  outline-offset: 2px;
+}
+
+.lift-pick svg {
+  position: absolute;
+  right: 10px;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+@media (pointer: coarse), (max-width: 699px) {
+  .lift-pick select {
+    min-height: 44px;
+  }
 }

@@ -1,0 +1,66 @@
+.chart-plot {
+  --band: rgb(120 120 128 / 0.1);
+  position: relative;
+  display: flex;
+  margin-top: 22px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .chart-plot {
+    --band: rgb(120 120 128 / 0.2);
+  }
+}
+
+.chart-area {
+  flex: 1;
+  min-width: 0;
+}
+
+.chart-area .recharts-wrapper,
+.chart-area svg {
+  overflow: visible;
+}
+
+.chart-area *:focus {
+  outline: none;
+}
+
+.chart-gutter {
+  position: relative;
+  flex: none;
+  width: 44px;
+}
+
+.chart-gutter span {
+  position: absolute;
+  left: 14px;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font: var(--caption);
+  white-space: nowrap;
+}
+
+.chart-halo {
+  fill: var(--goal);
+  opacity: 0.2;
+}
+
+.chart-today {
+  fill: var(--goal);
+  stroke: var(--card);
+  stroke-width: 2.5;
+}
+
+.chart-dot {
+  fill: var(--ink);
+  opacity: 0.45;
+}
+
+.chart-x {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-right: 44px;
+  color: var(--muted);
+  font: var(--caption);
+}

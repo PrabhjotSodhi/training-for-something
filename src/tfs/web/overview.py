@@ -681,7 +681,6 @@ def _trend_data(connection, card: dict, today: date) -> TrendData | None:
 def _lift_data(connection, selected: str | None, today: date) -> LiftData | None:
     first_week = today - timedelta(weeks=11, days=today.weekday())
     weeks = [(first_week + timedelta(weeks=i)).isoformat() for i in range(12)]
-    since_session = today - timedelta(days=83)
     rows = connection.execute(
         """
         WITH sessions AS (
@@ -713,9 +712,11 @@ def _lift_data(connection, selected: str | None, today: date) -> LiftData | None
         exercise.name = label or exercise.name
         counts[exercise_id] += sets
         local_day = date.fromisoformat(day)
-        if local_day >= since_session and heaviest is not None:
+        if local_day < first_week:
+            continue
+        if heaviest is not None:
             exercise.sessions.append(LiftSession(date=day, kg=heaviest))
-        if local_day >= first_week and volume is not None:
+        if volume is not None:
             week = (local_day - first_week).days // 7
             exercise.weekly_kg[week] = (exercise.weekly_kg[week] or 0) + volume
     if not exercises:

@@ -107,6 +107,8 @@ Every card takes one goal colour from the layout's plate, orange with no plate: 
 ## Lift progress card
 
 1. The picker lists exercises with weight in at least one working set in the last 90 days. It ranks them by working set count and uses each exercise's template id. It opens on the saved exercise if available, then falls back to the most logged. With no eligible exercise, the card stays hidden.
-2. Heaviest shows one point per workout in the last 12 weeks. The latest point shows its date and weight in kg. Two workouts on the same day keep separate points.
-3. Weekly volume shows the current week and the previous 11 weeks, starting on Monday. Each bar shows kg lifted, the sum of working-set weight times reps. A week without sessions stays empty.
-4. Both controls change only the current view. A person can save an exercise through an approved `set_overview` proposal.
+2. Both views cover the same 12 weeks, from the Monday 11 weeks ago to today, with the first date on the left and "Today" on the right.
+3. Heaviest shows one point per workout at its date. The state line shows the change since the first point, like "+4.5 kg since 8 Sept", and the number is the latest weight. Two workouts on the same day keep separate points.
+4. Volume shows one bar per week, starting on Monday, in the goal colour. Each bar is kg lifted, the sum of working-set weight times reps. A week without sessions stays empty.
+5. The title is "Lift progress". Below it the exercise picker sits on the left and the Heaviest and Volume chips on the right. Heaviest uses the trend card's line chart: hidden axes, the highest and lowest values in the right gutter, a dot on each workout and a ring on the latest. Workouts up to 14 days apart are joined by a line. Volume uses the same frame, gutter and date row.
+6. Both controls change only the current view. A person can save an exercise through an approved `set_overview` proposal.
