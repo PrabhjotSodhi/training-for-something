@@ -40,7 +40,7 @@ class DailySumsTest(unittest.TestCase):
             return local.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         self.count += 1
-        unit = {"steps": "count", "sleep_asleep": "h"}[metric]
+        unit = "h" if metric.startswith("sleep_") else "count"
         values = {"value": value, "unit": unit, **({"merged": True} if merged else {})}
         insert_measurement(
             self.conn,
@@ -53,6 +53,7 @@ class DailySumsTest(unittest.TestCase):
             end_utc=end and utc(end),
             origin_app="Health",
             origin_device=device,
+            stream="sleep" if metric.startswith("sleep_") else metric,
         )
 
     def facts(self) -> list[tuple]:
@@ -63,6 +64,27 @@ class DailySumsTest(unittest.TestCase):
                 " FROM day_facts ORDER BY local_date, metric"
             )
         ]
+
+    def test_sleep_stages_follow_the_device_chosen_for_the_night(self) -> None:
+        # GIVEN two devices with different stage totals
+        for device, values in ((WATCH, (8, 2, 4, 2, 0)), (PHONE, (7, 3, 3, 1, 1))):
+            for metric, value in zip(
+                ("asleep", "deep", "core", "rem", "awake"), values, strict=True
+            ):
+                self.add("app", device, "00:00", "08:00", value, metric=f"sleep_{metric}")
+        # WHEN totals build, every stage uses the same source as hours asleep
+        rebuild(self.conn, {DAY}, tz=NZ)
+        self.assertEqual(
+            {metric: value for _, metric, value, *_ in self.facts()},
+            {"sleep_asleep": 8, "sleep_deep": 2, "sleep_core": 4, "sleep_rem": 2, "sleep_awake": 0},
+        )
+        self.assertEqual({row[3] for row in self.facts()}, {"app/sleep/Health/Watch"})
+        # THEN a missing stage on the winning device stays empty on rebuild
+        self.conn.execute(
+            "DELETE FROM source_records WHERE origin_device='Watch' AND metric='sleep_rem'"
+        )
+        rebuild(self.conn, {DAY}, tz=NZ)
+        self.assertNotIn("sleep_rem", [row[1] for row in self.facts()])
 
     def test_a_source_marked_merged_wins_over_records_that_merge_to_more(self) -> None:
         self.received("health_auto_export", "2026-10-21T00:00:00Z")

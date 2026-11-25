@@ -5,7 +5,7 @@ import sqlite3
 from collections import defaultdict
 from datetime import datetime, timedelta, tzinfo
 
-from tfs.connectors.core.contract import METRICS, parse_iso_time
+from tfs.connectors.core.contract import METRICS, SLEEP_STAGES, parse_iso_time
 
 FORMULA_VERSION = "day-facts-1"
 
@@ -61,10 +61,16 @@ SELECT local_date, metric, connector, start_utc, end_utc,
        json_extract(values_json, '$.value'), coalesce(json_extract(values_json, '$.merged'), 0),
        connector || '/' || stream || '/' || coalesce(origin_app, '-') || '/'
          || coalesce(origin_device, '-')
-FROM source_records
+FROM source_records AS reading
 WHERE kind = 'measurement' AND deleted_at IS NULL
   AND metric IN (SELECT value FROM json_each(:metrics))
   AND local_date IN (SELECT value FROM json_each(:days))
+  AND (json_extract(values_json, '$.sleep_summary_key') IS NULL OR EXISTS (
+    SELECT 1 FROM source_records AS summary
+    WHERE summary.connector = reading.connector AND summary.stream = reading.stream
+      AND summary.key = json_extract(reading.values_json, '$.sleep_summary_key')
+      AND summary.file_sha256 = reading.file_sha256 AND summary.deleted_at IS NULL
+  ))
 """
 
 _QUERIES = {"latest": _LATEST, "mean": _MEAN}
@@ -130,9 +136,13 @@ def rebuild(conn: sqlite3.Connection, dates: set[str], *, tz: tzinfo | None = No
     grouped: dict[tuple[str, str], dict[str, dict[str, list[tuple]]]] = defaultdict(
         lambda: defaultdict(lambda: defaultdict(list))
     )
+    stages: dict[tuple[str, str], dict[str, float]] = defaultdict(lambda: defaultdict(float))
     for date, name, connector, start, end, value, merged, source in conn.execute(
         _SUMMED, {"metrics": json.dumps(list(summed)), "days": days}
     ):
+        if name in SLEEP_STAGES:
+            stages[date, source][name] += value
+            continue
         span = (parse_iso_time(start).timestamp(), end and parse_iso_time(end).timestamp())
         grouped[date, name][connector][source].append((*span, value, merged))
     for (date, name), connectors in grouped.items():
@@ -153,20 +163,27 @@ def rebuild(conn: sqlite3.Connection, dates: set[str], *, tz: tzinfo | None = No
             name != "sleep_asleep"
             and parse_iso_time(received[connector]).timestamp() < day_end.timestamp()
         )
-        conn.execute(
+        source = " + ".join(source for source, _ in sources)
+        values = {name: value}
+        if name == "sleep_asleep":
+            values.update(stages.get((date, source), {}))
+        conn.executemany(
             "INSERT INTO day_facts (local_date, metric, value, unit, source, coverage,"
             " formula_version) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                date,
-                name,
-                value,
-                summed[name].unit,
-                " + ".join(source for source, _ in sources),
-                "partial" if partial else "full",
-                FORMULA_VERSION,
-            ),
+            [
+                (
+                    date,
+                    metric,
+                    amount,
+                    summed[metric].unit,
+                    source,
+                    "partial" if partial else "full",
+                    FORMULA_VERSION,
+                )
+                for metric, amount in values.items()
+            ],
         )
-        written += 1
+        written += len(values)
     for name, metric in daily.items():
         if metric.daily in _QUERIES:
             written += conn.execute(

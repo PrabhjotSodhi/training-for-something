@@ -186,18 +186,43 @@ def _activity(item: dict) -> dict:
     )
 
 
-def _sleep(item: dict) -> dict:
-    start = _from_ms(item["sleepStartTimestampGMT"])
-    return _measurement(
-        "sleep",
-        item["calendarDate"],
-        "sleep_asleep",
-        item["sleepTimeSeconds"] / 3600,
-        "h",
-        start=start,
-        end=_from_ms(item["sleepEndTimestampGMT"]),
-        utc_offset_min=_offset_min(_from_ms(item["sleepStartTimestampLocal"]), start),
-    )
+def _sleep(page: list[dict]) -> list[dict]:
+    records = []
+    for item in page:
+        if item.get("sleepTimeSeconds") is None:
+            continue
+        start = _from_ms(item["sleepStartTimestampGMT"])
+        total = _measurement(
+            "sleep",
+            item["calendarDate"],
+            "sleep_asleep",
+            item["sleepTimeSeconds"] / 3600,
+            "h",
+            start=start,
+            end=_from_ms(item["sleepEndTimestampGMT"]),
+            utc_offset_min=_offset_min(_from_ms(item["sleepStartTimestampLocal"]), start),
+        )
+        records.append(total)
+        for field, metric in (
+            ("deepSleepSeconds", "sleep_deep"),
+            ("lightSleepSeconds", "sleep_core"),
+            ("remSleepSeconds", "sleep_rem"),
+            ("awakeSleepSeconds", "sleep_awake"),
+        ):
+            if (seconds := item.get(field)) is not None:
+                records.append(
+                    total
+                    | {
+                        "key": f"{total['key']}|{metric}",
+                        "metric": metric,
+                        "values": {
+                            "value": seconds / 3600,
+                            "unit": "h",
+                            "sleep_summary_key": total["key"],
+                        },
+                    }
+                )
+    return records
 
 
 def _daily(stream: str, metric: str, unit: str, items: list[dict], value_of) -> list[dict]:
@@ -223,9 +248,7 @@ def _weight(item: dict) -> dict:
 
 _READERS = {
     "activities": lambda page: [_activity(item) for item in page],
-    "sleep": lambda page: [
-        _sleep(item) for item in page if item.get("sleepTimeSeconds") is not None
-    ],
+    "sleep": _sleep,
     "hrv": lambda page: _daily(
         "hrv", "hrv_rmssd", "ms", page["hrvSummaries"], lambda item: item.get("lastNightAvg")
     ),

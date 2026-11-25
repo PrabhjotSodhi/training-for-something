@@ -37,6 +37,10 @@ REPLIES = {
         {
             "calendarDate": "2026-11-20",
             "sleepTimeSeconds": 27000,
+            "lightSleepSeconds": 16200,
+            "deepSleepSeconds": 3600,
+            "remSleepSeconds": 7200,
+            "awakeSleepSeconds": 900,
             "sleepStartTimestampGMT": 1795125600000,
             "sleepEndTimestampGMT": 1795152600000,
             "sleepStartTimestampLocal": 1795172400000,
@@ -162,11 +166,26 @@ class GarminSetupTest(unittest.TestCase):
         ):
             # WHEN setup connects Garmin
             main(["setup"])
-            # THEN a token was fetched and one record per endpoint is stored
+            # THEN light sleep counts as core and each stage has its own stored record
             with contextlib.closing(connect(config.db_path())) as conn:
                 stored = conn.execute("SELECT COUNT(*) FROM source_records").fetchone()[0]
+                sleep = dict(
+                    conn.execute(
+                        "SELECT metric, json_extract(values_json, '$.value') FROM source_records WHERE stream='sleep'"
+                    )
+                )
+        self.assertEqual(
+            sleep,
+            {
+                "sleep_asleep": 7.5,
+                "sleep_core": 4.5,
+                "sleep_deep": 1,
+                "sleep_rem": 2,
+                "sleep_awake": 0.25,
+            },
+        )
         self.assertEqual(garmin.exchanges, 1)
-        self.assertEqual(stored, len(REPLIES))
+        self.assertEqual(stored, len(REPLIES) + 4)
 
 
 class GarminReadTest(unittest.TestCase):

@@ -9,6 +9,28 @@ SLEEP_TYPE = "HKCategoryTypeIdentifierSleepAnalysis"
 
 
 class AppleHealthSleepTest(unittest.TestCase):
+    def test_stage_intervals_share_the_wake_date_and_keep_the_total(self) -> None:
+        # GIVEN one export with all four stages, including core before midnight
+        # WHEN the reader imports the night
+        _, records = read_records(self, read, SAMPLE, "file")
+        totals = {}
+        for row in records:
+            if row.get("metric", "").startswith("sleep_"):
+                self.assertEqual(row["local_date"], "2026-03-02")
+                metric = row["metric"]
+                totals[metric] = totals.get(metric, 0) + row["values"]["value"]
+        # THEN awake stays separate from the hours asleep
+        self.assertEqual(
+            totals,
+            {
+                "sleep_asleep": 6.6666667,
+                "sleep_core": 0.6666667,
+                "sleep_deep": 5.5,
+                "sleep_rem": 0.5,
+                "sleep_awake": 0.0833333,
+            },
+        )
+
     def setUp(self) -> None:
         _, records = read_records(self, read, SAMPLE, "file")
         self.sleep = [record for record in records if record.get("metric") == "sleep_asleep"]

@@ -113,10 +113,15 @@ class WeekOverviewCard(WeekCard):
 
 
 class SleepNight(BaseModel):
-    """One night: hours asleep on the day the person woke up, or null with no data."""
+    """One night: hours asleep on the day the person woke up, or null with no data.
+
+    stages holds the hours of each reported stage (awake, rem, core, deep) and is empty
+    when the source sent none.
+    """
 
     date: str
     hours: float | None
+    stages: dict[str, float]
 
 
 class SleepData(BaseModel):
@@ -440,16 +445,23 @@ def _week_data(connection, now: datetime) -> WeekData:
 
 def _sleep_data(connection, target_h: float | None, today: date) -> SleepData:
     days = [(today - timedelta(days=offset)).isoformat() for offset in range(6, -1, -1)]
-    asleep = {
-        day: hours
-        for day, hours in _rows(
-            connection,
-            "SELECT local_date, value FROM coach_v1_day_facts WHERE metric = 'sleep_asleep'",
-        )
-        if day in days
-    }
+    asleep = {}
+    stages = {day: {} for day in days}
+    for day, metric, hours in _rows(
+        connection,
+        "SELECT local_date, metric, value FROM coach_v1_day_facts"
+        " WHERE metric IN ('sleep_asleep', 'sleep_awake', 'sleep_rem', 'sleep_core', 'sleep_deep')"
+        " ORDER BY local_date DESC",
+    ):
+        if day not in stages:
+            continue
+        if metric == "sleep_asleep":
+            asleep[day] = hours
+        else:
+            stages[day][metric.removeprefix("sleep_")] = hours
     return SleepData(
-        nights=[SleepNight(date=day, hours=asleep.get(day)) for day in days], target_h=target_h
+        nights=[SleepNight(date=day, hours=asleep.get(day), stages=stages[day]) for day in days],
+        target_h=target_h,
     )
 
 

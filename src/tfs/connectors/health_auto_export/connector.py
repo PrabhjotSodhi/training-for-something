@@ -104,7 +104,12 @@ def _measurements(metrics: list[dict], skipped: Counter) -> Iterator[dict]:
             raise ValueError(_NOT_A_PAYLOAD)
         for sample in samples:
             try:
-                yield _measurement(name, entry.get("units"), sample)
+                if not isinstance(sample, dict):
+                    raise _SkipError(_NOT_A_NUMBER)
+                if name == "sleep_analysis":
+                    yield from _sleep(entry.get("units"), sample)
+                else:
+                    yield _measurement(name, entry.get("units"), sample)
             except _SkipError as skip:
                 skipped["sample", str(skip)] += 1
 
@@ -174,11 +179,7 @@ def _workout_number(raw: object, units: object, target: str) -> float | None:
     return None if raw is None else _number(raw, units, target)
 
 
-def _measurement(name: str, units: object, sample: object) -> dict:
-    if not isinstance(sample, dict):
-        raise _SkipError(_NOT_A_NUMBER)
-    if name == "sleep_analysis":
-        return _sleep(units, sample)
+def _measurement(name: str, units: object, sample: dict) -> dict:
     metric = _METRIC_BY_NAME[name]
     target = METRICS[metric].unit
     text = sample.get("date")
@@ -195,7 +196,7 @@ def _measurement(name: str, units: object, sample: object) -> dict:
     return _record(name, text, sample, metric, values, (start_utc, None, offset_min, local_date))
 
 
-def _sleep(units: object, sample: dict) -> dict:
+def _sleep(units: object, sample: dict) -> Iterator[dict]:
     if not sample.get("sleepStart") or not sample.get("sleepEnd"):
         raise _SkipError(_NOT_AGGREGATED)
     start, end = _local_time(sample["sleepStart"]), _local_time(sample["sleepEnd"])
@@ -205,7 +206,7 @@ def _sleep(units: object, sample: dict) -> dict:
     # Sleep that ends at 18:00 or later belongs to the next day (HLD 5.6).
     local_date = (end + timedelta(hours=6)).date().isoformat()
     when = (start_utc, utc_fields(end)[0], offset_min, local_date)
-    return _record(
+    total_record = _record(
         "sleep_analysis",
         sample["sleepStart"],
         sample,
@@ -213,6 +214,19 @@ def _sleep(units: object, sample: dict) -> dict:
         {"value": value, "unit": "h"},
         when,
     )
+    yield total_record
+    for stage in ("deep", "core", "rem", "awake"):
+        if sample.get(stage) is not None:
+            metric = f"sleep_{stage}"
+            yield total_record | {
+                "key": f"{total_record['key']}|{metric}",
+                "metric": metric,
+                "values": total_record["values"]
+                | {
+                    "value": _number(sample[stage], units, "h"),
+                    "sleep_summary_key": total_record["key"],
+                },
+            }
 
 
 def _record(name: str, key_time: str, sample: dict, metric: str, values: dict, when: tuple) -> dict:
