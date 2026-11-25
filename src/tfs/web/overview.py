@@ -2,7 +2,7 @@
 
 import json
 from contextlib import closing
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from math import ceil
 from pathlib import Path
 from typing import Annotated, Literal
@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from tfs import providers
 from tfs.connectors.core.contract import load_manifests
+from tfs.diagnostics import is_stale
 from tfs.mcp.tool_access import open_reader, query
 from tfs.proposals.models import Plate, SetsByMuscleCard, SleepCard, TrendCard, WeekCard
 from tfs.scores.readiness import normal_band
@@ -97,11 +98,12 @@ class WeekTotal(BaseModel):
 
 
 class WeekData(BaseModel):
-    """Monday to Sunday with the totals per sport."""
+    """Monday to Sunday with the totals per sport and the number of plan items."""
 
     today: str
     days: list[WeekDay]
     totals: list[WeekTotal]
+    planned_sessions: int
 
 
 class WeekOverviewCard(WeekCard):
@@ -154,7 +156,6 @@ class TrendData(BaseModel):
     """The last 30 days ending today. Readings up to join_days apart are joined by a line."""
 
     title: str
-    colour: str
     unit: str | None
     join_days: int
     selected: str
@@ -338,7 +339,8 @@ def _amount(sport: str, km: float | None, sets: int, minutes: float | None) -> t
     return round(minutes or 0, 1), "min"
 
 
-def _week_data(connection, today: date) -> WeekData:
+def _week_data(connection, now: datetime) -> WeekData:
+    today = now.date()
     monday = today - timedelta(days=today.weekday())
     days = [(monday + timedelta(days=offset)).isoformat() for offset in range(7)]
     plan_sums = {
@@ -365,8 +367,23 @@ def _week_data(connection, today: date) -> WeekData:
         )
         if row[1] in days
     }
+    stale_after = {
+        name: manifest.get("stale_after_hours") for name, manifest in load_manifests().items()
+    }
+    sources = _rows(
+        connection, "SELECT connector, last_contact_at FROM coach_v1_sources WHERE enabled = 1"
+    )
+    known = bool(sources) and not any(
+        is_stale(contact, stale_after.get(name), now.isoformat()) for name, contact in sources
+    )
+    unsorted = {day for day, family, *_ in workouts.values() if family is None}
     sessions: dict[str, list[WeekSession]] = {day: [] for day in days}
     totals: dict[tuple[str, str], list[float]] = {}
+    planned_sessions = 0
+
+    def missed(day: str) -> bool:
+        cutoff = datetime.combine(date.fromisoformat(day) + timedelta(days=1), time(12), now.tzinfo)
+        return known and day not in unsorted and now >= cutoff
 
     def add(day: str, name: str, sport: str, minutes, done, planned) -> None:
         amount, unit = done or planned
@@ -377,7 +394,7 @@ def _week_data(connection, today: date) -> WeekData:
                 minutes=minutes,
                 amount=amount,
                 unit=unit,
-                state="done" if done else "missed" if day < today.isoformat() else "planned",
+                state="done" if done else "missed" if missed(day) else "planned",
             )
         )
         total = totals.setdefault((sport, unit), [0, 0])
@@ -396,6 +413,7 @@ def _week_data(connection, today: date) -> WeekData:
     ):
         if day not in days or status in ("removed", "replaced", "skipped"):
             continue
+        planned_sessions += 1
         sets, km, minutes = plan_sums.get(item_id, (0, None, None))
         planned = _amount(sport, km, sets or 0, minutes)
         if workout_id in workouts:
@@ -416,6 +434,7 @@ def _week_data(connection, today: date) -> WeekData:
             WeekTotal(sport=sport, unit=unit, done=round(done, 2), planned=round(planned, 2))
             for (sport, unit), (done, planned) in sorted(totals.items())
         ],
+        planned_sessions=planned_sessions,
     )
 
 
@@ -593,7 +612,7 @@ def _load_parts(connection, today: date) -> list[TrendPart]:
     return parts
 
 
-def _trend_data(connection, card: dict, today: date, colour: str) -> TrendData | None:
+def _trend_data(connection, card: dict, today: date) -> TrendData | None:
     metric = card["metric"]
     unit = None
     if metric == "training_load":
@@ -606,7 +625,6 @@ def _trend_data(connection, card: dict, today: date, colour: str) -> TrendData |
     keys = [part.key for part in parts]
     return TrendData(
         title=TREND_TITLES[metric],
-        colour=colour,
         unit=unit,
         join_days=JOIN_DAYS.get(metric, 1),
         selected=card.get("first") if card.get("first") in keys else keys[0],
@@ -615,24 +633,29 @@ def _trend_data(connection, card: dict, today: date, colour: str) -> TrendData |
 
 
 def _card_data(
-    connection, card: dict, today: date, colour: str
+    connection, card: dict, now: datetime
 ) -> WeekData | SleepData | TrendData | SetsByMuscleData | None:
+    today = now.date()
     if card["type"] == "week":
-        return _week_data(connection, today)
+        return _week_data(connection, now)
     if card["type"] == "sets_by_muscle":
         return _sets_by_muscle_data(connection, today)
     if card["type"] == "sleep":
         return _sleep_data(connection, card.get("target_h"), today)
-    return _trend_data(connection, card, today, colour)
+    return _trend_data(connection, card, today)
 
 
-def _cards(connection, cards: list[dict], today: date, colour: str) -> list[dict]:
-    drawn = [{**card, "data": _card_data(connection, card, today, colour)} for card in cards]
+def _cards(connection, cards: list[dict], now: datetime) -> list[dict]:
+    drawn = [{**card, "data": _card_data(connection, card, now)} for card in cards]
     return [card for card in drawn if card["data"] is not None]
 
 
-def read_overview(db_path: Path, today: date) -> Overview:
-    """Return the saved layout, or the default one built from the last 28 days of data."""
+def read_overview(db_path: Path, now: datetime) -> Overview:
+    """Return the saved layout, or the default one built from the last 28 days of data.
+
+    now is the local time, so today and the end of each day follow the person's clock.
+    """
+    today = now.date()
     since = (today - timedelta(days=WINDOW_DAYS - 1)).isoformat()
     with closing(open_reader(db_path)) as connection:
         saved = _rows(connection, "SELECT layout_json FROM coach_v1_overview")
@@ -645,7 +668,7 @@ def read_overview(db_path: Path, today: date) -> Overview:
                 {
                     "plate": plate,
                     "first_run": first_run,
-                    "cards": _cards(connection, layout["cards"], today, layout["plate"]["colour"]),
+                    "cards": _cards(connection, layout["cards"], now),
                 }
             )
         goals = _rows(
@@ -672,7 +695,5 @@ def read_overview(db_path: Path, today: date) -> Overview:
                 "rows": [r for r in PLATE_ROWS if r in have],
             }
             plate["data"] = _plate_data(connection, plate, today)
-        cards = _cards(
-            connection, [card for card in DEFAULT_CARDS if _has_data(card, have)], today, "orange"
-        )
+        cards = _cards(connection, [card for card in DEFAULT_CARDS if _has_data(card, have)], now)
     return Overview.model_validate({"plate": plate, "first_run": first_run, "cards": cards})

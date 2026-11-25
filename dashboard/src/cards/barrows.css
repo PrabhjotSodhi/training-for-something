@@ -60,7 +60,7 @@
 }
 
 .bars-missing {
-  color: var(--faint);
+  color: var(--muted);
   font-style: italic;
   line-height: 12px;
 }

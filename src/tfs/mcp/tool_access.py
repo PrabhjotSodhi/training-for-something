@@ -46,7 +46,7 @@ VIEWS = {
     ),
     "coach_v1_sources": (
         "One row per connected app: whether it is enabled, when its last file arrived, its"
-        " last error, and the latest time its data covers."
+        " last error, the latest time its data covers, and when TFS last reached it."
     ),
     "coach_v1_plan_items": (
         "One row per saved plan item, including removed items; filter status as needed."

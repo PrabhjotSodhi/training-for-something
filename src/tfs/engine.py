@@ -81,7 +81,7 @@ class Engine:
         )
 
         def overview() -> Overview:
-            result = read_overview(db_path, self._now_fn().astimezone(self._tz).date())
+            result = read_overview(db_path, self._now_fn().astimezone(self._tz))
             result.new_version = self._new_version()
             return result
 

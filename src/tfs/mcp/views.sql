@@ -96,7 +96,8 @@ GROUP BY 1, 2;
 CREATE TEMP VIEW coach_v1_sources AS
 SELECT connector, enabled, last_received_at, last_error,
   (SELECT MAX(COALESCE(end_utc, start_utc)) FROM main.source_records
-    WHERE connector = sources.connector AND deleted_at IS NULL) AS covered_until
+    WHERE connector = sources.connector AND deleted_at IS NULL) AS covered_until,
+  last_contact_at
 FROM main.sources;
 
 

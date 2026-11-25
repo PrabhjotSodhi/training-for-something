@@ -10,7 +10,7 @@ import tempfile
 import unittest
 import urllib.request
 from collections import deque
-from datetime import date
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
 
@@ -262,7 +262,7 @@ class SetupTest(TfsHomeTestCase):
         # WHEN setup finishes
         self.run_goal_setup(*answers)
         # THEN the save path stored the goal and the Overview shows it on the plate
-        plate = read_overview(config.db_path(), date(2030, 1, 1)).plate
+        plate = read_overview(config.db_path(), datetime(2030, 1, 1, tzinfo=UTC)).plate
         self.assertEqual(
             (plate.data.goal, plate.data.date), ("First powerlifting meet", "2099-03-14")
         )

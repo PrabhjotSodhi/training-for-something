@@ -51,7 +51,7 @@ Every card takes one goal colour from the layout's plate, orange with no plate: 
 1. The plate sits above the cards, full width, at least 42 percent of the screen height, with a 20 px radius and no shadow.
 2. The background is an animated mesh gradient from `@paper-design/shaders-react`, pinned to one exact version. With reduced motion on, the gradient stands still.
 3. Each goal colour is a fixed set of colours: orange `#5A1E00 #FF8A00 #C2453A`, blue `#071F4A #0A7BFF #1E8FA0`, green `#0B3324 #2FBF5A #2A8A80`, purple `#24093E #B04FE0 #5257D6`. A shade layer of the darkest colour sits over the gradient so pale text passes 4.5:1.
-4. Three groups sit on the gradient with no cards and no takeaway sentence. The forecast with its range and the goal mark is at the top left. The Today rows, in the order the layout lists them, are at the top right. The timeline runs along the bottom: goal name and date above the line, "Week N of M" and "N days to go" below it.
+4. Three groups sit on the gradient with no cards and no takeaway sentence. The forecast with its range and the goal mark is at the top left. The Today rows, in the order the layout lists them, are at the top right. The timeline runs along the bottom: goal name and date together at the right above the line's end, "Week N of M" and "N days to go" below it at each end.
 5. The forecast number is 96 px, 700 weight. All other text uses the type scale.
 6. No forecast shows "No forecast yet". A row with no value today shows "No data". No plan items hides "Week N of M".
 7. Week 1 is the week the plan starts. M is the weeks from the plan start to the goal date, rounded up.
@@ -71,9 +71,9 @@ Every card takes one goal colour from the layout's plate, orange with no plate: 
 3. Tiles tell the states apart by look. A done session fills with the goal colour: strength is hatched, ride is the deep shade, swim the light shade. A planned session is grey. A planned session today is outlined in the goal colour. A missed session has a dashed outline and reads "Missed".
 4. A sport with no unit, or a session with no distance or sets, shows minutes.
 5. A done session counts its own distance, or every set it holds. A workout matched to a plan item shows once, on that item's tile. A workout with no plan item is its own done tile.
-6. A planned session from an earlier day with no matched workout is missed. It still counts as planned.
+6. A planned session with no matched workout is missed 12 hours after its day ends. Until then, and while any enabled source is stale or a workout with no sport family arrived that day, it stays planned. A missed session still counts as planned.
 7. A day with no session says "Rest".
-8. A column on the right shows sessions done this week, like "3 of 8 sessions". Under it each sport shows done of planned with a bar, like "22 of 78 km". With nothing planned that week the count is only the sessions done, and a sport with nothing planned shows only what is done, like "7.2 km", with no bar.
+8. A column on the right shows sessions done this week, like "3 of 8 sessions". Under it each sport shows done of planned with a bar, like "22 of 78 km". With no plan item that week the count is only the sessions done, and a sport with nothing planned shows only what is done, like "7.2 km", with no bar.
 
 ## Sleep card
 

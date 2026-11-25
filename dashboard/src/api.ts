@@ -256,8 +256,6 @@ export interface components {
         TrendData: {
             /** Title */
             title: string;
-            /** Colour */
-            colour: string;
             /** Unit */
             unit: string | null;
             /** Join Days */
@@ -346,7 +344,7 @@ export interface components {
         };
         /**
          * WeekData
-         * @description Monday to Sunday with the totals per sport.
+         * @description Monday to Sunday with the totals per sport and the number of plan items.
          */
         WeekData: {
             /** Today */
@@ -355,6 +353,8 @@ export interface components {
             days: components["schemas"]["WeekDay"][];
             /** Totals */
             totals: components["schemas"]["WeekTotal"][];
+            /** Planned Sessions */
+            planned_sessions: number;
         };
         /**
          * WeekDay

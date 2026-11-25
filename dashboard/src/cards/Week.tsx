@@ -18,7 +18,7 @@ const sportName = (sport: string) => sports[sport] ?? sport[0].toUpperCase() + s
 export function Week({ week }: { week: WeekProps }) {
   const sessions = week.days.flatMap((day) => day.sessions);
   const done = sessions.filter((session) => session.state === "done").length;
-  const planned = week.totals.some((total) => total.planned > 0);
+  const planned = week.planned_sessions > 0;
   const count = planned ? sessions.length : done;
   return (
     <div className="week">

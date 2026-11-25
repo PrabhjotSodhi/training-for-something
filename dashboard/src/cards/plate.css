@@ -135,6 +135,10 @@
   font: var(--caption);
 }
 
+.plate-road-top {
+  justify-content: flex-end;
+}
+
 .plate-road-top b {
   margin-right: 6px;
   color: var(--ink);
