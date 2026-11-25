@@ -25,6 +25,7 @@ REPO = "PrabhjotSodhi/training-for-something"
 PLUGIN = "tfs@training-for-something"
 CLAUDE, CODEX = providers.PROVIDERS
 CURSOR = mcp_tools.TOOLS[0]
+ANTIGRAVITY = next(t for t in mcp_tools.TOOLS if t.command == "agy")
 PUSH_URL = "http://studio.local:47824/push/health_auto_export"
 
 
@@ -114,9 +115,12 @@ class SetupTest(TfsHomeTestCase):
 
     def test_given_claude_already_connected_then_nothing_is_installed(self):
         commands = FakeCommands(found={"claude"}, plugin_list=f"  {PLUGIN}\n")
-        _, out, _, _ = self.run_setup(FakeQuestionary([]), commands)
+        _, out, _, started = self.run_setup(FakeQuestionary([]), commands)
         self.assertEqual(commands.calls, [["claude", "plugin", "list"]])
         self.assertIn("✔ Claude Code   TFS connected", out)
+        footer = started.call_args.kwargs["footer"]
+        self.assertIn("run `claude`", footer)
+        self.assertIn(providers.FIRST_MESSAGE, footer)
 
     def test_given_a_tool_left_unpicked_then_nothing_is_installed_for_it(self):
         commands = FakeCommands(found={"claude", "codex"})
@@ -175,6 +179,21 @@ class SetupTest(TfsHomeTestCase):
             self.assertIn(label, out)
         self.assertEqual(code, 0)
         started.assert_called_once()
+        footer = started.call_args.kwargs["footer"]
+        self.assertIn("run tfs setup again", footer)
+        self.assertNotIn(providers.FIRST_MESSAGE, footer)
+
+    def test_given_a_tool_with_a_command_and_a_file_when_setup_connects_it_then_the_file_holds_tfs(
+        self,
+    ):
+        # GIVEN Antigravity's program is found and it has no config file
+        commands = FakeCommands(found={"agy"})
+        # WHEN setup connects it
+        self.run_setup(FakeQuestionary([ANTIGRAVITY], []), commands)
+        # THEN the config file holds the tfs entry and the program was not run
+        saved = json.loads((self.home / ANTIGRAVITY.file).read_text(encoding="utf-8"))
+        self.assertIn("tfs", saved["mcpServers"])
+        self.assertEqual(commands.calls, [])
 
     def test_given_the_shipped_manifest_then_the_links_are_exact(self):
         links = load_manifests()["health_auto_export"]["setup"]["links"]

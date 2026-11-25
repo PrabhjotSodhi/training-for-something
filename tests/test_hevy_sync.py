@@ -137,7 +137,7 @@ class SetupSyncTest(HevyTestCase):
         # WHEN setup connects Hevy
         out, _ = self.run_setup()
         # THEN the workout is stored and setup reports it
-        self.assertIn("1 record stored", out)
+        self.assertIn("Hevy: 1 workout, most recent Friday 20 Nov", out)
         self.assertEqual(self.sources(), [("hevy", 1)])
         with contextlib.closing(connect(config.db_path())) as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM source_records").fetchone()[0], 1)
