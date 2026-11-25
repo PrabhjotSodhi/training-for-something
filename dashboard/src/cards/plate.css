@@ -182,3 +182,45 @@
   border-radius: 50%;
   border: 2px solid var(--ink);
 }
+
+@media (max-width: 699px) {
+  .plate {
+    min-height: 0;
+  }
+
+  .plate-body {
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    gap: 24px;
+    padding: 24px 20px;
+    overflow-wrap: anywhere;
+  }
+
+  .plate-road:not(.first-run-waiting) {
+    order: -1;
+  }
+
+  .plate-road-top {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .plate-road-top b {
+    font: var(--title);
+  }
+
+  .plate-hero {
+    font-size: clamp(36px, 11vw, 64px);
+    white-space: normal;
+  }
+
+  .plate-scale {
+    margin: 16px 0 24px;
+  }
+
+  .plate-today dd {
+    margin: 0;
+    text-align: right;
+  }
+}

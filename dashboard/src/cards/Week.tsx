@@ -1,3 +1,4 @@
+import { type CSSProperties, useState } from "react";
 import type { components } from "../api";
 import "./week.css";
 
@@ -16,6 +17,7 @@ const number = (value: number) => value.toLocaleString(undefined, { maximumFract
 const sportName = (sport: string) => sports[sport] ?? sport[0].toUpperCase() + sport.slice(1);
 
 export function Week({ week }: { week: WeekProps }) {
+  const [openDay, setOpenDay] = useState<string>();
   const sessions = week.days.flatMap((day) => day.sessions);
   const done = sessions.filter((session) => session.state === "done").length;
   const planned = week.planned_sessions > 0;
@@ -29,21 +31,38 @@ export function Week({ week }: { week: WeekProps }) {
             const when = new Date(`${day.date}T00:00`);
             const weekday = when.toLocaleDateString(undefined, { weekday: "short" });
             const now = day.date === week.today;
+            const tileClass = (session: WeekProps["days"][number]["sessions"][number]) =>
+              `week-tile ${session.sport} ${now && session.state === "planned" ? "today" : session.state}`;
+            const label = <span className="week-label">{weekday} <span>{when.getDate()}</span></span>;
             return (
-              <div key={day.date} className={now ? "week-day now" : "week-day"}>
-                <div className="week-label">
-                  {weekday} <span>{when.getDate()}</span>
+              <div key={day.date} className={now ? "week-day now" : "week-day"} data-open={openDay === day.date}>
+                <div className={day.sessions.length > 0 ? "week-day-heading has-sessions" : "week-day-heading"}>
+                  {label}
+                  {day.sessions.length === 0 && <div className="week-rest">Rest</div>}
                 </div>
-                {day.sessions.length === 0 && <div className="week-rest">Rest</div>}
+                {day.sessions.length > 0 && (
+                  <button
+                    type="button"
+                    className="week-day-button"
+                    aria-label={`${weekday} ${when.getDate()}, ${day.sessions.length} ${day.sessions.length === 1 ? "session" : "sessions"}`}
+                    aria-expanded={openDay === day.date}
+                    onClick={() => setOpenDay(openDay === day.date ? undefined : day.date)}
+                  >
+                    {label}
+                    {day.sessions.slice(0, 2).map((session, index) => (
+                      <span key={index} className={tileClass(session)} aria-hidden="true" />
+                    ))}
+                    {day.sessions.length > 2 && <span>+{day.sessions.length - 2}</span>}
+                  </button>
+                )}
                 {day.sessions.map((session, index) => {
                   const amount = `${number(session.amount)} ${session.unit}`;
                   const time = session.minutes ? `${Math.round(session.minutes)} min` : "No time";
-                  const look = now && session.state === "planned" ? "today" : session.state;
                   return (
                     <div
                       key={index}
-                      className={`week-tile ${session.sport} ${look}`}
-                      style={{ height: Math.max(46, (session.minutes ?? 0) * 1.05) }}
+                      className={tileClass(session)}
+                      style={{ "--tile-height": `${Math.max(46, (session.minutes ?? 0) * 1.05)}px` } as CSSProperties}
                       tabIndex={0}
                       aria-label={`${weekday} ${when.getDate()}, ${session.name}, ${amount}, ${time}, ${session.state}`}
                     >
