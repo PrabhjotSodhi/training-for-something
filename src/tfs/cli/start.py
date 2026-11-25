@@ -12,7 +12,7 @@ from tfs import config, password_store
 from tfs.connectors.core.contract import load_manifests
 from tfs.engine import Engine, EngineAlreadyRunningError, PortInUseError
 from tfs.persistence import sqlite
-from tfs.persistence.migrations import DatabaseTooNewError
+from tfs.persistence.migrations import BackupFailedError, DatabaseTooNewError
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -37,10 +37,13 @@ def run(args: argparse.Namespace) -> int:
         EngineAlreadyRunningError,
         PortInUseError,
         DatabaseTooNewError,
+        BackupFailedError,
         password_store.PasswordStoreError,
     ) as error:
         print(error, file=sys.stderr)
         return 1
+    if engine.backup_path is not None:
+        print(f"Saved a backup of your database before updating it: {engine.backup_path}")
     try:
         manifests = load_manifests()
         push_connectors = [

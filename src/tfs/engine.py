@@ -58,6 +58,7 @@ class Engine:
         self._home_wifi_port = home_wifi_port
         self._now_fn = now_fn or (lambda: datetime.now(UTC))
         self._tz = tz
+        self.backup_path: Path | None = None
         self._running: list[WebServer] = []
         # Each job is the retry_failed flag for one process_pending run. None ends the worker.
         self._jobs: queue.Queue[bool | None] = queue.Queue()
@@ -183,10 +184,13 @@ class Engine:
         except (OSError, ValueError, sqlite3.Error):
             logger.error("Fetching failed. TFS tries again in a minute.")
 
+    def _remember_backup(self, path: Path) -> None:
+        self.backup_path = path
+
     def _prepare_data(self, db_path: Path) -> None:
         (self._data_dir / "raw").mkdir(parents=True, exist_ok=True)
         with contextlib.closing(connect(db_path)) as conn:
-            migrate(conn)
+            migrate(conn, on_backup=self._remember_backup)
             with transaction(conn):
                 scores.rebuild_if_outdated(conn)
             scan_raw(conn, self._data_dir)

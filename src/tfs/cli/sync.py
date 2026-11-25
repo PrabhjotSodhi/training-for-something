@@ -9,7 +9,7 @@ from tfs import config
 from tfs.connectors.core.contract import load_manifests, to_utc_text
 from tfs.importer.session import sync
 from tfs.persistence import sqlite
-from tfs.persistence.migrations import DatabaseTooNewError, migrate
+from tfs.persistence.migrations import BackupFailedError, DatabaseTooNewError, migrate
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -46,7 +46,7 @@ def run(args: argparse.Namespace) -> int:
                 print(result.summary, file=sys.stderr if result.needs_you else sys.stdout)
                 if result.needs_you:
                     exit_code = 1
-    except (DatabaseTooNewError, ValueError) as error:
+    except (DatabaseTooNewError, BackupFailedError, ValueError) as error:
         print(error, file=sys.stderr)
         return 1
     return exit_code

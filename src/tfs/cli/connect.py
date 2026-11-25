@@ -12,7 +12,7 @@ from tfs import config, password_store
 from tfs.connectors.core import runner
 from tfs.connectors.core.contract import load_manifest, load_manifests, to_utc_text
 from tfs.persistence import sqlite
-from tfs.persistence.migrations import DatabaseTooNewError, migrate
+from tfs.persistence.migrations import BackupFailedError, DatabaseTooNewError, migrate
 from tfs.scheduling import jobs
 
 _CONNECT_TIMEOUT_S = 60
@@ -44,6 +44,7 @@ def run(args: argparse.Namespace) -> int:
         runner.RunnerFailedError,
         password_store.PasswordStoreError,
         DatabaseTooNewError,
+        BackupFailedError,
     ) as error:
         print(error, file=sys.stderr)
         return 1

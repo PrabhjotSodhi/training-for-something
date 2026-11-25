@@ -2,6 +2,9 @@
 
 import re
 import sqlite3
+from collections.abc import Callable
+from contextlib import closing, suppress
+from datetime import UTC, datetime
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
@@ -13,16 +16,33 @@ class DatabaseTooNewError(Exception):
     """The database was made by a newer version of TFS than this one."""
 
 
-def migrate(conn: sqlite3.Connection, migrations_dir: Path | None = None) -> int:
-    """Apply every migration above user_version in one transaction and return the schema number."""
+class BackupFailedError(Exception):
+    """The copy of the database that comes before a migration could not be saved."""
+
+
+def migrate(
+    conn: sqlite3.Connection,
+    migrations_dir: Path | None = None,
+    on_backup: Callable[[Path], None] | None = None,
+) -> int:
+    """Apply every migration above user_version in one transaction and return the schema number.
+
+    An existing database is copied to backups/ in its folder first. on_backup gets the copy's path.
+    """
     files = _numbered_files(_folder(migrations_dir))
     newest = len(files)
-    if _schema_number(conn, newest) == newest:
+    current = _schema_number(conn, newest)
+    if current == newest:
         return newest
     if conn.in_transaction:
         raise sqlite3.ProgrammingError(
             "Finish or roll back the open transaction before migrating the database."
         )
+    database_file = conn.execute("PRAGMA database_list").fetchone()[2]
+    if current > 0 and database_file:
+        backup = _back_up(conn, Path(database_file).parent / "backups", current)
+        if on_backup is not None:
+            on_backup(backup)
     _apply(conn, files)
     return newest
 
@@ -73,6 +93,31 @@ def _schema_number(conn: sqlite3.Connection, newest: int) -> int:
             "Install that version, or restore a backup."
         )
     return current
+
+
+_BACKUPS_KEPT = 2
+
+
+def _back_up(conn: sqlite3.Connection, folder: Path, schema_number: int) -> Path:
+    """Copy the database into folder, keep the newest backups and return the new copy's path."""
+    target = folder / f"tfs-v{schema_number}-{datetime.now(UTC):%Y-%m-%d}.db"
+    partial = target.with_suffix(".tmp")
+    try:
+        folder.mkdir(exist_ok=True)
+        with closing(sqlite3.connect(partial)) as copy:
+            conn.backup(copy)
+        partial.replace(target)
+    except (OSError, sqlite3.Error) as error:
+        with suppress(OSError):
+            partial.unlink()
+        raise BackupFailedError(
+            f"TFS could not save a backup in {folder} ({error}), so it did not update your "
+            "database. Free some disk space or fix the folder, then try again."
+        ) from error
+    old = sorted(folder.glob("tfs-v*.db"), key=lambda path: path.stat().st_mtime, reverse=True)
+    for path in old[_BACKUPS_KEPT:]:
+        path.unlink()
+    return target
 
 
 def _apply(conn: sqlite3.Connection, files: dict[int, Traversable]) -> None:
