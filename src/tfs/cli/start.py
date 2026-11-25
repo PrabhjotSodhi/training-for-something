@@ -27,8 +27,8 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.set_defaults(run=run)
 
 
-def run(args: argparse.Namespace) -> int:
-    """Run the engine until Ctrl+C and return the exit code."""
+def run(args: argparse.Namespace, *, footer: str = "") -> int:
+    """Run the engine until Ctrl+C and return the exit code. Print the footer under the banner."""
     home_wifi = args.home_wifi or _push_source_enabled()
     engine = Engine(config.data_dir(), home_wifi=home_wifi)
     try:
@@ -64,6 +64,8 @@ def run(args: argparse.Namespace) -> int:
             ),
             flush=True,
         )
+        if footer:
+            print(footer, flush=True)
         if args.open:
             webbrowser.open(f"http://{config.SCREEN_HOST}:{config.SCREEN_PORT}/")
         # Ctrl+C interrupts sleep at once. The loop is only here because sleep needs a finite time.

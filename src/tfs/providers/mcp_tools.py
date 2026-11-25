@@ -60,7 +60,7 @@ def is_connected(
     tool: Tool, program: str, home: Path, run: Callable[[list[str]], tuple[bool, str]]
 ) -> bool:
     """Say whether the tool already has the TFS server: its list names tfs, or its file holds our entry."""
-    if tool.command:
+    if not tool.file:
         ok, output = run([program, *tool.list_argv])
         return ok and re.search(r"\btfs\b", output) is not None
     try:
@@ -79,7 +79,7 @@ def add(
 ) -> str | None:
     """Add the TFS server to one tool. Return the problem, or None on success or when already added."""
     tfs = _tfs()
-    if tool.command:
+    if not tool.file:
         ok, output = run([program, *(a.replace("{tfs}", tfs) for a in tool.argv)])
         lines = output.strip().splitlines()
         return None if ok else (lines[-1] if lines else "the command failed")

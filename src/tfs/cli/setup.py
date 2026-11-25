@@ -85,9 +85,8 @@ def run(args: argparse.Namespace) -> int:
     except _NO_CONSOLE:
         print("\nRun tfs setup in PowerShell, Windows Terminal or Command Prompt.", file=sys.stderr)
         return 1
-    print("Keep this window open. TFS receives phone data only while it runs.")
-    _print_next_step(first_tool)
-    return start.run(argparse.Namespace(home_wifi=False, open=True))
+    footer = f"Keep this window open. TFS receives phone data only while it runs.\n{_next_step(first_tool)}"
+    return start.run(argparse.Namespace(home_wifi=False, open=True), footer=footer)
 
 
 def fill_link(template: str, push_url: str, token: str) -> str:
@@ -180,16 +179,14 @@ def _connect_ai_tools() -> providers.Provider | mcp_tools.Tool | None:
     return next((tool for tool in programs if tool in connected), None)
 
 
-def _print_next_step(tool: providers.Provider | mcp_tools.Tool | None) -> None:
+def _next_step(tool: providers.Provider | mcp_tools.Tool | None) -> str:
     if tool is None:
-        print("To connect your AI tool, run tfs setup again.")
-        return
+        return "To connect your AI tool, run tfs setup again."
     if tool.command:
-        print(f"Open a new terminal and run `{tool.command}`.")
+        opening = f"Open a new terminal and run `{tool.command}`."
     else:
-        print(f"Open {tool.label} and start a new chat.")
-    print("If it was already open, restart it so it loads TFS.")
-    print(f"Paste this: {providers.FIRST_MESSAGE}")
+        opening = f"If {tool.label} is open, restart it, then start a new chat."
+    return f"{opening}\nPaste this: {providers.FIRST_MESSAGE}"
 
 
 def _tool_choice(
@@ -292,14 +289,21 @@ def _connect_with_asks(name: str, manifest: dict, opens: str | None) -> None:
         answers[ask["key"]] = _ask(prompt(f"{ask['label']}:"))
     with _spinner(f"Connecting {manifest['label']}"):
         connect_source(name, answers)
-        summary = _first_sync(name, manifest["label"]) if manifest["routes"]["fetch"] else None
-    print(f"  ✔ {summary}" if summary else f"  Connected {manifest['label']}.")
+        arrived, summary = (
+            _first_sync(name, manifest["label"]) if manifest["routes"]["fetch"] else (None, None)
+        )
+    if arrived:
+        print(f"  ✔ {arrived}")
+        return
+    print(f"  Connected {manifest['label']}.")
+    if summary:
+        print(f"  {summary}")
 
 
-def _first_sync(name: str, label: str) -> str | None:
+def _first_sync(name: str, label: str) -> tuple[str | None, str]:
     """Fetch once so a rejected key shows now. A failed sync turns the source off and raises.
 
-    Return what arrived, or None when the app holds no workouts yet.
+    Return what arrived, or None when the app holds no workouts yet, and the sync's own message.
     """
     with contextlib.closing(sqlite.connect(config.db_path())) as conn:
         result = sync(conn, config.data_dir(), name, now=to_utc_text(datetime.now(UTC)))
@@ -313,7 +317,7 @@ def _first_sync(name: str, label: str) -> str | None:
             (name,),
         ).fetchone()
     if not count:
-        return None
+        return None, result.summary
     day = date.fromisoformat(latest)
     noun = "workout" if count == 1 else "workouts"
-    return f"{label}: {count} {noun}, most recent {day:%A} {day.day} {day:%b}"
+    return f"{label}: {count} {noun}, most recent {day:%A} {day.day} {day:%b}", result.summary
