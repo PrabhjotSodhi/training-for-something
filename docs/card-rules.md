@@ -54,6 +54,14 @@ Plus Jakarta Sans for everything, with tabular figures on numbers. The font file
 6. No forecast shows "No forecast yet". A row with no value today shows "No data". No plan items hides "Week N of M".
 7. Week 1 is the week the plan starts. M is the weeks from the plan start to the goal date, rounded up.
 
+## First-run panel
+
+1. While no goal is saved, the panel sits where the plate goes. Once any goal exists the panel is gone.
+2. It uses the plate itself in the default colour, orange: the same gradient, shade, size and white text. Its three groups fill the plate's three places.
+3. Top left, where the forecast sits: "Your latest workout", the duration as the 96 px number with "min", and under it one line with the type, date and source app, such as "Run · Wed 25 Nov · Hevy". With no workouts the number is replaced by "No workouts yet" in the number style. It never shows a zero.
+4. Top right, where Today sits: "Next step", one row "Set your first training goal in your AI tool", then a solid white "Copy first message" button with dark text, the one solid shape on the plate. The button copies the same first message as setup and reads "Copied. Paste it into your AI tool." for 2 seconds. If the copy fails, the message shows as text under the button.
+5. Along the bottom, where the timeline sits: one caption line per turned on app with no records, "Waiting for the first data from {app}." A phone app adds "Keep the TFS window open." Nothing shows there when no app is waiting.
+
 ## This week card
 
 1. The card spans both columns. It shows Monday to Sunday of the current week, one column per day, today's column marked.

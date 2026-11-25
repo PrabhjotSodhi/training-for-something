@@ -1,0 +1,37 @@
+.first-run-type::first-letter,
+.first-run-workout::first-letter {
+  text-transform: uppercase;
+}
+
+.first-run-workout {
+  margin-top: 16px;
+  color: var(--ink-2);
+}
+
+.first-run-step {
+  padding: 10px 0;
+  border-top: 1px solid var(--hair);
+}
+
+.first-run-copy {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px 18px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--deep);
+  font: var(--body);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.first-run-waiting {
+  color: var(--ink-2);
+  font: var(--caption);
+}
+
+.first-run-message {
+  margin-top: 12px;
+  user-select: text;
+}

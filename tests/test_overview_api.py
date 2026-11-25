@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from tests.helpers import insert_file, insert_workout, open_database
-from tfs import config
+from tfs import config, providers
 from tfs.web.overview import read_overview
 from tfs.web.server import make_server
 
@@ -138,6 +138,61 @@ class OverviewApiTest(unittest.TestCase):
         # WHEN the overview is requested
         # THEN the plate is null
         self.assertIsNone(self.get()["plate"])
+
+    def test_no_goal_and_a_workout_puts_the_latest_workout_in_the_first_run_panel(self):
+        # GIVEN no goal and two workouts
+        self.workout("w1", "2026-11-20", "run", "Easy run", 40, km=7)
+        self.workout("w2", "2026-11-22", "strength", "Legs", 55, sets=6)
+        # WHEN the overview is requested
+        first_run = self.get()["first_run"]
+        # THEN the panel holds the newest workout and the first message
+        self.assertEqual(
+            first_run["workout"],
+            {"date": "2026-11-22", "type": "strength", "minutes": 55, "source": "invented"},
+        )
+        self.assertEqual(first_run["message"], providers.FIRST_MESSAGE)
+
+    def test_no_goal_and_no_workouts_still_offers_the_first_message(self):
+        # GIVEN no goal and no workouts
+        # WHEN the overview is requested
+        first_run = self.get()["first_run"]
+        # THEN the panel holds no workout and the first message
+        self.assertIsNone(first_run["workout"])
+        self.assertEqual(first_run["message"], providers.FIRST_MESSAGE)
+
+    def test_an_enabled_source_with_no_records_is_waiting_and_a_phone_source_says_so(self):
+        # GIVEN a file source and a phone source with no records, a turned off source and a
+        # source with one live record
+        self.conn.execute("INSERT INTO sources(connector) VALUES ('hevy')")
+        self.conn.execute("INSERT INTO sources(connector) VALUES ('testapp')")
+        insert_file(self.conn, 1, "2026-10-01T00:00:00Z", "testapp")
+        insert_workout(self.conn, "r1", "testapp")
+        self.conn.execute("INSERT INTO sources(connector) VALUES ('health_auto_export')")
+        self.conn.execute("INSERT INTO sources(connector, enabled) VALUES ('garmin', 0)")
+        # WHEN the overview is requested
+        waiting = self.get()["first_run"]["waiting"]
+        # THEN each enabled source with no records is named, and only the phone one is flagged
+        self.assertCountEqual(
+            waiting,
+            [
+                {"app": "Health Auto Export", "phone": True},
+                {"app": "Hevy", "phone": False},
+            ],
+        )
+
+    def test_a_goal_means_no_first_run_panel(self):
+        # GIVEN a goal
+        self.conn.execute("INSERT INTO goals VALUES ('g1', 'race', '2027-04-11', '{}')")
+        # WHEN the overview is requested
+        # THEN there is no panel
+        self.assertIsNone(self.get()["first_run"])
+
+    def test_a_goal_dated_before_today_means_no_first_run_panel(self):
+        # GIVEN a goal whose date has passed
+        self.conn.execute("INSERT INTO goals VALUES ('g1', 'race', '2026-01-01', '{}')")
+        # WHEN the overview is requested
+        # THEN there is no panel
+        self.assertIsNone(self.get()["first_run"])
 
     def test_the_plate_shows_the_forecast_on_a_scale_with_the_target_and_the_days_and_weeks(self):
         # GIVEN a goal on 2027-04-11 aiming at 180 minutes, a forecast of 175 to 185 and a plan

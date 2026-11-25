@@ -23,18 +23,8 @@ const labels: Record<string, string> = {
 
 const stillSetting = "(prefers-reduced-motion: reduce)";
 
-export function Plate({ plate }: { plate: PlateProps }) {
-  const data = plate.data;
-  if (!data) return null;
-  const [deep, goal, neighbour] = colours[plate.colour];
-  const forecast = data.forecast;
-  const progress = data.week && data.weeks ? (data.week / data.weeks) * 100 : 0;
-  const date = new Date(`${data.date}T00:00`).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-
+export function PlateShell({ colour, children }: { colour: PlateProps["colour"]; children: React.ReactNode }) {
+  const [deep, goal, neighbour] = colours[colour];
   return (
     <section className="plate" style={{ "--deep": deep } as React.CSSProperties}>
       <MeshGradient
@@ -47,62 +37,78 @@ export function Plate({ plate }: { plate: PlateProps }) {
         speed={window.matchMedia(stillSetting).matches ? 0 : 0.1}
       />
       <div className="plate-shade" />
-      <div className="plate-body">
-        <div className="plate-forecast">
-          <div className="plate-label">{forecast ? forecast.label : "Forecast"}</div>
-          {forecast ? (
-            <>
-              <div className="plate-hero">
-                {forecast.low}
-                <span> to </span>
-                {forecast.high}
-                {forecast.unit && <span className="plate-unit">{forecast.unit}</span>}
-              </div>
-              <div className="plate-scale">
-                <span
-                  className="plate-fill"
-                  style={{ left: `${forecast.start}%`, width: `${forecast.end - forecast.start}%` }}
-                />
-                {forecast.target !== null && (
-                  <span className="plate-target" style={{ left: `${forecast.target}%` }} />
-                )}
-                {forecast.target !== null && (
-                  <span className="plate-target-label" style={{ left: `${forecast.target}%` }}>
-                    Goal {forecast.target_text}
-                  </span>
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="plate-title">No forecast yet</div>
-          )}
+      <div className="plate-body">{children}</div>
+    </section>
+  );
+}
+
+export function Plate({ plate }: { plate: PlateProps }) {
+  const data = plate.data;
+  if (!data) return null;
+  const forecast = data.forecast;
+  const progress = data.week && data.weeks ? (data.week / data.weeks) * 100 : 0;
+  const date = new Date(`${data.date}T00:00`).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+
+  return (
+    <PlateShell colour={plate.colour}>
+      <div className="plate-forecast">
+        <div className="plate-label">{forecast ? forecast.label : "Forecast"}</div>
+        {forecast ? (
+          <>
+            <div className="plate-hero">
+              {forecast.low}
+              <span> to </span>
+              {forecast.high}
+              {forecast.unit && <span className="plate-unit">{forecast.unit}</span>}
+            </div>
+            <div className="plate-scale">
+              <span
+                className="plate-fill"
+                style={{ left: `${forecast.start}%`, width: `${forecast.end - forecast.start}%` }}
+              />
+              {forecast.target !== null && (
+                <span className="plate-target" style={{ left: `${forecast.target}%` }} />
+              )}
+              {forecast.target !== null && (
+                <span className="plate-target-label" style={{ left: `${forecast.target}%` }}>
+                  Goal {forecast.target_text}
+                </span>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="plate-title">No forecast yet</div>
+        )}
+      </div>
+      <div className="plate-today">
+        <div className="plate-label">Today</div>
+        <dl>
+          {data.today.map((row) => (
+            <div key={row.name}>
+              <dt>{labels[row.name]}</dt>
+              <dd>{row.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+      <div className="plate-road">
+        <div className="plate-road-top">
+          <b>{data.goal}</b> {date}
         </div>
-        <div className="plate-today">
-          <div className="plate-label">Today</div>
-          <dl>
-            {data.today.map((row) => (
-              <div key={row.name}>
-                <dt>{labels[row.name]}</dt>
-                <dd>{row.value}</dd>
-              </div>
-            ))}
-          </dl>
+        <div className="plate-line">
+          <span className="plate-line-fill" style={{ width: `${progress}%` }} />
+          {data.week && <span className="plate-dot" style={{ left: `${progress}%` }} />}
+          <span className="plate-end" />
         </div>
-        <div className="plate-road">
-          <div className="plate-road-top">
-            <b>{data.goal}</b> {date}
-          </div>
-          <div className="plate-line">
-            <span className="plate-line-fill" style={{ width: `${progress}%` }} />
-            {data.week && <span className="plate-dot" style={{ left: `${progress}%` }} />}
-            <span className="plate-end" />
-          </div>
-          <div className="plate-road-bottom">
-            <span>{data.week && `Week ${data.week} of ${data.weeks}`}</span>
-            <span>{data.days_to_go} days to go</span>
-          </div>
+        <div className="plate-road-bottom">
+          <span>{data.week && `Week ${data.week} of ${data.weeks}`}</span>
+          <span>{data.days_to_go} days to go</span>
         </div>
       </div>
-    </section>
+    </PlateShell>
   );
 }
