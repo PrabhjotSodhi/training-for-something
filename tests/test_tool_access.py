@@ -298,17 +298,19 @@ class ToolAccessTest(unittest.TestCase):
                 "distance_km",
                 "avg_hr",
                 "source",
+                "set_type",
+                "exercise_template_id",
             ],
         )
         self.assertEqual(
             result["rows"],
             [
-                ["a", 1, "lap", "Km 1-3", None, None, 15.0, 3.0, 147.0, "garmin"],
-                ["a", 2, "lap", "Km 4-6", None, None, 15.0, 3.0, 148.0, "garmin"],
-                ["a", 3, "lap", "Km 7-10", None, None, 20.8, 4.24, 149.0, "garmin"],
-                ["c", 1, "set", "Bench press", 8, 60.0, None, None, None, "hevy"],
-                ["c", 2, "set", "Bench press", 8, 62.5, None, None, None, "hevy"],
-                ["c", 3, "set", "Row", 10, 50.0, None, None, None, "hevy"],
+                ["a", 1, "lap", "Km 1-3", None, None, 15.0, 3.0, 147.0, "garmin", None, None],
+                ["a", 2, "lap", "Km 4-6", None, None, 15.0, 3.0, 148.0, "garmin", None, None],
+                ["a", 3, "lap", "Km 7-10", None, None, 20.8, 4.24, 149.0, "garmin", None, None],
+                ["c", 1, "set", "Bench press", 8, 60.0, None, None, None, "hevy", None, None],
+                ["c", 2, "set", "Bench press", 8, 62.5, None, None, None, "hevy", None, None],
+                ["c", 3, "set", "Row", 10, 50.0, None, None, None, "hevy", None, None],
             ],
         )
 

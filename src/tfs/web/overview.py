@@ -14,7 +14,7 @@ from tfs import providers
 from tfs.connectors.core.contract import load_manifests
 from tfs.diagnostics import is_stale
 from tfs.mcp.tool_access import open_reader, query
-from tfs.proposals.models import Plate, SetsByMuscleCard, SleepCard, TrendCard, WeekCard
+from tfs.proposals.models import LiftCard, Plate, SetsByMuscleCard, SleepCard, TrendCard, WeekCard
 from tfs.scores.readiness import normal_band
 from tfs.web.catalogue import (
     DEFAULT_CARDS,
@@ -187,6 +187,36 @@ class SetsByMuscleOverviewCard(SetsByMuscleCard):
     data: SetsByMuscleData | None = None
 
 
+class LiftSession(BaseModel):
+    """The heaviest working weight in one workout."""
+
+    date: str
+    kg: float
+
+
+class LiftExercise(BaseModel):
+    """One exercise's session weights and weekly volume in kg."""
+
+    id: str
+    name: str
+    sessions: list[LiftSession]
+    weekly_kg: list[float | None]
+
+
+class LiftData(BaseModel):
+    """Recent weighted exercises, most logged first, with Monday dates for the bars."""
+
+    selected: str
+    weeks: list[str]
+    exercises: list[LiftExercise]
+
+
+class LiftOverviewCard(LiftCard):
+    """The lift card with its numbers."""
+
+    data: LiftData
+
+
 class FirstRunWorkout(BaseModel):
     """The latest workout, with the app it came from when known."""
 
@@ -218,7 +248,11 @@ class Overview(BaseModel):
     first_run: FirstRun | None
     cards: list[
         Annotated[
-            WeekOverviewCard | SleepOverviewCard | TrendOverviewCard | SetsByMuscleOverviewCard,
+            WeekOverviewCard
+            | SleepOverviewCard
+            | TrendOverviewCard
+            | SetsByMuscleOverviewCard
+            | LiftOverviewCard,
             Field(discriminator="type"),
         ]
     ]
@@ -233,7 +267,7 @@ def _rows(connection, sql: str) -> list[list]:
 
 
 def _has_data(card: dict, have: set[str]) -> bool:
-    if card["type"] == "week":
+    if card["type"] in ("week", "lift"):
         return True
     if card["type"] == "sleep":
         return "sleep_asleep" in have
@@ -632,14 +666,64 @@ def _trend_data(connection, card: dict, today: date) -> TrendData | None:
     )
 
 
+def _lift_data(connection, selected: str | None, today: date) -> LiftData | None:
+    first_week = today - timedelta(weeks=11, days=today.weekday())
+    weeks = [(first_week + timedelta(weeks=i)).isoformat() for i in range(12)]
+    since_session = today - timedelta(days=83)
+    rows = connection.execute(
+        """
+        WITH sessions AS (
+            SELECT exercise_template_id, parts.label, local_date, start_utc, workout_id,
+                   count(*) AS sets, max(weight_kg) AS heaviest, sum(weight_kg * reps) AS volume
+            FROM coach_v1_workouts JOIN coach_v1_workout_parts parts USING (workout_id)
+            WHERE local_date BETWEEN ? AND ? AND part_kind = 'set'
+              AND coalesce(set_type, '') != 'warmup' AND exercise_template_id != ''
+            GROUP BY workout_id, exercise_template_id
+        )
+        SELECT exercise_template_id, label, local_date, sets, heaviest, volume FROM sessions
+        WHERE exercise_template_id IN (SELECT exercise_template_id FROM sessions WHERE heaviest > 0)
+        ORDER BY local_date, start_utc, workout_id
+        """,
+        ((today - timedelta(days=89)).isoformat(), today.isoformat()),
+    )
+    exercises: dict[str, LiftExercise] = {}
+    counts: dict[str, int] = {}
+    for exercise_id, label, day, sets, heaviest, volume in rows:
+        if exercise_id not in exercises:
+            exercises[exercise_id] = LiftExercise(
+                id=exercise_id,
+                name=label or exercise_id,
+                sessions=[],
+                weekly_kg=[None] * len(weeks),
+            )
+            counts[exercise_id] = 0
+        exercise = exercises[exercise_id]
+        exercise.name = label or exercise.name
+        counts[exercise_id] += sets
+        local_day = date.fromisoformat(day)
+        if local_day >= since_session and heaviest is not None:
+            exercise.sessions.append(LiftSession(date=day, kg=heaviest))
+        if local_day >= first_week and volume is not None:
+            week = (local_day - first_week).days // 7
+            exercise.weekly_kg[week] = (exercise.weekly_kg[week] or 0) + volume
+    if not exercises:
+        return None
+    ranked = sorted(exercises.values(), key=lambda e: (-counts[e.id], e.name.casefold(), e.id))
+    return LiftData(
+        selected=selected if selected in exercises else ranked[0].id, weeks=weeks, exercises=ranked
+    )
+
+
 def _card_data(
     connection, card: dict, now: datetime
-) -> WeekData | SleepData | TrendData | SetsByMuscleData | None:
+) -> WeekData | SleepData | TrendData | SetsByMuscleData | LiftData | None:
     today = now.date()
     if card["type"] == "week":
         return _week_data(connection, now)
     if card["type"] == "sets_by_muscle":
         return _sets_by_muscle_data(connection, today)
+    if card["type"] == "lift":
+        return _lift_data(connection, card.get("exercise"), today)
     if card["type"] == "sleep":
         return _sleep_data(connection, card.get("target_h"), today)
     return _trend_data(connection, card, today)
@@ -651,7 +735,7 @@ def _cards(connection, cards: list[dict], now: datetime) -> list[dict]:
 
 
 def read_overview(db_path: Path, now: datetime) -> Overview:
-    """Return the saved layout, or the default one built from the last 28 days of data.
+    """Return the saved layout, or the default one built from recent data.
 
     now is the local time, so today and the end of each day follow the person's clock.
     """

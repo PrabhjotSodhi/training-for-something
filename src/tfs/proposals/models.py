@@ -198,12 +198,22 @@ class SetsByMuscleCard(_Model):
     type: Literal["sets_by_muscle"]
 
 
+class LiftCard(_Model):
+    """Lift progress for an optional exercise template id."""
+
+    type: Literal["lift"]
+    exercise: Text = None
+
+
 class Layout(_Model):
     """The plate and the cards below it."""
 
     plate: Plate
     cards: list[
-        Annotated[WeekCard | SleepCard | TrendCard | SetsByMuscleCard, Field(discriminator="type")]
+        Annotated[
+            WeekCard | SleepCard | TrendCard | SetsByMuscleCard | LiftCard,
+            Field(discriminator="type"),
+        ]
     ]
 
 

@@ -1,6 +1,6 @@
 """The cards, trend metrics and plate rows the Overview can show."""
 
-CARD_TYPES = ("week", "sleep", "trend", "sets_by_muscle")
+CARD_TYPES = ("week", "sleep", "trend", "sets_by_muscle", "lift")
 TREND_METRICS = ("resting_hr", "hrv_sdnn", "weight", "vo2_max", "training_load")
 TREND_TITLES = {
     "resting_hr": "Resting heart rate",
@@ -32,6 +32,7 @@ DEFAULT_CARDS = (
     {"type": "trend", "metric": "training_load"},
     {"type": "sleep"},
     {"type": "sets_by_muscle"},
+    {"type": "lift"},
     {"type": "trend", "metric": "resting_hr"},
     {"type": "trend", "metric": "hrv_sdnn"},
 )

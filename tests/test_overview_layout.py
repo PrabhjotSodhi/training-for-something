@@ -59,9 +59,9 @@ class OverviewLayoutTest(unittest.TestCase):
         # THEN the view returns that layout
         self.assertEqual(self.cards(), [['[{"metric":"resting_hr","type":"trend"}]']])
         # WHEN a second layout is approved
-        self.save(overview({"type": "week"}))
+        self.save(overview({"type": "lift", "exercise": "press-a"}))
         # THEN the view returns the second
-        self.assertEqual(self.cards(), [['[{"type":"week"}]']])
+        self.assertEqual(self.cards(), [['[{"exercise":"press-a","type":"lift"}]']])
 
     def test_null_returns_to_the_default_and_an_unknown_metric_is_refused(self) -> None:
         # GIVEN a saved layout

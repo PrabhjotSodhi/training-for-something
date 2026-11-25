@@ -65,7 +65,9 @@ CREATE TEMP VIEW coach_v1_workout_parts AS
 SELECT g.id AS workout_id, p.seq, p.part_kind, p.label, p.reps, p.weight_kg,
   round(p.duration_s / 60.0, 1) AS duration_min,
   round(p.distance_m / 1000.0, 2) AS distance_km,
-  p.avg_hr, r.connector AS source
+  p.avg_hr, r.connector AS source,
+  json_extract(p.extras_json, '$.set_type') AS set_type,
+  json_extract(p.extras_json, '$.exercise_template_id') AS exercise_template_id
 FROM main.session_groups g
 JOIN main.session_parts p ON p.record_id = (
   SELECT m.record_id FROM main.session_group_members m

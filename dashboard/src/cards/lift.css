@@ -1,0 +1,27 @@
+.lift .trend-head,
+.lift-controls {
+  flex-wrap: wrap;
+}
+
+.lift select {
+  max-width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+  font: var(--body);
+  cursor: pointer;
+}
+
+.lift-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.lift-unit {
+  margin-top: 16px;
+}
