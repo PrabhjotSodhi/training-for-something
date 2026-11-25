@@ -5,6 +5,7 @@ import contextlib
 import ctypes
 import hashlib
 import json
+import logging
 import os
 import re
 import shlex
@@ -20,6 +21,8 @@ from tfs import __version__, config
 from tfs.connectors.core.runner import http_get
 from tfs.engine import tfs_answers_ping
 from tfs.providers import PROVIDERS, mcp_tools
+
+logger = logging.getLogger(__name__)
 
 RELEASES_URL = "https://api.github.com/repos/PrabhjotSodhi/training-for-something/releases"
 RUNNING_FILE = "running"
@@ -210,7 +213,12 @@ def check(data_dir: Path, *, fetch: Callable[[str], bytes] = _fetch) -> str | No
     newer = found[0] if found else None
     told = _cache(data_dir).get("told")
     cache = {"current": __version__, "newer": newer, "told": newer or told}
-    (data_dir / CHECK_FILE).write_text(json.dumps(cache), encoding="utf-8")
+    unfinished = data_dir / f"{CHECK_FILE}.tmp"
+    try:
+        unfinished.write_text(json.dumps(cache), encoding="utf-8")
+        unfinished.replace(data_dir / CHECK_FILE)
+    except OSError as error:
+        logger.warning("TFS could not save its update check, and tries again tomorrow: %s", error)
     return f"TFS {newer} is ready. Run tfs update." if newer and newer != told else None
 
 
@@ -222,9 +230,10 @@ def available(data_dir: Path) -> str | None:
 
 def _cache(data_dir: Path) -> dict:
     try:
-        return json.loads((data_dir / CHECK_FILE).read_text(encoding="utf-8"))
+        cache = json.loads((data_dir / CHECK_FILE).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
+    return cache if isinstance(cache, dict) else {}
 
 
 def _processes() -> dict[int, dict]:

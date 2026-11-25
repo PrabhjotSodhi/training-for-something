@@ -287,6 +287,23 @@ class UpdateCheckTest(unittest.TestCase):
         # THEN
         self.assertIsNone(notice)
 
+    def test_a_saved_answer_that_is_not_an_object_counts_as_none(self) -> None:
+        # GIVEN
+        (self.data_dir / update.CHECK_FILE).write_text("[]", encoding="utf-8")
+        # WHEN
+        notice = self.check()
+        # THEN
+        self.assertEqual(notice, "TFS 9.1.0 is ready. Run tfs update.")
+
+    def test_a_folder_it_cannot_write_still_gives_the_notice(self) -> None:
+        # GIVEN a data folder that is gone
+        self.data_dir = self.data_dir / "gone"
+        # WHEN
+        with self.assertLogs(update.logger):
+            notice = self.check()
+        # THEN
+        self.assertEqual(notice, "TFS 9.1.0 is ready. Run tfs update.")
+
     def test_turned_off_makes_no_request(self) -> None:
         # WHEN
         notice = self.check(turned_off="1")

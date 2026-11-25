@@ -354,6 +354,8 @@ class StartHomeWifiTest(TfsHomeTestCase):
         with (
             mock.patch("tfs.cli.start.Engine") as engine,
             mock.patch("tfs.cli.start.sleep", side_effect=KeyboardInterrupt),
+            # The update check would reach GitHub.
+            mock.patch("tfs.cli.update.watch"),
             contextlib.redirect_stdout(io.StringIO()),
         ):
             start.run(argparse.Namespace(home_wifi=False, open=False))
