@@ -108,9 +108,19 @@ def _push_source_enabled() -> bool:
 
 
 def print_qr(url: str, out: TextIO | None = None) -> None:
+    """Print a URL as a QR code to the given stream or standard output."""
     code = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_L, border=2)
     code.add_data(url)
     code.print_ascii(out=out, invert=True)
+
+
+def _stdout_can_write(text: str) -> bool:
+    """Say whether standard output can encode text. Windows output sent to a file may not."""
+    try:
+        text.encode(getattr(sys.stdout, "encoding", None) or "utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def render_banner(
@@ -128,7 +138,9 @@ def render_banner(
         lines.append(f"Dashboard (phone): {phone_url}")
         qr = io.StringIO()
         print_qr(phone_url, qr)
-        lines.append(qr.getvalue().rstrip("\n"))
+        qr_text = qr.getvalue().rstrip("\n")
+        if _stdout_can_write(qr_text):
+            lines.append(qr_text)
     for name, label in push_connectors:
         lines.append(label)
         lines.append(f"  Push URL (this computer): http://{host}:{port}/push/{name}")

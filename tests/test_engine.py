@@ -148,19 +148,20 @@ class EngineTest(unittest.TestCase):
                 self.assertEqual(status(home_wifi_port, path), 404)
 
     def test_same_readings_over_wifi_and_tailscale_count_once(self) -> None:
-        # GIVEN two routes to the same engine and two invented step readings
+        # GIVEN two routes to the same engine and three invented step readings
         wifi, screen = free_port(), free_port()
         running = self.new_engine(home_wifi=True, home_wifi_port=wifi, screen_port=screen)
         running.start()
-        steps = [{"date": f"2026-10-20 {hour}:00:00 +0000", "qty": 12} for hour in ("08", "09")]
-        body = json.dumps(
-            {"data": {"metrics": [{"name": "step_count", "units": "count", "data": steps}]}}
-        ).encode()
-        # WHEN both listeners import the same readings in separately encoded files
-        for port, host, payload in (
-            (wifi, "localhost", body),
-            (screen, "studio.example.ts.net", body + b"\n"),
+        shared = {"date": "2026-10-20 08:00:00 +0000", "qty": 7}
+        wifi_only = {"date": "2026-10-20 09:00:00 +0000", "qty": 12}
+        tailscale_only = {"date": "2026-10-20 10:00:00 +0000", "qty": 23}
+        # WHEN each route sends the shared reading and its own reading
+        for port, host, readings in (
+            (wifi, "localhost", [shared, wifi_only]),
+            (screen, "studio.example.ts.net", [shared, tailscale_only]),
         ):
+            metric = {"name": "step_count", "units": "count", "data": readings}
+            payload = json.dumps({"data": {"metrics": [metric]}}).encode()
             with contextlib.closing(
                 http.client.HTTPConnection(config.SCREEN_HOST, port, timeout=5)
             ) as client:
@@ -172,11 +173,11 @@ class EngineTest(unittest.TestCase):
                 )
                 self.assertEqual(client.getresponse().status, 200)
             running.drain()
-        # THEN both readings survive and the rebuilt daily total counts each once
+        # THEN all three readings survive and the rebuilt daily total counts each once
         with contextlib.closing(connect(self.data_dir / "tfs.db")) as conn:
-            self.assertEqual(conn.execute("SELECT count(*) FROM source_records").fetchone()[0], 2)
+            self.assertEqual(conn.execute("SELECT count(*) FROM source_records").fetchone()[0], 3)
             self.assertEqual(
-                conn.execute("SELECT value FROM day_facts WHERE metric = 'steps'").fetchone()[0], 24
+                conn.execute("SELECT value FROM day_facts WHERE metric = 'steps'").fetchone()[0], 42
             )
 
     def test_delivery_worker_picks_up_a_save_from_another_process(self) -> None:

@@ -17,6 +17,8 @@ from pathlib import Path
 from unittest import mock
 from urllib.parse import parse_qs, urlsplit
 
+import qrcode
+
 from tests.test_engine import free_port
 from tests.test_setup_page import Hrefs
 from tfs import config, password_store, providers
@@ -447,10 +449,23 @@ class TailscaleTest(TfsHomeTestCase):
             1,
         )
         url = f"https://{self.host}/"
-        with contextlib.redirect_stdout(io.StringIO()) as qr:
-            setup.print_qr(url)
+        code = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_L, border=2)
+        code.add_data(url)
+        qr = io.StringIO()
+        code.print_ascii(out=qr, invert=True)
         self.assertIn(f"Dashboard (phone): {url}\n{qr.getvalue()}", banner)
         self.assertIn(f"https://{self.host}/push/health_auto_export", banner)
+
+    def test_cp1252_stdout_keeps_the_phone_link_and_omits_the_qr(self):
+        # GIVEN a phone link and redirected Windows output
+        url = f"https://{self.host}/"
+        with io.TextIOWrapper(io.BytesIO(), encoding="cp1252") as stream:
+            # WHEN start builds the banner for that stream
+            with contextlib.redirect_stdout(stream):
+                banner = start.render_banner("localhost", 5313, None, None, "invented", [], url)
+            # THEN the link sits directly above the token and the whole banner prints
+            self.assertIn(f"Dashboard (phone): {url}\nPush token:", banner)
+            stream.write(banner)
 
     def test_missing_or_signed_out_prints_install_steps_and_finishes(self):
         # GIVEN Tailscale is missing or needs login
