@@ -1,6 +1,7 @@
 """`tfs start`: run the engine in the foreground until Ctrl+C."""
 
 import argparse
+import io
 import os
 import socket
 import sqlite3
@@ -9,6 +10,9 @@ import threading
 import webbrowser
 from contextlib import closing
 from time import sleep
+from typing import TextIO
+
+import qrcode
 
 from tfs import config, password_store
 from tfs.cli import _tailscale, update
@@ -103,6 +107,12 @@ def _push_source_enabled() -> bool:
     return any(connector in push_connectors for (connector,) in rows)
 
 
+def print_qr(url: str, out: TextIO | None = None) -> None:
+    code = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_L, border=2)
+    code.add_data(url)
+    code.print_ascii(out=out, invert=True)
+
+
 def render_banner(
     host: str,
     port: int,
@@ -116,6 +126,9 @@ def render_banner(
     lines = ["TFS is running. Press Ctrl+C to stop."]
     if phone_url:
         lines.append(f"Dashboard (phone): {phone_url}")
+        qr = io.StringIO()
+        print_qr(phone_url, qr)
+        lines.append(qr.getvalue().rstrip("\n"))
     for name, label in push_connectors:
         lines.append(label)
         lines.append(f"  Push URL (this computer): http://{host}:{port}/push/{name}")

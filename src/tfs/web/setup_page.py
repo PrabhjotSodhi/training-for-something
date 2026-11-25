@@ -27,11 +27,16 @@ a.button:active{opacity:.8}
 """
 
 
-def render_page(title: str, buttons: list[tuple[str, str]]) -> str:
+def render_page(title: str, buttons: list[tuple[str, str]], *, tailscale: bool = False) -> str:
     """Return the setup page with one full-width button per (label, link). Values are escaped."""
     links = "\n".join(
         f'<a class="button" href="{escape(url)}">{escape(label)}</a>' for label, url in buttons
     )
+    hint = "Tap each button, then tap Enable in the app."
+    if tailscale:
+        hint += (
+            " Tailscale automations send only while the Tailscale app is connected on your phone."
+        )
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -47,7 +52,7 @@ def render_page(title: str, buttons: list[tuple[str, str]]) -> str:
 <div class="card">
 {links}
 </div>
-<p class="hint">Tap each button, then tap Enable in the app.</p>
+<p class="hint">{hint}</p>
 </main>
 </body>
 </html>
@@ -70,9 +75,11 @@ class SetupServer(ThreadingHTTPServer):
         buttons: list[tuple[str, str]],
         on_reach: Callable[[], None],
         lifetime_s: float = SERVER_LIFETIME_S,
+        *,
+        tailscale: bool = False,
     ) -> None:
         super().__init__((bind, port), _Handler)
-        self.page = render_page(title, buttons).encode()
+        self.page = render_page(title, buttons, tailscale=tailscale).encode()
         self.path = f"/setup/{code}"
         self.on_reach = on_reach
         self.reached = False

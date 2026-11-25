@@ -15,7 +15,10 @@ from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
+from urllib.parse import parse_qs, urlsplit
 
+from tests.test_engine import free_port
+from tests.test_setup_page import Hrefs
 from tfs import config, password_store, providers
 from tfs.cli import _tailscale, main, setup, start
 from tfs.connectors.core.contract import load_manifests
@@ -210,11 +213,11 @@ class SetupTest(TfsHomeTestCase):
             filled,
             [
                 "com.HealthExport://automation?url=http%3A%2F%2Fstudio.local%3A47824"
-                "%2Fpush%2Fhealth_auto_export&name=TFS%20metrics&datatype=healthMetrics"
+                "%2Fpush%2Fhealth_auto_export&name=TFS%20metrics%20%28Wi-Fi%29&datatype=healthMetrics"
                 "&format=json&exportversion=v2&period=lastsync&aggregatesleep=true"
                 "&headers=Authorization,Bearer%20tok-invented",
                 "com.HealthExport://automation?url=http%3A%2F%2Fstudio.local%3A47824"
-                "%2Fpush%2Fhealth_auto_export&name=TFS%20workouts&datatype=workouts"
+                "%2Fpush%2Fhealth_auto_export&name=TFS%20workouts%20%28Wi-Fi%29&datatype=workouts"
                 "&format=json&exportversion=v2&period=lastsync"
                 "&headers=Authorization,Bearer%20tok-invented",
             ],
@@ -372,12 +375,12 @@ class TailscaleTest(TfsHomeTestCase):
         self.routes = self.route(self.target)
         return "Available within your tailnet"
 
-    def run_cli(self, command="setup", phone=True):
+    def run_cli(self, command="setup", phone=True, apps=()):
         output = io.StringIO()
         with (
             mock.patch("sys.stdin", mock.Mock(isatty=lambda: True)),
             mock.patch.object(setup, "_connect_ai_tools", return_value=None),
-            mock.patch.object(setup, "questionary", FakeQuestionary([], phone=phone)),
+            mock.patch.object(setup, "questionary", FakeQuestionary(apps, phone=phone)),
             mock.patch.object(start, "Engine"),
             mock.patch.object(start, "sleep", side_effect=KeyboardInterrupt),
             mock.patch.object(start.update, "watch"),
@@ -386,6 +389,49 @@ class TailscaleTest(TfsHomeTestCase):
         ):
             self.assertEqual(main([command]), 0)
         return output.getvalue()
+
+    def test_phone_page_offers_each_automation_for_each_available_route(self):
+        port = free_port()
+        page = ""
+
+        def read_page():
+            nonlocal page
+            with contextlib.closing(
+                http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            ) as client:
+                client.request("GET", "/setup/invented")
+                page = client.getresponse().read().decode()
+
+        for phone in (True, False):
+            with self.subTest(phone=phone):
+                # GIVEN a fresh phone setup with or without private access
+                self.routes = self.route(self.target, port=8444)
+
+                # WHEN the person opens the setup page
+                with (
+                    mock.patch.object(setup, "_BIND", "127.0.0.1"),
+                    mock.patch.object(setup, "_host", return_value="127.0.0.1"),
+                    mock.patch.object(config, "HOME_WIFI_PORT", port),
+                    mock.patch.object(setup.secrets, "token_urlsafe", return_value="invented"),
+                    mock.patch("builtins.input", read_page),
+                ):
+                    self.run_cli(phone=phone, apps=["health_auto_export"])
+                # THEN each button installs a distinct automation with its route's address
+                routes = {"Wi-Fi": f"http://127.0.0.1:{port}/"}
+                if phone:
+                    routes["Tailscale"] = f"https://{self.host}:8444/"
+                parser = Hrefs()
+                parser.feed(page)
+                queries = [parse_qs(urlsplit(link).query) for link in parser.found]
+                self.assertEqual(
+                    [(q["name"][0], q["url"][0]) for q in queries],
+                    [
+                        (f"TFS {kind} ({route})", f"{base}push/health_auto_export")
+                        for route, base in routes.items()
+                        for kind in ("metrics", "workouts")
+                    ],
+                )
+                self.assertEqual("Tailscale app is connected" in page, phone)
 
     def test_free_port_sets_up_once_and_start_shows_phone_and_push_links(self):
         # GIVEN a signed-in computer with no Serve config
@@ -400,7 +446,10 @@ class TailscaleTest(TfsHomeTestCase):
             ),
             1,
         )
-        self.assertIn(f"https://{self.host}/\n", banner)
+        url = f"https://{self.host}/"
+        with contextlib.redirect_stdout(io.StringIO()) as qr:
+            setup.print_qr(url)
+        self.assertIn(f"Dashboard (phone): {url}\n{qr.getvalue()}", banner)
         self.assertIn(f"https://{self.host}/push/health_auto_export", banner)
 
     def test_missing_or_signed_out_prints_install_steps_and_finishes(self):
@@ -411,6 +460,7 @@ class TailscaleTest(TfsHomeTestCase):
                 # WHEN setup runs
                 output = self.run_cli()
                 # THEN the person can finish setup and come back after signing in
+                self.assertNotIn("█", self.run_cli("start"))
                 for text in (
                     "tailscale.com/download",
                     "same account",
@@ -466,6 +516,7 @@ class TailscaleTest(TfsHomeTestCase):
         output = self.run_cli(phone=False)
         # THEN no Tailscale command runs
         self.assertIn("TFS is running", output)
+        self.assertNotIn("█", output)
         self.commands.assert_not_called()
 
     def test_setup_waits_for_approval_and_retries_once(self):
@@ -538,7 +589,7 @@ class PhonePageTest(TfsHomeTestCase):
         self.assertTrue(token)
         self.assertNotIn(token, out)
         self.assertIn("✔ Your phone reached this computer.", out)
-        self.assertIn("Tap both buttons on the page, then press Enter.", out)
+        self.assertIn("Tap each button on the page, then press Enter.", out)
 
     def test_given_enter_before_any_request_then_no_phone_line_and_the_address_stops_answering(
         self,
