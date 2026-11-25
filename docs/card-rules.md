@@ -80,6 +80,8 @@ Every card takes one goal colour from the layout's plate, orange with no plate: 
 2. One row per night, oldest first, ending today: weekday, a bar in the goal colour and the time. Today's weekday is in the goal colour. A night belongs to the day the person wakes up.
 3. A night with no data says "No data", has no bar and stays out of the average.
 4. A dashed line marks the saved sleep goal, labelled like "8 h goal". With no saved goal there is no line.
+5. A night with sleep stages splits its bar into deep, core, REM and awake, left to right, in shades of the goal colour with awake in grey. The bar is as long as all its stages together. A stage the source left out has no part. A night without stages keeps the plain bar.
+6. Hovering or focusing a night with stages shows its date, time asleep and its deep, REM and core time.
 
 ## Trend card
 

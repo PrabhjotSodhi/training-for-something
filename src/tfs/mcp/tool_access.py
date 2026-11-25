@@ -23,6 +23,9 @@ VIEWS = {
     "coach_v1_day_facts": (
         "One row per day and metric: the day's value, unit and source."
         " Coverage is full, partial or importing."
+        " sleep_asleep, sleep_awake, sleep_rem, sleep_core and sleep_deep are hours on the"
+        " wake date, from the same source. A missing stage has no row. Sum the nightly"
+        " values for a week and count the nights with data."
     ),
     "coach_v1_scores": (
         "One row per day and score. value is 1 to 99 with 50 as the person's normal, and null"

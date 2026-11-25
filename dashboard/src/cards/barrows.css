@@ -32,6 +32,7 @@
 }
 
 .bars-row {
+  position: relative;
   display: grid;
   grid-template-columns: var(--label) 1fr var(--value);
   align-items: center;
@@ -57,6 +58,44 @@
   height: 100%;
   border-radius: 6px;
   background: var(--goal);
+}
+
+.bars-stack {
+  display: flex;
+  gap: 1.5px;
+  height: 100%;
+}
+
+.bars-part {
+  min-width: 2px;
+  border-radius: 3px;
+}
+
+.bars-part:first-child {
+  border-radius: 6px 3px 3px 6px;
+}
+
+.bars-part:last-child {
+  border-radius: 3px 6px 6px 3px;
+}
+
+.bars.hovering .bars-row:not(.open) .bars-track {
+  opacity: 0.45;
+}
+
+.bars-row:focus-visible {
+  outline: 2px solid var(--goal);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.bars-hover {
+  position: absolute;
+  bottom: calc(100% - 2px);
+  left: 50%;
+  z-index: 2;
+  transform: translateX(-50%);
+  pointer-events: none;
 }
 
 .bars-missing {

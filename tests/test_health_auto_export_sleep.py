@@ -80,6 +80,24 @@ class HealthAutoExportSleepTest(unittest.TestCase):
         (record,) = records
         self.assertEqual(record["values"], {"value": 6.5, "unit": "h"})
 
+    def test_missing_rem_stays_empty_and_reported_zero_awake_is_kept(self) -> None:
+        # GIVEN an aggregated night with no REM field
+        sample = {
+            "sleepStart": "2026-10-20 22:40:00 +1300",
+            "sleepEnd": "2026-10-21 06:10:00 +1300",
+            "totalSleep": 7,
+            "core": 4,
+            "deep": 1,
+            "awake": 0,
+        }
+        # WHEN the night imports
+        _, records = self._read_sleep(sample)
+        # THEN only stages the source supplied have values
+        self.assertEqual(
+            {r["metric"]: r["values"]["value"] for r in records},
+            {"sleep_asleep": 7, "sleep_core": 4, "sleep_deep": 1, "sleep_awake": 0},
+        )
+
     def test_sample_without_sleep_times_is_skipped_with_a_hint(self) -> None:
         sample = {"date": "2026-10-21 00:00:00 +1300", "asleep": 6.5, "source": "Ana's iPhone"}
 

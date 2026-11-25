@@ -228,12 +228,19 @@ export interface components {
         /**
          * SleepNight
          * @description One night: hours asleep on the day the person woke up, or null with no data.
+         *
+         *     stages holds the hours of each reported stage (awake, rem, core, deep) and is empty
+         *     when the source sent none.
          */
         SleepNight: {
             /** Date */
             date: string;
             /** Hours */
             hours: number | null;
+            /** Stages */
+            stages: {
+                [key: string]: number;
+            };
         };
         /**
          * SleepOverviewCard

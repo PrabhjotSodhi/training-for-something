@@ -64,10 +64,13 @@ class Metric(NamedTuple):
     zero_is_missing: bool
 
 
+SLEEP_STAGES = ("sleep_awake", "sleep_rem", "sleep_core", "sleep_deep")
+
 METRICS = {
     "steps": Metric("count", "sum", False),
     "active_energy": Metric("kcal", "sum", False),
     "sleep_asleep": Metric("h", "sum", True),
+    **{stage: Metric("h", "sum", False) for stage in SLEEP_STAGES},
     "resting_hr": Metric("bpm", "latest", True),
     "weight": Metric("kg", "latest", False),
     "body_fat": Metric("%", "latest", False),

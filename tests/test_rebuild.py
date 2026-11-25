@@ -28,6 +28,26 @@ LIVE_FILES = (
 
 
 class RebuildAllTest(SessionTest):
+    def test_a_revised_sleep_summary_replaces_its_stages(self) -> None:
+        # GIVEN an aggregated night that reports REM and core
+        night = {
+            "sleepStart": "2026-10-20 23:00:00 +0000",
+            "sleepEnd": "2026-10-21 06:00:00 +0000",
+            "totalSleep": 7,
+        }
+        for stages in ({"rem": 2, "core": 5}, {"core": 7}):
+            # WHEN the same source revises the summary and leaves REM out
+            entry = {"name": "sleep_analysis", "units": "hr", "data": [night | stages]}
+            self.save_and_process(
+                "health_auto_export",
+                "rest_json",
+                "json",
+                json.dumps({"data": {"metrics": [entry]}}).encode(),
+            )
+        # THEN the stored night has only the stages in the revised summary
+        facts = dict(self.conn.execute("SELECT metric, value FROM day_facts"))
+        self.assertEqual(facts, {"sleep_asleep": 7, "sleep_core": 7})
+
     def save_and_process(self, connector: str, fmt: str, ext: str, data: bytes, **kwargs) -> None:
         save_raw(self.conn, self.data_dir, connector, fmt, ext, io.BytesIO(data), now=NOW, **kwargs)
         process_pending(self.conn, self.data_dir, tz=NZ)

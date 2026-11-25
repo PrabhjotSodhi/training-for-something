@@ -357,6 +357,18 @@ class OverviewApiTest(unittest.TestCase):
         self.assertEqual(with_target["target_h"], 8)
         self.assertIsNone(without["target_h"])
 
+    def test_each_night_carries_its_own_stages(self):
+        # GIVEN yesterday has stages and today has only a total
+        for name, hours in (("awake", 0.5), ("rem", 2), ("core", 4), ("deep", 1)):
+            self.fact(self.ago(1), "sleep_" + name, hours)
+        self.fact(self.ago(0), "sleep_asleep", 7)
+        # WHEN the card opens
+        (card,) = self.trend_cards({"type": "sleep"})
+        # THEN yesterday keeps its four stages and today has none
+        *_, yesterday, today = card["data"]["nights"]
+        self.assertEqual(yesterday["stages"], {"awake": 0.5, "rem": 2, "core": 4, "deep": 1})
+        self.assertEqual(today["stages"], {})
+
     def test_the_sets_by_muscle_card_is_empty_in_a_week_with_no_hevy_sets(self):
         # GIVEN a saved layout with the card and no Hevy workouts
         layout = {
