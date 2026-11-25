@@ -14,13 +14,13 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from urllib.parse import quote
 
-import qrcode
 import questionary
 from questionary import Separator, Style
 
 from tfs import config, password_store, providers
 from tfs.cli import _tailscale, import_, start
 from tfs.cli.connect import connect_source
+from tfs.cli.start import print_qr
 from tfs.connectors.core import runner
 from tfs.connectors.core.contract import load_manifests, to_utc_text
 from tfs.importer.session import sync
@@ -77,17 +77,16 @@ def run(args: argparse.Namespace) -> int:
                 [questionary.Choice(m["label"], value=n) for n, m in manifests.items()],
             )
         )
-        for number, name in enumerate(picked, 1):
-            print(f"\n── {manifests[name]['label']} ({number} of {len(picked)})")
-            _set_up_app(name, manifests[name])
         phone = _ask(
             questionary.confirm(
                 "View TFS on your phone? It uses Tailscale, a free private network for your own devices.",
                 default=True,
             )
         )
-        if phone:
-            _tailscale.set_up()
+        phone_url = _tailscale.set_up() if phone else None
+        for number, name in enumerate(picked, 1):
+            print(f"\n── {manifests[name]['label']} ({number} of {len(picked)})")
+            _set_up_app(name, manifests[name], phone_url)
         has_goal = _set_goal()
     except KeyboardInterrupt:
         print("\nSetup stopped.", file=sys.stderr)
@@ -104,10 +103,12 @@ def run(args: argparse.Namespace) -> int:
     )
 
 
-def fill_link(template: str, push_url: str, token: str) -> str:
-    """Put the URL-encoded push address and token into a manifest link."""
-    return template.replace("{push_url}", quote(push_url, safe="")).replace(
-        "{token}", quote(token, safe="")
+def fill_link(template: str, push_url: str, token: str, route: str = "Wi-Fi") -> str:
+    """Fill a manifest link with its encoded push address, token and route."""
+    return (
+        template.replace("{push_url}", quote(push_url, safe=""))
+        .replace("{token}", quote(token, safe=""))
+        .replace("{route}", quote(route, safe=""))
     )
 
 
@@ -271,7 +272,7 @@ def _tool_choice(
     return questionary.Choice(f"{tool.label:<22} found, {tested}", value=tool, checked=True)
 
 
-def _set_up_app(name: str, manifest: dict) -> None:
+def _set_up_app(name: str, manifest: dict, phone_url: str | None) -> None:
     setup = manifest.get("setup", {})
     for step in setup.get("steps", []):
         print(f"  {step}")
@@ -279,7 +280,7 @@ def _set_up_app(name: str, manifest: dict) -> None:
         if manifest["routes"]["files"]:
             _import_file(name)
         if manifest["routes"]["push"]:
-            _show_links(name, manifest["label"], setup.get("links", []))
+            _show_links(name, manifest["label"], setup.get("links", []), phone_url)
         if manifest["asks"]:
             _connect_with_asks(name, manifest, setup.get("opens"))
     except _CONNECT_ERRORS as error:
@@ -306,27 +307,43 @@ def _import_file(name: str) -> None:
         print(output.getvalue(), end="")
 
 
-def _show_links(name: str, label: str, links: list[dict]) -> None:
+def _show_links(name: str, label: str, links: list[dict], phone_url: str | None) -> None:
     connect_source(name, {})
     token = password_store.get("push_token")
     if not token:
         token = secrets.token_urlsafe(32)
         password_store.set("push_token", token)
-    push_url = f"http://{_host()}:{config.HOME_WIFI_PORT}/push/{name}"
-    buttons = [(f"Add {link['label']}", fill_link(link["url"], push_url, token)) for link in links]
+    wifi_url = f"http://{_host()}:{config.HOME_WIFI_PORT}/"
+    routes = {"Wi-Fi": wifi_url}
+    if phone_url:
+        routes["Tailscale"] = phone_url
+    buttons = [
+        (
+            f"Add {link['label']} ({route})",
+            fill_link(link["url"], f"{url}push/{name}", token, route),
+        )
+        for route, url in routes.items()
+        for link in links
+    ]
     code = secrets.token_urlsafe(6)
     if sys.platform == "win32":
         questionary.print("  If Windows asks, allow TFS on private networks.", style=_DIM)
     try:
         server = setup_page.SetupServer(
-            _BIND, config.HOME_WIFI_PORT, code, f"Connect {label}", buttons, _phone_reached
+            _BIND,
+            config.HOME_WIFI_PORT,
+            code,
+            f"Connect {label}",
+            buttons,
+            _phone_reached,
+            tailscale=bool(phone_url),
         )
     except OSError:
         questionary.print("  Close TFS, then run tfs setup again.", style=_RED)
         return
     server.start()
     try:
-        _print_qr(f"http://{_host()}:{config.HOME_WIFI_PORT}/setup/{code}")
+        print_qr(f"{wifi_url}setup/{code}")
         questionary.print("  Waiting for your phone... (Enter to skip)", style=_DIM)
         input()
     finally:
@@ -335,13 +352,7 @@ def _show_links(name: str, label: str, links: list[dict]) -> None:
 
 def _phone_reached() -> None:
     questionary.print("  ✔ Your phone reached this computer.", style=_GREEN)
-    questionary.print("  Tap both buttons on the page, then press Enter.", style=_DIM)
-
-
-def _print_qr(url: str) -> None:
-    code = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_L, border=2)
-    code.add_data(url)
-    code.print_ascii(invert=True)
+    questionary.print("  Tap each button on the page, then press Enter.", style=_DIM)
 
 
 def _host() -> str:

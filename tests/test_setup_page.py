@@ -97,7 +97,7 @@ class SetupServerTest(unittest.TestCase):
         url = "http://255.255.255.255:47824/setup/" + "k7q2_abc"
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            setup._print_qr(url)
+            setup.print_qr(url)
         self.assertLessEqual(max(len(line) for line in out.getvalue().splitlines()), 33)
 
 

@@ -62,7 +62,9 @@ Windows, in PowerShell:
 curl.exe -fsSLo install.ps1 https://raw.githubusercontent.com/PrabhjotSodhi/training-for-something/main/install.ps1; powershell -ExecutionPolicy ByPass -File install.ps1; del install.ps1
 ```
 
-Setup connects your AI tools and your apps, then opens the dashboard. Run `tfs start --open` any time to open it again. Run `tfs update` to update.
+Setup connects your AI tools and apps. For Health Auto Export, scan the setup QR on your home Wi-Fi and enable each automation. If you set up Tailscale, the page includes a second pair for use while Tailscale is connected on your phone.
+
+Run `tfs start --open` to open the dashboard on your computer. With Tailscale set up, scan the QR under “Dashboard (phone)” to open it on your phone. Run `tfs update` to update.
 
 ## Works with
 

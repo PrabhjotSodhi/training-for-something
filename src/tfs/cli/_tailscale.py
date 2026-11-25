@@ -116,23 +116,23 @@ def _shell_program(program: str) -> str:
     return prefix + shlex.quote(program)
 
 
-def set_up() -> None:
-    """Enable private phone access when the default port is free."""
+def set_up() -> str | None:
+    """Set up private phone access and return its verified URL when available."""
     program = _program()
     if not program or not (host := _hostname(program)):
         print(
             "Install Tailscale on this computer and your phone from https://tailscale.com/download."
         )
         print("Sign in on both with the same account, then run tfs setup again.")
-        return
+        return None
     for attempt in range(2):
         ports = _ports(program, host)
         if ports is None:
             print("Could not read Tailscale Serve settings. Run tfs setup again.")
-            return
+            return None
         if url := _link(host, ports):
             print(f"Tailscale already serves TFS. Open this link on your phone: {url}")
-            return
+            return url
         if 443 in ports:
             port = next((n for n in range(8443, 65536) if n not in ports), None)
             print("Port 443 is in use. TFS kept its settings.")
@@ -140,7 +140,7 @@ def set_up() -> None:
                 print(
                     f"To use another private port, run: {_shell_program(program)} serve --bg --https={port} {_TARGET}"
                 )
-            return
+            return None
         output = _run(program, "serve", "--bg", _TARGET)
         if output and output.startswith(_APPROVAL_PREFIX) and attempt == 0:
             print(f"Open this link to approve Tailscale Serve: {output}", flush=True)
@@ -148,6 +148,7 @@ def set_up() -> None:
             continue
         if output is not None and (url := _link(host, _ports(program, host) or {})):
             print(f"Open this link on your phone: {url}")
-            return
+            return url
         break
     print("TFS could not set up the phone link. Run tfs setup again.")
+    return None

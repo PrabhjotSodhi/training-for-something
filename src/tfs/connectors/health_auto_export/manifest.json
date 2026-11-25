@@ -15,11 +15,11 @@
     "links": [
       {
         "label": "health metrics",
-        "url": "com.HealthExport://automation?url={push_url}&name=TFS%20metrics&datatype=healthMetrics&format=json&exportversion=v2&period=lastsync&aggregatesleep=true&headers=Authorization,Bearer%20{token}"
+        "url": "com.HealthExport://automation?url={push_url}&name=TFS%20metrics%20%28{route}%29&datatype=healthMetrics&format=json&exportversion=v2&period=lastsync&aggregatesleep=true&headers=Authorization,Bearer%20{token}"
       },
       {
         "label": "workouts",
-        "url": "com.HealthExport://automation?url={push_url}&name=TFS%20workouts&datatype=workouts&format=json&exportversion=v2&period=lastsync&headers=Authorization,Bearer%20{token}"
+        "url": "com.HealthExport://automation?url={push_url}&name=TFS%20workouts%20%28{route}%29&datatype=workouts&format=json&exportversion=v2&period=lastsync&headers=Authorization,Bearer%20{token}"
       }
     ]
   }
