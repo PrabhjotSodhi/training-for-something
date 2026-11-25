@@ -49,7 +49,7 @@ export function Overview() {
             return null;
           }
           return (
-            <div key={index} className={entry.full ? "card full" : "card"}>
+            <div key={index} className={`card card-${card.type}${entry.full ? " full" : ""}`}>
               {entry.draw(card)}
             </div>
           );

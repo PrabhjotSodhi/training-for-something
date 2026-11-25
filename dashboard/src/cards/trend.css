@@ -123,7 +123,9 @@
   .trend-head {
     flex-wrap: wrap;
   }
+}
 
+@media (pointer: coarse), (max-width: 699px) {
   .trend-chip {
     min-height: 44px;
     min-width: 44px;

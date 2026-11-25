@@ -210,7 +210,9 @@ body {
   .card {
     padding: 16px;
   }
+}
 
+@media (pointer: coarse), (max-width: 699px) {
   .new-version button,
   .first-run-copy {
     min-width: 44px;

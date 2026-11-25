@@ -36,7 +36,7 @@ export function Week({ week }: { week: WeekProps }) {
             const label = <span className="week-label">{weekday} <span>{when.getDate()}</span></span>;
             return (
               <div key={day.date} className={now ? "week-day now" : "week-day"} data-open={openDay === day.date}>
-                <div className="week-day-heading">
+                <div className={day.sessions.length > 0 ? "week-day-heading has-sessions" : "week-day-heading"}>
                   {label}
                   {day.sessions.length === 0 && <div className="week-rest">Rest</div>}
                 </div>

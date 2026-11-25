@@ -242,7 +242,7 @@
     gap: 4px;
   }
 
-  .week-day-heading:has(+ button) {
+  .week-day-heading.has-sessions {
     display: none;
   }
 
@@ -255,7 +255,6 @@
   }
 
   .week-day-button {
-    min-height: 44px;
     padding: 0 2px 4px;
     border: 0;
     border-radius: 6px;
@@ -310,8 +309,14 @@
   }
 }
 
+@media (pointer: coarse), (max-width: 699px) {
+  .week-day-button {
+    min-height: 44px;
+  }
+}
+
 @media (max-width: 375px) {
-  .card:has(.week) {
+  .card.card-week {
     padding-inline: 8px;
   }
 }
