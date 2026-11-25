@@ -1,10 +1,14 @@
 import contextlib
 import hashlib
 import io
+import itertools
 import json
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -15,8 +19,10 @@ WHEEL = b"invented wheel bytes"
 DIGEST = "sha256:" + hashlib.sha256(WHEEL).hexdigest()
 
 
-def release(version: str, *, prerelease: bool, digest: str = DIGEST) -> dict:
-    name = f"training_for_something-{version}-py3-none-any.whl"
+def release(
+    version: str, *, prerelease: bool, digest: str = DIGEST, wheel_version: str = ""
+) -> dict:
+    name = f"training_for_something-{wheel_version or version}-py3-none-any.whl"
     return {
         "tag_name": f"v{version}",
         "draft": False,
@@ -38,19 +44,23 @@ class UpdateTest(unittest.TestCase):
             self.events.append(("fetch", url))
             return json.dumps(releases).encode() if url == update.RELEASES_URL else WHEEL
 
-        def install(wheel, restart: bool) -> None:
+        def install(uv: str, wheel, restart: bool) -> int:
             self.events.append(("install", wheel.read_bytes(), restart))
             shutil.rmtree(wheel.parent)
+            return 0
 
-        options = {"helpers": list, "stop": lambda: False, **fakes}
+        options = {"uv": "uv", "helpers": list, "stop": lambda: False, "install": install, **fakes}
         out = io.StringIO()
         with (
             mock.patch.object(update, "POLL_SECONDS", 0),
             contextlib.redirect_stdout(out),
             contextlib.redirect_stderr(out),
         ):
-            code = update.update(current, fetch=fetch, install=install, **options)
+            code = update.update(current, fetch=fetch, **options)
         return code, out.getvalue()
+
+    def installed(self) -> bool:
+        return "install" in [event[0] for event in self.events]
 
     def test_a_newer_release_installs_the_verified_wheel_and_starts_tfs_again(self) -> None:
         # GIVEN a pre-release install, a newer pre-release, and TFS running
@@ -61,6 +71,20 @@ class UpdateTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(self.events[-1], ("install", WHEEL, True))
 
+    def test_the_highest_release_with_a_matching_wheel_wins_in_any_list_order(self) -> None:
+        # GIVEN an rc listed first, the final after it, and a newer tag whose wheel is misnamed
+        releases = [
+            release("9.1.0rc2", prerelease=True),
+            release("9.1.0", prerelease=False),
+            release("9.2.0", prerelease=False, wheel_version="9.1.9"),
+        ]
+        # WHEN
+        code, _ = self.update("9.1.0rc1", releases)
+        # THEN the final 9.1.0 sorts above its rc and is the one downloaded
+        self.assertEqual(code, 0)
+        self.assertIn(("fetch", releases[1]["assets"][0]["browser_download_url"]), self.events)
+        self.assertTrue(self.installed())
+
     def test_a_wheel_whose_digest_does_not_match_installs_nothing(self) -> None:
         # GIVEN
         releases = [release("9.1.0", prerelease=False, digest="sha256:" + "0" * 64)]
@@ -68,7 +92,7 @@ class UpdateTest(unittest.TestCase):
         code, _ = self.update("9.0.0", releases)
         # THEN
         self.assertEqual(code, 1)
-        self.assertNotIn("install", [event[0] for event in self.events])
+        self.assertFalse(self.installed())
 
     def test_no_newer_release_downloads_and_installs_nothing(self) -> None:
         # GIVEN a stable install, the same stable release, and a newer pre-release it ignores
@@ -83,20 +107,27 @@ class UpdateTest(unittest.TestCase):
     def test_a_running_helper_holds_the_install_until_it_exits(self) -> None:
         # GIVEN a helper that runs for two checks
         checks = iter([["Claude Code"], ["Claude Code"], []])
+        active = [True]
 
         def helpers() -> list[str]:
-            self.events.append(("check",))
-            return next(checks)
+            names = next(checks)
+            active[0] = bool(names)
+            return names
+
+        def install(uv: str, wheel, restart: bool) -> int:
+            self.assertFalse(active[0], "installed while a helper runs")
+            self.events.append(("install",))
+            shutil.rmtree(wheel.parent)
+            return 0
 
         # WHEN
-        code, out = self.update("9.0.0", [release("9.1.0", prerelease=False)], helpers=helpers)
+        code, out = self.update(
+            "9.0.0", [release("9.1.0", prerelease=False)], helpers=helpers, install=install
+        )
         # THEN
         self.assertEqual(code, 0)
-        self.assertEqual(
-            [event[0] for event in self.events],
-            ["fetch", "fetch", "check", "check", "check", "install"],
-        )
-        self.assertEqual(out.count("Claude Code"), 1)
+        self.assertIn("Claude Code", out)
+        self.assertTrue(self.installed())
 
     def test_ctrl_c_while_a_helper_runs_installs_nothing(self) -> None:
         # GIVEN
@@ -107,7 +138,114 @@ class UpdateTest(unittest.TestCase):
         code, _ = self.update("9.0.0", [release("9.1.0", prerelease=False)], helpers=helpers)
         # THEN
         self.assertEqual(code, 1)
-        self.assertNotIn("install", [event[0] for event in self.events])
+        self.assertFalse(self.installed())
+
+    def test_a_failed_process_check_installs_nothing(self) -> None:
+        # GIVEN
+        def helpers() -> list[str]:
+            raise subprocess.TimeoutExpired("powershell", 30)
+
+        # WHEN
+        code, _ = self.update("9.0.0", [release("9.1.0", prerelease=False)], helpers=helpers)
+        # THEN
+        self.assertEqual(code, 1)
+        self.assertFalse(self.installed())
+
+    def test_tfs_that_does_not_stop_installs_nothing(self) -> None:
+        # GIVEN
+        def stop() -> bool:
+            raise TimeoutError
+
+        # WHEN
+        code, _ = self.update("9.0.0", [release("9.1.0", prerelease=False)], stop=stop)
+        # THEN
+        self.assertEqual(code, 1)
+        self.assertFalse(self.installed())
+
+    def test_no_uv_leaves_tfs_running(self) -> None:
+        # GIVEN
+        stopped = []
+        # WHEN
+        code, _ = self.update(
+            "9.0.0", [release("9.1.0", prerelease=False)], uv=None, stop=lambda: stopped.append(1)
+        )
+        # THEN
+        self.assertEqual(code, 1)
+        self.assertEqual(stopped, [])
+        self.assertFalse(self.installed())
+
+
+class StopTest(unittest.TestCase):
+    def setUp(self) -> None:
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        environment = mock.patch.dict(os.environ, {"TFS_HOME": folder.name})
+        environment.start()
+        self.addCleanup(environment.stop)
+        self.running = Path(folder.name) / update.RUNNING_FILE
+
+    def start_tfs(self, seconds: float) -> subprocess.Popen:
+        """Stand in for tfs start with a process that ends after some seconds."""
+        process = subprocess.Popen([sys.executable, "-c", f"import time; time.sleep({seconds})"])
+        self.addCleanup(process.wait)
+        self.addCleanup(process.kill)
+        # Reap it once it ends, so POSIX does not keep it alive as a zombie.
+        threading.Thread(target=process.wait, daemon=True).start()
+        self.running.write_text(str(process.pid))
+        return process
+
+    def stop(self) -> bool:
+        # The screen port answers once, then is closed while the process still runs.
+        pings = itertools.chain([True], itertools.repeat(False))
+        with (
+            mock.patch.object(update, "tfs_answers_ping", side_effect=pings),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            return update._stop()
+
+    def test_stop_waits_for_the_tfs_process_to_end(self) -> None:
+        # GIVEN
+        process = self.start_tfs(0.5)
+        # WHEN
+        self.stop()
+        # THEN
+        self.assertFalse(self.running.exists())
+        self.assertIsNotNone(process.poll())
+
+    def test_stop_gives_up_when_tfs_does_not_end_in_time(self) -> None:
+        # GIVEN
+        self.start_tfs(30)
+        # WHEN / THEN
+        with (
+            mock.patch.object(update, "STOP_TIMEOUT_SECONDS", 0.2),
+            self.assertRaises(TimeoutError),
+        ):
+            self.stop()
+
+
+class HelpersTest(unittest.TestCase):
+    def test_a_helper_with_a_quoted_mcp_argument_is_named_after_its_ai_tool(self) -> None:
+        # GIVEN an AI tool that runs tfs.exe, which runs this install's python with "mcp"
+        python = "C:\\tools\\tfs\\Scripts\\python.exe"
+        listing = [
+            {"ProcessId": 1, "ParentProcessId": 0, "Name": "claude.exe", "CommandLine": "claude"},
+            {"ProcessId": 2, "ParentProcessId": 1, "Name": "tfs.exe", "CommandLine": '"tfs" "mcp"'},
+            {
+                "ProcessId": 3,
+                "ParentProcessId": 2,
+                "Name": "python.exe",
+                "CommandLine": f'"{python}" "C:\\bin\\tfs.exe" "mcp"',
+            },
+        ]
+        done = subprocess.CompletedProcess([], 0, stdout=json.dumps(listing))
+        # WHEN
+        with (
+            mock.patch.object(update.subprocess, "run", return_value=done),
+            mock.patch.object(update.sys, "executable", python),
+        ):
+            names = update._helpers()
+        # THEN
+        self.assertEqual(names, ["Claude Code"])
 
 
 class UpdateCheckTest(unittest.TestCase):
