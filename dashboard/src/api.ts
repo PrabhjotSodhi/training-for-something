@@ -107,6 +107,56 @@ export interface components {
             detail?: components["schemas"]["ValidationError"][];
         };
         /**
+         * LiftData
+         * @description Recent weighted exercises, most logged first, with Monday dates for the bars.
+         */
+        LiftData: {
+            /** Selected */
+            selected: string;
+            /** Weeks */
+            weeks: string[];
+            /** Exercises */
+            exercises: components["schemas"]["LiftExercise"][];
+        };
+        /**
+         * LiftExercise
+         * @description One exercise's session weights and weekly volume in kg.
+         */
+        LiftExercise: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Sessions */
+            sessions: components["schemas"]["LiftSession"][];
+            /** Weekly Kg */
+            weekly_kg: (number | null)[];
+        };
+        /**
+         * LiftOverviewCard
+         * @description The lift card with its numbers.
+         */
+        LiftOverviewCard: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "lift";
+            /** Exercise */
+            exercise?: string;
+            data: components["schemas"]["LiftData"];
+        };
+        /**
+         * LiftSession
+         * @description The heaviest working weight in one workout.
+         */
+        LiftSession: {
+            /** Date */
+            date: string;
+            /** Kg */
+            kg: number;
+        };
+        /**
          * MuscleSets
          * @description One muscle and its working sets this week.
          */
@@ -124,7 +174,7 @@ export interface components {
             plate: components["schemas"]["PlateOverview"] | null;
             first_run: components["schemas"]["FirstRun"] | null;
             /** Cards */
-            cards: (components["schemas"]["WeekOverviewCard"] | components["schemas"]["SleepOverviewCard"] | components["schemas"]["TrendOverviewCard"] | components["schemas"]["SetsByMuscleOverviewCard"])[];
+            cards: (components["schemas"]["WeekOverviewCard"] | components["schemas"]["SleepOverviewCard"] | components["schemas"]["TrendOverviewCard"] | components["schemas"]["SetsByMuscleOverviewCard"] | components["schemas"]["LiftOverviewCard"])[];
             /** New Version */
             new_version?: string | null;
         };

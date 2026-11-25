@@ -41,6 +41,7 @@ VIEWS = {
     ),
     "coach_v1_workout_parts": (
         "The sets, laps or intervals of a workout, in order by seq, from one app."
+        " exercise_template_id identifies the exercise. set_type marks warmup and working sets."
     ),
     "coach_v1_sets_by_muscle": (
         "Working sets per primary muscle for each week, from apps that tag exercises, such as"
