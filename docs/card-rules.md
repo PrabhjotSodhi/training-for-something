@@ -15,8 +15,8 @@ Plus Jakarta Sans for everything, with tabular figures on numbers. The font file
 
 ## Shell
 
-1. The sidebar sits on the left, 220 px wide. It shows the name "Training For Something" in text on one line, then the tabs.
-2. Only the Overview tab shows. Each tab has a 20 px line icon before its name. The open tab sits on the goal tint with its icon in the goal colour.
+1. The page has no sidebar. Its content is centred, at most 1440 px wide, with 24 px on the left and right.
+2. A slim bar above the plate shows the name "Training For Something" in text, left aligned with the content. The right end stays empty.
 3. The page follows the system setting for light or dark.
 4. Desktop width comes first.
 
@@ -25,7 +25,6 @@ Plus Jakarta Sans for everything, with tabular figures on numbers. The font file
 | Part | Light | Dark |
 |---|---|---|
 | Page | `#f5f5f7` | `#0a0a0b` |
-| Sidebar | `#ffffff` | `#1c1c1e` |
 | Text | `#1c1c1e` | `#f5f5f7` |
 | Muted text | `#6b6b70` | `#98989f` |
 | Lines | `#e5e5ea` | `#2c2c2e` |

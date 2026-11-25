@@ -12,7 +12,6 @@
 
 :root {
   --page: #f5f5f7;
-  --sidebar: #ffffff;
   --card: #ffffff;
   --ink: #1c1c1e;
   --muted: #6b6b70;
@@ -59,7 +58,6 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --page: #0a0a0b;
-    --sidebar: #1c1c1e;
     --card: #1c1c1e;
     --ink: #f5f5f7;
     --muted: #98989f;
@@ -94,54 +92,19 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.shell {
-  display: flex;
-  min-height: 100vh;
-}
-
-.sidebar {
+.page {
   box-sizing: border-box;
-  width: 220px;
-  flex: none;
-  padding: 20px 12px;
-  background: var(--sidebar);
-  border-right: 1px solid var(--line);
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 24px 24px;
 }
 
 .name {
-  padding: 0 8px 20px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  white-space: nowrap;
-}
-
-.tab {
   display: flex;
   align-items: center;
-  gap: 10px;
-  height: 38px;
-  padding: 0 10px;
-  border-radius: 10px;
-  color: var(--ink);
-  text-decoration: none;
-}
-
-.tab svg {
-  flex: none;
-  color: var(--muted);
-}
-
-.tab[aria-current="page"] {
-  background: var(--goal-tint);
-}
-
-.tab[aria-current="page"] svg {
-  color: var(--goal-ink);
-}
-
-.page {
-  flex: 1;
-  padding: 24px;
+  height: 56px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .cards {
