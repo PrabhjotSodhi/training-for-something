@@ -28,7 +28,7 @@ from tfs.persistence import sqlite
 from tfs.persistence.migrations import migrate
 from tfs.providers import mcp_tools
 from tfs.web.overview import read_overview
-from tfs.web.server import make_server
+from tfs.web.server import HomeWifi, make_server
 
 REPO = "PrabhjotSodhi/training-for-something"
 PLUGIN = "tfs@training-for-something"
@@ -412,7 +412,7 @@ class TailscaleTest(TfsHomeTestCase):
                 # WHEN the person opens the setup page
                 with (
                     mock.patch.object(setup, "_BIND", "127.0.0.1"),
-                    mock.patch.object(setup, "_host", return_value="127.0.0.1"),
+                    mock.patch.object(setup, "wifi_host", return_value="127.0.0.1"),
                     mock.patch.object(config, "HOME_WIFI_PORT", port),
                     mock.patch.object(setup.secrets, "token_urlsafe", return_value="invented"),
                     mock.patch("builtins.input", read_page),
@@ -573,7 +573,7 @@ class PhonePageTest(TfsHomeTestCase):
             mock.patch("tfs.cli.setup.connect_source"),
             mock.patch("tfs.cli.setup.import_.run") as imported,
             mock.patch("tfs.cli.setup.start.run", return_value=0),
-            mock.patch("tfs.cli.setup._host", return_value="127.0.0.1"),
+            mock.patch("tfs.cli.setup.wifi_host", return_value="127.0.0.1"),
             mock.patch("tfs.cli.setup._BIND", "127.0.0.1"),
             mock.patch("tfs.cli.setup.config.HOME_WIFI_PORT", port),
             mock.patch("tfs.cli.setup.secrets.token_urlsafe", return_value=self.CODE),
@@ -633,13 +633,16 @@ class PushUrlHostTest(unittest.TestCase):
         # GIVEN a Windows computer whose Wi-Fi address is 192.0.2.7
         with (
             mock.patch("tfs.cli.setup.sys.platform", "win32"),
-            mock.patch("tfs.cli.setup.lan_address", return_value="192.0.2.7"),
+            mock.patch("tfs.web.pairing.lan_address", return_value="192.0.2.7"),
             mock.patch("tfs.web.server.lan_address", return_value="192.0.2.7"),
             mock.patch("tfs.web.server.socket.getaddrinfo", side_effect=socket.gaierror),
         ):
-            host = setup._host()
+            host = setup.wifi_host()
             server = make_server(
-                config.SCREEN_HOST, 0, push_handler=lambda *_: (200, {}), push_only=True
+                config.SCREEN_HOST,
+                0,
+                push_handler=lambda *_: (200, {}),
+                home_wifi=HomeWifi(Path("unused.db")),
             )
         server.start()
         self.addCleanup(server.stop)

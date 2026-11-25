@@ -21,7 +21,7 @@ from tfs.persistence.sqlite import connect, transaction
 from tfs.scheduling import jobs, scheduler
 from tfs.web.overview import Overview, read_overview
 from tfs.web.push import make_push_handler
-from tfs.web.server import PushHandler, WebServer, make_server
+from tfs.web.server import HomeWifi, PushHandler, WebServer, make_server
 
 HOME_WIFI_HOST = "0.0.0.0"
 PING_TIMEOUT_S = 1
@@ -40,7 +40,7 @@ class PortInUseError(Exception):
 
 
 class Engine:
-    """One TFS engine: a screen server, with home_wifi a second server that takes pushes, and a worker that reads what they save."""
+    """Serve the dashboard and process imports on the computer and optional Wi-Fi listener."""
 
     def __init__(
         self,
@@ -87,11 +87,17 @@ class Engine:
 
         servers: list[WebServer] = []
         try:
-            servers.append(
-                _bind(SCREEN_HOST, self._screen_port, handler, home_wifi=False, overview=overview)
-            )
+            servers.append(_bind(SCREEN_HOST, self._screen_port, handler, overview=overview))
             if self._home_wifi:
-                servers.append(_bind(HOME_WIFI_HOST, self._home_wifi_port, handler, home_wifi=True))
+                servers.append(
+                    _bind(
+                        HOME_WIFI_HOST,
+                        self._home_wifi_port,
+                        handler,
+                        home_wifi=HomeWifi(db_path),
+                        overview=overview,
+                    )
+                )
             self._prepare_data(db_path)
             for server in servers:
                 server.start()
@@ -208,14 +214,14 @@ def _bind(
     port: int,
     handler: PushHandler,
     *,
-    home_wifi: bool,
+    home_wifi: HomeWifi | None = None,
     overview: Callable[[], Overview] | None = None,
 ) -> WebServer:
     """Bind a server. A taken port raises PortInUseError, or EngineAlreadyRunningError if TFS holds it."""
     try:
-        return make_server(host, port, push_handler=handler, push_only=home_wifi, overview=overview)
+        return make_server(host, port, push_handler=handler, home_wifi=home_wifi, overview=overview)
     except OSError as error:
-        if not home_wifi and tfs_answers_ping(port):
+        if home_wifi is None and tfs_answers_ping(port):
             raise EngineAlreadyRunningError("TFS is already running.") from error
         raise PortInUseError(
             f"Port {port} is used by another app. Close it and try again."

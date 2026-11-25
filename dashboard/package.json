@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc && vite build",
-    "types": "uv run python -c \"import json; from tfs.web.server import _make_app; print(json.dumps(_make_app(None, False, 0, 0, lambda: None).openapi()))\" | npx --yes openapi-typescript@7.13.0 -o src/api.ts"
+    "types": "uv run python -c \"import json; from tfs.web.server import _make_app; print(json.dumps(_make_app(lambda *_: (200, {}), None, 0, 0, lambda: None).openapi()))\" | npx --yes openapi-typescript@7.13.0 -o src/api.ts"
   },
   "dependencies": {
     "@paper-design/shaders-react": "0.0.82",

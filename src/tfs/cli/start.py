@@ -3,12 +3,12 @@
 import argparse
 import io
 import os
-import socket
 import sqlite3
 import sys
 import threading
 import webbrowser
 from contextlib import closing
+from datetime import UTC, datetime
 from time import sleep
 from typing import TextIO
 
@@ -16,10 +16,11 @@ import qrcode
 
 from tfs import config, password_store
 from tfs.cli import _tailscale, update
-from tfs.connectors.core.contract import load_manifests
+from tfs.connectors.core.contract import load_manifests, to_utc_text
 from tfs.engine import Engine, EngineAlreadyRunningError, PortInUseError
 from tfs.persistence import sqlite
 from tfs.persistence.migrations import BackupFailedError, DatabaseTooNewError
+from tfs.web.pairing import wifi_host
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -28,7 +29,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument(
         "--home-wifi",
         action="store_true",
-        help="also take pushes from phones on your home Wi-Fi",
+        help="serve paired phones and take pushes on your home Wi-Fi",
     )
     parser.add_argument("--open", action="store_true", help=argparse.SUPPRESS)
     parser.set_defaults(run=run)
@@ -36,7 +37,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
 
 def run(args: argparse.Namespace, *, footer: str = "", check_phone: bool = True) -> int:
     """Run the engine until Ctrl+C and return the exit code. Print the footer under the banner."""
-    home_wifi = args.home_wifi or _push_source_enabled()
+    home_wifi = args.home_wifi or _home_wifi_enabled()
     data_dir = config.data_dir()
     engine = Engine(data_dir, home_wifi=home_wifi, new_version=lambda: update.available(data_dir))
     try:
@@ -61,7 +62,7 @@ def run(args: argparse.Namespace, *, footer: str = "", check_phone: bool = True)
             for name, manifest in manifests.items()
             if manifest["routes"]["push"]
         ]
-        home_wifi_host = f"{socket.gethostname()}.local" if home_wifi else None
+        home_wifi_host = wifi_host() if home_wifi else None
         home_wifi_port = config.HOME_WIFI_PORT if home_wifi else None
         print(
             render_banner(
@@ -92,8 +93,8 @@ def run(args: argparse.Namespace, *, footer: str = "", check_phone: bool = True)
         running.unlink(missing_ok=True)
 
 
-def _push_source_enabled() -> bool:
-    """Say whether any turned-on source takes pushes from a phone."""
+def _home_wifi_enabled() -> bool:
+    """Enable Wi-Fi for paired phones or sources that take pushes."""
     if not config.db_path().exists():
         return False
     push_connectors = {
@@ -101,10 +102,20 @@ def _push_source_enabled() -> bool:
     }
     with closing(sqlite.connect(config.db_path(), "read_only")) as conn:
         try:
-            rows = conn.execute("SELECT connector FROM sources WHERE enabled = 1").fetchall()
+            if any(
+                row[0] in push_connectors
+                for row in conn.execute("SELECT connector FROM sources WHERE enabled = 1")
+            ):
+                return True
+            return (
+                conn.execute(
+                    "SELECT 1 FROM phone_pairings WHERE code_expires_at IS NULL OR code_expires_at > ? LIMIT 1",
+                    (to_utc_text(datetime.now(UTC)),),
+                ).fetchone()
+                is not None
+            )
         except sqlite3.OperationalError:
             return False
-    return any(connector in push_connectors for (connector,) in rows)
 
 
 def print_qr(url: str, out: TextIO | None = None) -> None:

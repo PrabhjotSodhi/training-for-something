@@ -5,7 +5,6 @@ import contextlib
 import io
 import itertools
 import secrets
-import socket
 import sys
 import threading
 import webbrowser
@@ -29,7 +28,7 @@ from tfs.persistence.migrations import BackupFailedError, DatabaseTooNewError, m
 from tfs.proposals import apply, journal
 from tfs.providers import mcp_tools
 from tfs.web import setup_page
-from tfs.web.server import lan_address
+from tfs.web.pairing import wifi_host
 
 # prompt_toolkit raises this on Windows when the terminal is not a real console, such as Git Bash.
 # Its module refuses to import on other systems, so the tuple stays empty there.
@@ -313,7 +312,7 @@ def _show_links(name: str, label: str, links: list[dict], phone_url: str | None)
     if not token:
         token = secrets.token_urlsafe(32)
         password_store.set("push_token", token)
-    wifi_url = f"http://{_host()}:{config.HOME_WIFI_PORT}/"
+    wifi_url = f"http://{wifi_host()}:{config.HOME_WIFI_PORT}/"
     routes = {"Wi-Fi": wifi_url}
     if phone_url:
         routes["Tailscale"] = phone_url
@@ -353,13 +352,6 @@ def _show_links(name: str, label: str, links: list[dict], phone_url: str | None)
 def _phone_reached() -> None:
     questionary.print("  ✔ Your phone reached this computer.", style=_GREEN)
     questionary.print("  Tap each button on the page, then press Enter.", style=_DIM)
-
-
-def _host() -> str:
-    """The address a phone on the same Wi-Fi reaches this computer at."""
-    if sys.platform == "darwin":
-        return f"{socket.gethostname()}.local"
-    return lan_address()
 
 
 def _connect_with_asks(name: str, manifest: dict, opens: str | None) -> None:
