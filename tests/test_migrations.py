@@ -325,17 +325,19 @@ class MigrateTest(unittest.TestCase):
         self.assertEqual(self.backups(), [])
 
     def test_a_third_backup_removes_the_oldest(self):
-        # GIVEN two backups from earlier upgrades
+        # GIVEN two backups whose clock times are later than now
         conn = self.upgrade_to_version_one_with_a_row()
         folder = self.root / "backups"
         folder.mkdir()
         older, newer = folder / "tfs-v0-2026-01-01.db", folder / "tfs-v0-2026-02-01.db"
         for age, path in enumerate((older, newer)):
             path.write_bytes(b"")
-            os.utime(path, (1_000_000 + age, 1_000_000 + age))
+            os.utime(path, (4_000_000_000 + age, 4_000_000_000 + age))
+        saved: list[Path] = []
         # WHEN a third is made
-        migrate(conn, migrations_dir=self.migrations)
-        # THEN the oldest is gone
+        migrate(conn, migrations_dir=self.migrations, on_backup=saved.append)
+        # THEN the new copy and the newer old one stay, and the oldest is gone
+        self.assertTrue(saved[0].exists())
         self.assertFalse(older.exists())
         self.assertTrue(newer.exists())
         self.assertEqual(len(self.backups()), 2)

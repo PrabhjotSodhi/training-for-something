@@ -40,7 +40,7 @@ def migrate(
         )
     database_file = conn.execute("PRAGMA database_list").fetchone()[2]
     if current > 0 and database_file:
-        backup = _back_up(conn, Path(database_file).parent / "backups", current)
+        backup = _back_up(conn, Path(database_file).parent / "backups")
         if on_backup is not None:
             on_backup(backup)
     _apply(conn, files)
@@ -98,14 +98,17 @@ def _schema_number(conn: sqlite3.Connection, newest: int) -> int:
 _BACKUPS_KEPT = 2
 
 
-def _back_up(conn: sqlite3.Connection, folder: Path, schema_number: int) -> Path:
+def _back_up(conn: sqlite3.Connection, folder: Path) -> Path:
     """Copy the database into folder, keep the newest backups and return the new copy's path."""
-    target = folder / f"tfs-v{schema_number}-{datetime.now(UTC):%Y-%m-%d}.db"
-    partial = target.with_suffix(".tmp")
+    day = f"{datetime.now(UTC):%Y-%m-%d}"
+    partial = folder / f"tfs-{day}.tmp"
     try:
         folder.mkdir(exist_ok=True)
         with closing(sqlite3.connect(partial)) as copy:
             conn.backup(copy)
+            # Named from the copy itself: another process may have migrated since this one checked.
+            schema_number = copy.execute("PRAGMA user_version").fetchone()[0]
+        target = folder / f"tfs-v{schema_number}-{day}.db"
         partial.replace(target)
     except (OSError, sqlite3.Error) as error:
         with suppress(OSError):
@@ -114,9 +117,11 @@ def _back_up(conn: sqlite3.Connection, folder: Path, schema_number: int) -> Path
             f"TFS could not save a backup in {folder} ({error}), so it did not update your "
             "database. Free some disk space or fix the folder, then try again."
         ) from error
-    old = sorted(folder.glob("tfs-v*.db"), key=lambda path: path.stat().st_mtime, reverse=True)
-    for path in old[_BACKUPS_KEPT:]:
-        path.unlink()
+    others = [path for path in folder.glob("tfs-v*.db") if path != target]
+    others.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    for path in others[_BACKUPS_KEPT - 1 :]:
+        with suppress(OSError):
+            path.unlink()
     return target
 
 
