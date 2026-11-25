@@ -5,10 +5,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 from importlib import resources
 from pathlib import Path
 
-from tfs.persistence.migrations import DatabaseTooNewError, migrate
+from tfs.persistence.migrations import BackupFailedError, DatabaseTooNewError, migrate
 from tfs.persistence.sqlite import connect
 
 SRC = str(Path(__file__).resolve().parents[1] / "src")
@@ -275,6 +276,67 @@ class MigrateTest(unittest.TestCase):
         (self.migrations / "0002_b.sql").write_text("CREATE TABLE b (y INTEGER);")
         self.assertEqual(migrate(conn, migrations_dir=self.migrations), 2)
         self.assertEqual(table_names(conn), {"a", "b"})
+
+    def upgrade_to_version_one_with_a_row(self) -> sqlite3.Connection:
+        self.write("0001_a.sql", "CREATE TABLE a (x INTEGER);")
+        conn = self.open()
+        migrate(conn, migrations_dir=self.migrations)
+        conn.execute("INSERT INTO a VALUES (41)")
+        self.write("0002_b.sql", "DROP TABLE a;")
+        return conn
+
+    def backups(self) -> list[Path]:
+        return sorted((self.root / "backups").glob("tfs-v*.db"))
+
+    def test_a_pending_migration_first_saves_the_old_rows(self):
+        # GIVEN a database at schema 1 holding a row
+        conn = self.upgrade_to_version_one_with_a_row()
+        saved: list[Path] = []
+        # WHEN it migrates to schema 2
+        migrate(conn, migrations_dir=self.migrations, on_backup=saved.append)
+        # THEN the backup holds the schema 1 rows and its path was reported
+        self.assertEqual(saved, self.backups())
+        self.assertRegex(saved[0].name, r"tfs-v1-\d{4}-\d{2}-\d{2}\.db")
+        with closing(sqlite3.connect(saved[0])) as backup:
+            self.assertEqual(backup.execute("SELECT x FROM a").fetchall(), [(41,)])
+            self.assertEqual(backup.execute("PRAGMA user_version").fetchone()[0], 1)
+
+    def test_a_backup_that_cannot_be_written_stops_the_migration(self):
+        # GIVEN a backups path that is a file
+        conn = self.upgrade_to_version_one_with_a_row()
+        (self.root / "backups").write_text("in the way", encoding="utf-8")
+        # WHEN TFS migrates
+        with self.assertRaises(BackupFailedError):
+            migrate(conn, migrations_dir=self.migrations)
+        # THEN the database is unchanged
+        self.assertEqual(user_version(conn), 1)
+        self.assertEqual(conn.execute("SELECT x FROM a").fetchall()[0][0], 41)
+
+    def test_a_new_or_current_database_gets_no_backup(self):
+        # GIVEN a new database, then the same database already at the newest schema
+        self.write("0001_a.sql", "CREATE TABLE a (x INTEGER);")
+        conn = self.open()
+        # WHEN TFS migrates twice
+        migrate(conn, migrations_dir=self.migrations)
+        migrate(conn, migrations_dir=self.migrations)
+        # THEN no backup exists
+        self.assertEqual(self.backups(), [])
+
+    def test_a_third_backup_removes_the_oldest(self):
+        # GIVEN two backups from earlier upgrades
+        conn = self.upgrade_to_version_one_with_a_row()
+        folder = self.root / "backups"
+        folder.mkdir()
+        older, newer = folder / "tfs-v0-2026-01-01.db", folder / "tfs-v0-2026-02-01.db"
+        for age, path in enumerate((older, newer)):
+            path.write_bytes(b"")
+            os.utime(path, (1_000_000 + age, 1_000_000 + age))
+        # WHEN a third is made
+        migrate(conn, migrations_dir=self.migrations)
+        # THEN the oldest is gone
+        self.assertFalse(older.exists())
+        self.assertTrue(newer.exists())
+        self.assertEqual(len(self.backups()), 2)
 
 
 class ShippedMigrationsTest(unittest.TestCase):

@@ -11,7 +11,7 @@ from tfs.connectors.core.contract import to_utc_text
 from tfs.importer.raw_store import FileConflictError
 from tfs.importer.session import AmbiguousRouteError, NoReaderError, import_file
 from tfs.persistence import sqlite
-from tfs.persistence.migrations import DatabaseTooNewError, migrate
+from tfs.persistence.migrations import BackupFailedError, DatabaseTooNewError, migrate
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -41,7 +41,7 @@ def run(args: argparse.Namespace) -> int:
     except FileNotFoundError as error:
         print(f"{error.filename} does not exist.", file=sys.stderr)
         return 1
-    except (FileConflictError, DatabaseTooNewError, ValueError) as error:
+    except (FileConflictError, DatabaseTooNewError, BackupFailedError, ValueError) as error:
         print(error, file=sys.stderr)
         return 1
     name = args.path.name

@@ -99,6 +99,16 @@ Ask for a change, like "Limit my sessions to 45 minutes and add an easy run tomo
 
 Keep the `save` tool set to ask for permission. An always allow setting skips that prompt. Your AI tool runs with your computer's permissions, so TFS cannot stop it from writing a change you refused through another route.
 
+## Go back to an older version
+
+Before an update changes your database, TFS saves a copy in the `backups` folder of the TFS data folder. It keeps the 2 newest. To go back:
+
+1. Stop TFS with Ctrl+C.
+2. Install the older release: `uv tool install --force <wheel URL>`
+3. Copy the backup you want over `tfs.db` in the data folder.
+
+Data saved after the update is lost.
+
 ## Not medical advice
 
 Training For Something gives no medical advice, diagnoses or doses, and never changes a clinician's targets. Its answers are not a substitute for a doctor or physio. If something feels like an emergency, call your local emergency number.

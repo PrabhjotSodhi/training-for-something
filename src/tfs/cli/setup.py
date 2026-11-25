@@ -25,7 +25,7 @@ from tfs.connectors.core import runner
 from tfs.connectors.core.contract import load_manifests, to_utc_text
 from tfs.importer.session import sync
 from tfs.persistence import sqlite
-from tfs.persistence.migrations import DatabaseTooNewError
+from tfs.persistence.migrations import BackupFailedError, DatabaseTooNewError
 from tfs.providers import mcp_tools
 from tfs.web import setup_page
 from tfs.web.server import lan_address
@@ -52,6 +52,7 @@ _CONNECT_ERRORS = (
     runner.RunnerFailedError,
     password_store.PasswordStoreError,
     DatabaseTooNewError,
+    BackupFailedError,
 )
 
 

@@ -6,6 +6,7 @@ Versions follow Python's PEP 440. Each release starts with "Breaking changes". E
 
 ### Added
 
+- Before an update changes your database, TFS saves a copy in the `backups` folder of the data folder and keeps the 2 newest (#288). `tfs start` prints the path.
 - `coach_v1_app_targets` lists your Hevy routines after each sync, and `coach_v1_plan_items` has `send_into_json`.
 - `add_session` and `change_session` take `send_into` to send a strength session into a Hevy routine you pick. The preview shows its title in `send_into_titles`.
 - Approved strength sessions are sent to Hevy (#185). An update keeps the routine's title and folder. Removing a session sent into a routine you picked leaves the routine as it is.
