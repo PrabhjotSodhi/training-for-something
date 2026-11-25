@@ -99,6 +99,8 @@ export interface components {
             plate: components["schemas"]["PlateOverview"] | null;
             /** Cards */
             cards: (components["schemas"]["WeekOverviewCard"] | components["schemas"]["SleepOverviewCard"] | components["schemas"]["TrendOverviewCard"] | components["schemas"]["SetsByMuscleOverviewCard"])[];
+            /** New Version */
+            new_version?: string | null;
         };
         /**
          * PlateData

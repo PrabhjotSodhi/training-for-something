@@ -353,7 +353,6 @@ class StartHomeWifiTest(TfsHomeTestCase):
     def start_engine(self):
         with (
             mock.patch("tfs.cli.start.Engine") as engine,
-            mock.patch("tfs.cli.update.watch"),
             mock.patch("tfs.cli.start.sleep", side_effect=KeyboardInterrupt),
             contextlib.redirect_stdout(io.StringIO()),
         ):
