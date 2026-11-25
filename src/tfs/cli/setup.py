@@ -87,6 +87,9 @@ def run(args: argparse.Namespace) -> int:
     except _NO_CONSOLE:
         print("\nRun tfs setup in PowerShell, Windows Terminal or Command Prompt.", file=sys.stderr)
         return 1
+    except (DatabaseTooNewError, BackupFailedError) as error:
+        print(f"  {error}", file=sys.stderr)
+        return 1
     footer = f"Keep this window open. TFS receives phone data only while it runs.\n{_next_step(first_tool, has_goal)}"
     return start.run(argparse.Namespace(home_wifi=False, open=True), footer=footer)
 
@@ -184,31 +187,34 @@ def _connect_ai_tools() -> providers.Provider | mcp_tools.Tool | None:
 def _set_goal() -> bool:
     """Ask for a goal unless one exists, and save it. Return True when a goal exists."""
     config.data_dir().mkdir(parents=True, exist_ok=True)
+    today = datetime.now(UTC).astimezone().date()
     with contextlib.closing(sqlite.connect(config.db_path())) as conn:
         migrate(conn)
-        goal = conn.execute("SELECT type, local_date FROM goals ORDER BY local_date").fetchone()
+        goal = conn.execute(
+            "SELECT type, local_date FROM goals WHERE local_date >= ? ORDER BY local_date",
+            (today.isoformat(),),
+        ).fetchone()
         version = journal.version(conn)
     if goal:
         print(f"\nGoal: {goal['type']} on {goal['local_date']}")
         return True
     print()
-    kinds = ["Get stronger", "Get fitter", "Train for an event", "Something else", "Skip for now"]
-    if _ask(questionary.select("What kind of goal is it?", choices=kinds)) == "Skip for now":
-        return False
     name = _ask(
         questionary.text(
-            'Name your goal, for example "First powerlifting meet"',
-            validate=lambda typed: bool(typed.strip()) or "Type a name for your goal.",
+            'Name your goal, for example "First powerlifting meet". Press Enter to skip'
         )
-    )
+    ).strip()
+    if not name:
+        return False
     day = _ask(questionary.text("What date are you aiming for? (YYYY-MM-DD)", validate=_future_day))
     target = _ask(questionary.text('Any target? Press Enter to skip, for example "Squat 140 kg"'))
+    request_id = f"setup-{secrets.token_hex(8)}"
     goal_action = {
         "action": "set_goal",
-        "item": "goal",
-        "type": name.strip(),
+        "item": request_id,
+        "type": name,
         "date": date.fromisoformat(day.strip()).isoformat(),
-        "target": {"description": target.strip() or name.strip()},
+        "target": {"description": target.strip() or name},
     }
     apply.save(
         config.db_path(),
@@ -218,7 +224,7 @@ def _set_goal() -> bool:
             "sources": [],
             "actions": [goal_action],
         },
-        request_id=f"setup-{secrets.token_hex(8)}",
+        request_id=request_id,
         approved_by="screen",
         now=datetime.now(UTC).astimezone(),
     )
@@ -240,11 +246,7 @@ def _next_step(tool: providers.Provider | mcp_tools.Tool | None, has_goal: bool)
         opening = f"Open a new terminal and run `{tool.command}`."
     else:
         opening = f"Open {tool.label}, or restart it if it is open. Then start a new chat."
-    message = (
-        "Use TFS to build my first training plan for my goal. Ask me one question at a time."
-        if has_goal
-        else providers.FIRST_MESSAGE
-    )
+    message = providers.PLAN_MESSAGE if has_goal else providers.FIRST_MESSAGE
     return f"{opening}\nPaste this: {message}"
 
 

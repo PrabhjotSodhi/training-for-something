@@ -32,14 +32,14 @@ PUSH_URL = "http://studio.local:47824/push/health_auto_export"
 
 
 class FakeQuestionary:
-    """Answers each question from a list, in order, then skips the goal."""
+    """Answers each question from a list, in order, then Enter on every text prompt."""
 
     Choice = mock.Mock(
         side_effect=lambda title, value, disabled=None, checked=False: mock.Mock(disabled=disabled)
     )
 
     def __init__(self, *answers):
-        self.answers = deque([*answers, "Skip for now"])
+        self.answers = deque([*answers, ""])
 
     @staticmethod
     def print(text, style=None):
@@ -257,8 +257,8 @@ class SetupTest(TfsHomeTestCase):
             return [tuple(row) for row in conn.execute("SELECT type, local_date FROM goals")]
 
     def test_given_goal_answers_when_setup_finishes_then_the_overview_has_a_plate(self):
-        # GIVEN a type, a name, a future date and a target
-        answers = ("Get stronger", "First powerlifting meet", "2099-03-14", "Squat 140 kg")
+        # GIVEN a name, a future date and a target
+        answers = ("First powerlifting meet", "2099-03-14", "Squat 140 kg")
         # WHEN setup finishes
         self.run_goal_setup(*answers)
         # THEN the save path stored the goal and the Overview shows it on the plate
@@ -267,16 +267,16 @@ class SetupTest(TfsHomeTestCase):
             (plate.data.goal, plate.data.date), ("First powerlifting meet", "2099-03-14")
         )
 
-    def test_given_skip_for_now_when_setup_finishes_then_no_goal_is_stored(self):
-        # GIVEN the person skips the goal
+    def test_given_an_empty_name_when_setup_finishes_then_no_goal_is_stored(self):
+        # GIVEN the person presses Enter on the name
         # WHEN setup finishes
-        self.run_goal_setup("Skip for now")
+        self.run_goal_setup("")
         # THEN no goal is stored
         self.assertEqual(self.stored_goals(), [])
 
     def test_given_a_past_date_when_setup_asks_then_it_says_why_and_asks_again(self):
         # GIVEN a past date, then a future one
-        answers = ("Something else", "Hike the coast track", "2020-01-01", "2099-03-14", "")
+        answers = ("Hike the coast track", "2020-01-01", "2099-03-14", "")
         # WHEN setup asks for the date
         _, out, _, _ = self.run_goal_setup(*answers)
         # THEN it says why and saves the second date
@@ -284,14 +284,21 @@ class SetupTest(TfsHomeTestCase):
         self.assertEqual(self.stored_goals(), [("Hike the coast track", "2099-03-14")])
 
     def test_given_a_saved_goal_when_setup_finishes_then_the_next_step_asks_for_a_first_plan(self):
-        # GIVEN a goal saved by an earlier setup
-        self.run_goal_setup("Get stronger", "First powerlifting meet", "2099-03-14", "")
+        # GIVEN a past goal, so setup asks again and saves a new one
+        config.data_dir().mkdir(parents=True, exist_ok=True)
+        with contextlib.closing(sqlite.connect(config.db_path())) as conn:
+            migrate(conn)
+            conn.execute(
+                "INSERT INTO goals (id, type, local_date, target_json)"
+                " VALUES ('old', 'Hike the coast track', '2020-01-01', '{}')"
+            )
+        self.run_goal_setup("First powerlifting meet", "2099-03-14", "")
         # WHEN setup runs again
         _, out, _, started = self.run_goal_setup()
         # THEN it names the goal and the next step asks for a first training plan
         self.assertIn("Goal: First powerlifting meet on 2099-03-14", out)
         footer = started.call_args.kwargs["footer"]
-        self.assertIn("Use TFS to build my first training plan for my goal.", footer)
+        self.assertIn(providers.PLAN_MESSAGE, footer)
         self.assertNotIn(providers.FIRST_MESSAGE, footer)
 
 

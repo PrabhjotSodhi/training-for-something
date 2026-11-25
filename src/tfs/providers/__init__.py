@@ -11,6 +11,7 @@ REPO = "PrabhjotSodhi/training-for-something"
 PLUGIN = "tfs@training-for-something"
 _TIMEOUT_S = 120
 FIRST_MESSAGE = "Use TFS to help me set my first training goal. Ask me one question at a time."
+PLAN_MESSAGE = "Use TFS to build my first training plan for my goal. Ask me one question at a time."
 
 
 class Provider(NamedTuple):
