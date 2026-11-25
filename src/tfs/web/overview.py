@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from tfs.mcp.tool_access import open_reader, query
-from tfs.proposals.models import Plate, SleepCard, TrendCard, WeekCard
+from tfs.proposals.models import Plate, SetsByMuscleCard, SleepCard, TrendCard, WeekCard
 from tfs.scores.readiness import normal_band
 from tfs.web.catalogue import (
     DEFAULT_CARDS,
@@ -165,13 +165,33 @@ class TrendOverviewCard(TrendCard):
     data: TrendData | None = None
 
 
+class MuscleSets(BaseModel):
+    """One muscle and its working sets this week."""
+
+    name: str
+    sets: int
+
+
+class SetsByMuscleData(BaseModel):
+    """This week's muscles, most sets first. Empty when the week has no sets."""
+
+    muscles: list[MuscleSets]
+
+
+class SetsByMuscleOverviewCard(SetsByMuscleCard):
+    """The sets by muscle card with its numbers."""
+
+    data: SetsByMuscleData | None = None
+
+
 class Overview(BaseModel):
     """The plate and the cards to draw."""
 
     plate: PlateOverview | None
     cards: list[
         Annotated[
-            WeekOverviewCard | SleepOverviewCard | TrendOverviewCard, Field(discriminator="type")
+            WeekOverviewCard | SleepOverviewCard | TrendOverviewCard | SetsByMuscleOverviewCard,
+            Field(discriminator="type"),
         ]
     ]
 
@@ -188,6 +208,8 @@ def _has_data(card: dict, have: set[str]) -> bool:
         return True
     if card["type"] == "sleep":
         return "sleep_asleep" in have
+    if card["type"] == "sets_by_muscle":
+        return "sets_by_muscle" in have
     if card["metric"] == "training_load":
         return bool(have & set(LOAD_SCORES))
     return card["metric"] in have
@@ -384,6 +406,19 @@ def _sleep_data(connection, target_h: float | None, today: date) -> SleepData:
     )
 
 
+def _sets_by_muscle_data(connection, today: date) -> SetsByMuscleData:
+    monday = (today - timedelta(days=today.weekday())).isoformat()
+    rows = _rows(
+        connection,
+        "SELECT week_start, muscle, sets FROM coach_v1_sets_by_muscle ORDER BY sets DESC, muscle",
+    )
+    return SetsByMuscleData(
+        muscles=[
+            MuscleSets(name=muscle, sets=sets) for week, muscle, sets in rows if week == monday
+        ]
+    )
+
+
 def _state(value: float, low: float, high: float) -> str:
     return "Above normal" if value > high else "Below normal" if value < low else "Normal"
 
@@ -518,9 +553,11 @@ def _trend_data(connection, card: dict, today: date, colour: str) -> TrendData |
 
 def _card_data(
     connection, card: dict, today: date, colour: str
-) -> WeekData | SleepData | TrendData | None:
+) -> WeekData | SleepData | TrendData | SetsByMuscleData | None:
     if card["type"] == "week":
         return _week_data(connection, today)
+    if card["type"] == "sets_by_muscle":
+        return _sets_by_muscle_data(connection, today)
     if card["type"] == "sleep":
         return _sleep_data(connection, card.get("target_h"), today)
     return _trend_data(connection, card, today, colour)
@@ -555,6 +592,11 @@ def read_overview(db_path: Path, today: date) -> Overview:
             " WHERE value IS NOT NULL GROUP BY score",
         )
         have = {name for name, day in latest if day >= since}
+        if any(
+            week >= since
+            for (week,) in _rows(connection, "SELECT week_start FROM coach_v1_sets_by_muscle")
+        ):
+            have.add("sets_by_muscle")
         goal = next((goal_id for goal_id, day in goals if day >= today.isoformat()), None)
         plate = None
         if goal:

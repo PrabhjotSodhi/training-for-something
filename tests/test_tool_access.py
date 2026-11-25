@@ -170,6 +170,7 @@ class ToolAccessTest(unittest.TestCase):
                 "coach_v1_scores",
                 "coach_v1_workouts",
                 "coach_v1_workout_parts",
+                "coach_v1_sets_by_muscle",
                 "coach_v1_sources",
                 "coach_v1_plan_items",
                 "coach_v1_plan_parts",

@@ -264,6 +264,18 @@ class OverviewApiTest(unittest.TestCase):
         self.assertEqual(with_target["target_h"], 8)
         self.assertIsNone(without["target_h"])
 
+    def test_the_sets_by_muscle_card_is_empty_in_a_week_with_no_hevy_sets(self):
+        # GIVEN a saved layout with the card and no Hevy workouts
+        layout = {
+            "plate": {"goal_id": "g1", "colour": "blue", "rows": []},
+            "cards": [{"type": "sets_by_muscle"}],
+        }
+        self.conn.execute("INSERT INTO overview_layout VALUES (1, ?)", (json.dumps(layout),))
+        # WHEN the overview is requested
+        card = self.get()["cards"][0]
+        # THEN the card holds no muscles, not a zero for each
+        self.assertEqual(card["data"], {"muscles": []})
+
     def test_resting_heart_rate_shows_today_against_the_median_and_spread_of_the_42_days_before(
         self,
     ):

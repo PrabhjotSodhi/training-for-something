@@ -1,16 +1,19 @@
-.sleep-headline {
+.card-headline {
   margin-top: 12px;
   font: var(--number);
   letter-spacing: -0.04em;
 }
 
-.sleep-nights {
+.bars {
   position: relative;
   margin-top: 16px;
+}
+
+.bars.with-target {
   padding-top: 18px;
 }
 
-.sleep-target {
+.bars-target {
   position: absolute;
   top: 16px;
   bottom: 0;
@@ -18,7 +21,7 @@
   border-left: 1.5px dashed var(--muted);
 }
 
-.sleep-target span {
+.bars-target span {
   position: absolute;
   top: -18px;
   left: 0;
@@ -28,39 +31,40 @@
   white-space: nowrap;
 }
 
-.sleep-night {
+.bars-row {
   display: grid;
-  grid-template-columns: 36px 1fr 64px;
+  grid-template-columns: var(--label) 1fr var(--value);
   align-items: center;
   height: 30px;
   font: var(--caption);
 }
 
-.sleep-day {
+.bars-label {
   font-weight: 700;
+  text-transform: capitalize;
 }
 
-.sleep-night:not(.now) .sleep-day {
+.bars-row.dim .bars-label {
   color: var(--muted);
 }
 
-.sleep-track {
+.bars-track {
   height: 12px;
 }
 
-.sleep-bar {
+.bars-bar {
   display: block;
   height: 100%;
   border-radius: 6px;
   background: var(--ink);
 }
 
-.sleep-missing {
+.bars-missing {
   color: var(--muted);
   line-height: 12px;
 }
 
-.sleep-value {
+.bars-value {
   text-align: right;
   font-weight: 700;
 }

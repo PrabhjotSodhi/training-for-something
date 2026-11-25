@@ -39,6 +39,11 @@ VIEWS = {
     "coach_v1_workout_parts": (
         "The sets, laps or intervals of a workout, in order by seq, from one app."
     ),
+    "coach_v1_sets_by_muscle": (
+        "Working sets per primary muscle for each week, from apps that tag exercises, such as"
+        " Hevy. week_start is the Monday. Warmup sets are left out. An exercise with no muscle"
+        " tag counts under other. A week with no sets has no row."
+    ),
     "coach_v1_sources": (
         "One row per connected app: whether it is enabled, when its last file arrived, its"
         " last error, and the latest time its data covers."
