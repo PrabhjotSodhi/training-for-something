@@ -35,12 +35,12 @@ and answers your questions through the AI tool you already use.
 <td width="50%" valign="top"><img src="docs/images/feature-hevy.webp" alt="An upper body routine marked as sent to Hevy"><br><b>Your plan in Hevy</b><br>Today's strength session waits for you in Hevy. Sending plans to Garmin <code>Coming soon</code></td>
 </tr>
 <tr>
-<td width="50%" valign="top"><img src="docs/images/feature-effort.webp" alt="Effort up 12 percent this week against the normal"><br><b>Train the right muscles</b><br>See your sets by muscle and your body composition. Both come from the apps you already use.</td>
+<td width="50%" valign="top"><b>Train the right muscles</b><br>See your sets by muscle each week. Ask your coach how your lean mass and waist are changing.</td>
 <td width="50%" valign="top"><img src="docs/images/feature-apps.webp" alt="Apple Health, Hevy, Health Auto Export, Claude Code and Codex"><br><b>Runs on the AI subscription you already pay for</b><br>Pick from 9 AI tools, including Claude Code and Codex.</td>
 </tr>
 <tr>
 <td width="50%" valign="top"><img src="docs/images/feature-morning.webp" alt="A morning note that changes today's intervals to an easy run"><br><b>A coach in the background</b> <code>Coming soon</code><br>It checks your data each morning, so you do not have to ask.</td>
-<td width="50%" valign="top"></td>
+<td width="50%" valign="top"><img src="docs/images/feature-effort.webp" alt="Effort up 12 percent this week against the normal"><br><b>Know how hard your week was</b><br>Your workout ratings against your own normal.</td>
 </tr>
 </table>
 
