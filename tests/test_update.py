@@ -174,6 +174,18 @@ class UpdateTest(unittest.TestCase):
         self.assertEqual(stopped, [])
         self.assertFalse(self.installed())
 
+    def test_a_download_it_cannot_save_leaves_tfs_running(self) -> None:
+        # GIVEN a full disk
+        stopped = []
+        # WHEN
+        with mock.patch.object(update.tempfile, "mkdtemp", side_effect=OSError("disk full")):
+            code, _ = self.update(
+                "9.0.0", [release("9.1.0", prerelease=False)], stop=lambda: stopped.append(1)
+            )
+        # THEN
+        self.assertEqual(code, 1)
+        self.assertEqual(stopped, [])
+
 
 class StopTest(unittest.TestCase):
     def setUp(self) -> None:
