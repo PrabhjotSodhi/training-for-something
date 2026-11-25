@@ -1,5 +1,5 @@
 import type { components } from "../api";
-import "./sleep.css";
+import { BarRows } from "./BarRows";
 
 export type SleepProps = NonNullable<components["schemas"]["SleepOverviewCard"]["data"]>;
 
@@ -18,34 +18,23 @@ export function Sleep({ sleep }: { sleep: SleepProps }) {
   return (
     <div className="sleep">
       <div className="card-title">Sleep</div>
-      <div className="sleep-headline">
+      <div className="card-headline">
         {average === null ? "No data" : `${duration(average)} a night`}
       </div>
-      <div className="sleep-nights">
-        {sleep.target_h !== null && (
-          <div
-            className="sleep-target"
-            style={{ left: `calc(36px + (100% - 100px) * ${sleep.target_h / scale})` }}
-          >
-            <span>{duration(sleep.target_h)}</span>
-          </div>
-        )}
-        {sleep.nights.map((night, index) => (
-          <div key={night.date} className={index === 6 ? "sleep-night now" : "sleep-night"}>
-            <div className="sleep-day">
-              {new Date(`${night.date}T00:00`).toLocaleDateString(undefined, { weekday: "short" })}
-            </div>
-            <div className="sleep-track">
-              {night.hours === null ? (
-                <span className="sleep-missing">No data</span>
-              ) : (
-                <span className="sleep-bar" style={{ width: `${(night.hours / scale) * 100}%` }} />
-              )}
-            </div>
-            <div className="sleep-value">{night.hours === null ? "" : duration(night.hours, true)}</div>
-          </div>
-        ))}
-      </div>
+      <BarRows
+        rows={sleep.nights.map((night) => ({
+          key: night.date,
+          label: new Date(`${night.date}T00:00`).toLocaleDateString(undefined, { weekday: "short" }),
+          value: night.hours,
+          text: night.hours === null ? "" : duration(night.hours, true),
+        }))}
+        max={scale}
+        labelWidth={36}
+        valueWidth={64}
+        target={sleep.target_h === null ? null : { value: sleep.target_h, label: duration(sleep.target_h) }}
+        highlight={sleep.nights[6].date}
+        missing="No data"
+      />
     </div>
   );
 }
