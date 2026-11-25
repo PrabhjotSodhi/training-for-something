@@ -8,7 +8,7 @@
   box-sizing: border-box;
   min-height: 42vh;
   display: flex;
-  margin-bottom: 12px;
+  margin-bottom: 20px;
   border-radius: 20px;
   color: var(--ink);
 }
@@ -133,6 +133,10 @@
   justify-content: space-between;
   color: var(--ink-2);
   font: var(--caption);
+}
+
+.plate-road-top {
+  justify-content: flex-end;
 }
 
 .plate-road-top b {

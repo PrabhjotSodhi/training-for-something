@@ -1,7 +1,7 @@
 import http.client
 import json
 import unittest
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 
 from tests.helpers import insert_file, insert_workout, open_database
@@ -15,13 +15,14 @@ TODAY = date(2026, 11, 24)
 class OverviewApiTest(unittest.TestCase):
     def setUp(self) -> None:
         self.today = TODAY
+        self.time = time(9)
         self.conn = open_database(self)
         path = Path(self.conn.execute("PRAGMA database_list").fetchone()[2])
         self.server = make_server(
             config.SCREEN_HOST,
             0,
             push_handler=lambda *_: (200, {}),
-            overview=lambda: read_overview(path, self.today),
+            overview=lambda: read_overview(path, datetime.combine(self.today, self.time, UTC)),
         )
         self.server.start()
         self.addCleanup(self.server.stop)
@@ -67,10 +68,11 @@ class OverviewApiTest(unittest.TestCase):
             )
 
     def plan(self, key, day, family, label, km, matched=None) -> None:
-        self.conn.execute(
-            "INSERT OR IGNORE INTO journal (request_id, proposal_json, before_json, approved_by,"
-            " saved_at) VALUES ('r1', '{}', '{}', 'chat', '2026-11-01T10:00:00Z')"
-        )
+        if not self.conn.execute("SELECT 1 FROM journal").fetchone():
+            self.conn.execute(
+                "INSERT INTO journal (request_id, proposal_json, before_json, approved_by,"
+                " saved_at) VALUES ('r1', '{}', '{}', 'chat', '2026-11-01T10:00:00Z')"
+            )
         self.conn.execute(
             "INSERT INTO plan_items (id, version, plan_version, local_date, family, label, why)"
             " VALUES (?, 1, 1, ?, ?, ?, 'w')",
@@ -277,6 +279,41 @@ class OverviewApiTest(unittest.TestCase):
             week["totals"], [{"sport": "run", "unit": "km", "done": 10.4, "planned": 10}]
         )
 
+    def test_a_planned_run_is_missed_12_hours_after_its_day_while_the_source_is_fresh(self):
+        # GIVEN runs planned yesterday, today and tomorrow with no workouts, and Hevy in contact
+        for key, day in (("p1", "2026-11-23"), ("p2", "2026-11-24"), ("p3", "2026-11-25")):
+            self.plan(key, day, "run", "Easy run", 8)
+        self.conn.execute(
+            "INSERT INTO sources (connector, last_contact_at) VALUES ('hevy', '2026-11-24T08:00:00Z')"
+        )
+
+        def states() -> list[str]:
+            return [s["state"] for day in self.week()["days"] for s in day["sessions"]]
+
+        # WHEN the overview is requested at 11:59, the minute before the grace period ends
+        self.time = time(11, 59)
+        # THEN every run is still planned
+        self.assertEqual(states(), ["planned", "planned", "planned"])
+        # WHEN it is requested at 12:00
+        self.time = time(12)
+        week = self.week()
+        # THEN only yesterday's run is missed, and it still counts as planned
+        self.assertEqual(
+            [s["state"] for day in week["days"] for s in day["sessions"]],
+            ["missed", "planned", "planned"],
+        )
+        self.assertEqual(week["totals"], [{"sport": "run", "unit": "km", "done": 0, "planned": 24}])
+        self.assertEqual(week["planned_sessions"], 3)
+        # WHEN a workout with no sport family arrived yesterday
+        self.workout("w1", "2026-11-23", None, "Workout", 30)
+        # THEN yesterday's run is not known to be missed and stays planned
+        self.assertEqual(states()[0], "planned")
+        # WHEN that workout is deleted and Hevy is past its 168 hours without contact
+        self.conn.execute("UPDATE source_records SET deleted_at = '2026-11-24T08:00:00Z'")
+        self.conn.execute("UPDATE sources SET last_contact_at = '2026-11-16T11:59:00Z'")
+        # THEN yesterday's run stays planned
+        self.assertEqual(states()[0], "planned")
+
     def test_a_strength_workout_counts_its_sets(self):
         # GIVEN a strength workout of 18 sets on Thursday
         self.workout("w1", "2026-11-26", "strength", "Push day", 60, sets=18)
@@ -296,6 +333,7 @@ class OverviewApiTest(unittest.TestCase):
         # THEN Tuesday has a done 12 km tile and the totals hold only that run
         self.assertEqual(week["days"][1]["sessions"][0]["state"], "done")
         self.assertEqual(week["totals"], [{"sport": "run", "unit": "km", "done": 12, "planned": 0}])
+        self.assertEqual(week["planned_sessions"], 0)
 
     def test_the_sleep_card_holds_seven_nights_with_a_gap_and_the_saved_target(self):
         # GIVEN six nights averaging 7 h 35 min, a gap on the 21st, and older sleep outside the week
@@ -340,11 +378,10 @@ class OverviewApiTest(unittest.TestCase):
         self.fact(self.ago(0), "resting_hr", 49)
         # WHEN the overview is requested
         data = self.trend_cards({"type": "trend", "metric": "resting_hr"})[0]["data"]
-        # THEN 30 days end today at 49 with band edges 46 and 52, and the card takes the plate colour
+        # THEN 30 days end today at 49 with band edges 46 and 52
         points = data["parts"][0]["points"]
         self.assertEqual(len(points), 30)
         self.assertEqual(points[-1], {"date": self.ago(0), "value": 49, "low": 46, "high": 52})
-        self.assertEqual(data["colour"], "blue")
 
     def test_a_day_with_no_reading_is_null(self):
         # GIVEN readings today and the day before yesterday

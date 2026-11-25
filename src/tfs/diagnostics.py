@@ -25,7 +25,7 @@ def report(conn: sqlite3.Connection, *, now: str, manifests: dict | None = None)
                 **dict(row),
                 "label": manifest.get("label", row["connector"]),
                 "enabled": bool(row["enabled"]),
-                "stale": _is_stale(row["last_contact_at"], manifest.get("stale_after_hours"), now),
+                "stale": is_stale(row["last_contact_at"], manifest.get("stale_after_hours"), now),
             }
         )
     files = dict.fromkeys(_FILE_STATUSES, 0)
@@ -67,7 +67,7 @@ def render_text(report: dict) -> str:
     return "\n".join(lines)
 
 
-def _is_stale(last_contact_at: str | None, stale_after_hours: int | None, now: str) -> bool:
+def is_stale(last_contact_at: str | None, stale_after_hours: int | None, now: str) -> bool:
     if last_contact_at is None:
         return True
     if stale_after_hours is None:

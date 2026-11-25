@@ -316,15 +316,29 @@ class ToolAccessTest(unittest.TestCase):
         result = query(self.reader, "SELECT * FROM coach_v1_sources ORDER BY connector")
         self.assertEqual(
             result["columns"],
-            ["connector", "enabled", "last_received_at", "last_error", "covered_until"],
+            [
+                "connector",
+                "enabled",
+                "last_received_at",
+                "last_error",
+                "covered_until",
+                "last_contact_at",
+            ],
         )
         self.assertEqual(
             result["rows"],
             [
-                ["garmin", 1, "2025-03-03T09:00:00Z", None, "2025-03-01T07:51:20Z"],
-                ["hevy", 1, None, None, "2025-03-02T18:00:00Z"],
-                ["polar", 0, None, None, None],
-                ["strava", 1, "2025-03-03T08:00:00Z", "Token expired", "2025-03-01T07:50:00Z"],
+                ["garmin", 1, "2025-03-03T09:00:00Z", None, "2025-03-01T07:51:20Z", None],
+                ["hevy", 1, None, None, "2025-03-02T18:00:00Z", None],
+                ["polar", 0, None, None, None, None],
+                [
+                    "strava",
+                    1,
+                    "2025-03-03T08:00:00Z",
+                    "Token expired",
+                    "2025-03-01T07:50:00Z",
+                    None,
+                ],
             ],
         )
 

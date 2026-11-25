@@ -256,8 +256,6 @@ export interface components {
         TrendData: {
             /** Title */
             title: string;
-            /** Colour */
-            colour: string;
             /** Unit */
             unit: string | null;
             /** Join Days */
@@ -346,7 +344,7 @@ export interface components {
         };
         /**
          * WeekData
-         * @description Monday to Sunday with the totals per sport.
+         * @description Monday to Sunday with the totals per sport and the number of plan items.
          */
         WeekData: {
             /** Today */
@@ -355,6 +353,8 @@ export interface components {
             days: components["schemas"]["WeekDay"][];
             /** Totals */
             totals: components["schemas"]["WeekTotal"][];
+            /** Planned Sessions */
+            planned_sessions: number;
         };
         /**
          * WeekDay
@@ -380,7 +380,7 @@ export interface components {
         };
         /**
          * WeekSession
-         * @description One tile: a planned or done session in its sport's unit.
+         * @description One tile: a done, planned or missed session in its sport's unit.
          */
         WeekSession: {
             /** Name */
@@ -397,7 +397,7 @@ export interface components {
              * State
              * @enum {string}
              */
-            state: "done" | "planned";
+            state: "done" | "planned" | "missed";
         };
         /**
          * WeekTotal

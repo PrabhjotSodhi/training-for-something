@@ -1,19 +1,25 @@
+.week-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 210px;
+  gap: 32px;
+  margin-top: 16px;
+}
+
 .week-days {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 8px;
-  margin-top: 16px;
 }
 
 .week-day {
   display: grid;
   align-content: start;
   gap: 4px;
+  min-width: 0;
   min-height: 170px;
 }
 
 .week-label {
-  position: relative;
   margin-bottom: 6px;
   font: var(--caption);
   font-weight: 700;
@@ -26,16 +32,7 @@
 
 .week-day.now .week-label,
 .week-day.now .week-label span {
-  color: var(--ink);
-}
-
-.week-day.now .week-label::after {
-  content: "";
-  position: absolute;
-  inset: auto 0 -6px;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--ink);
+  color: var(--goal-ink);
 }
 
 .week-rest {
@@ -47,19 +44,52 @@
 .week-tile {
   position: relative;
   box-sizing: border-box;
+  min-width: 0;
   padding: 7px 9px;
   border-radius: 10px;
   font: var(--caption);
+  background: var(--goal);
+  color: var(--on-goal);
 }
 
-.week-tile.done {
-  background: var(--ink);
-  color: var(--card);
+.week-tile.strength.done {
+  background: var(--stripes-soft), var(--goal-light);
+  color: var(--goal-night);
+}
+
+.week-tile.ride.done {
+  background: var(--goal-deep);
+  color: #fff;
+}
+
+.week-tile.swim.done {
+  background: var(--goal-light);
+  color: var(--goal-night);
+}
+
+.week-tile.today {
+  background: var(--goal-tint);
+  box-shadow: inset 0 0 0 1.5px var(--goal);
+  color: var(--goal-ink);
 }
 
 .week-tile.planned {
-  background: var(--active);
+  background: var(--fill);
   color: var(--muted);
+}
+
+.week-tile.missed {
+  background: none;
+  outline: 1.5px dashed var(--faint);
+  outline-offset: -1.5px;
+  color: var(--muted);
+}
+
+@media (prefers-color-scheme: dark) {
+  .week-tile.strength.done,
+  .week-tile.swim.done {
+    color: #fff;
+  }
 }
 
 .week-name,
@@ -73,29 +103,22 @@
   font-weight: 700;
 }
 
+.week-amount {
+  opacity: 0.85;
+}
+
 .week-hover {
   display: none;
   position: absolute;
   z-index: 1;
-  top: 100%;
-  left: 0;
+  top: 0;
+  left: calc(100% + 8px);
   width: max-content;
-  min-width: 140px;
-  margin-top: 4px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--card);
-  color: var(--ink);
+  max-width: 220px;
 }
 
-.week-hover b,
-.week-hover span {
-  display: block;
-}
-
-.week-hover span {
-  color: var(--muted);
+.week-hover b {
+  white-space: normal;
 }
 
 .week-tile:hover .week-hover,
@@ -105,37 +128,84 @@
 
 .week-day:nth-child(n + 6) .week-hover {
   left: auto;
-  right: 0;
+  right: calc(100% + 8px);
 }
 
 .week-totals {
-  display: flex;
-  gap: 32px;
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
+  display: grid;
+  align-content: start;
+  gap: 2px;
+}
+
+.week-count {
+  font: var(--number);
+  letter-spacing: -0.04em;
+}
+
+.week-count span {
+  color: var(--muted);
+  font: var(--body);
+  letter-spacing: -0.005em;
 }
 
 .week-total {
-  flex: 1;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font: var(--caption);
 }
 
 .week-total-head {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 6px;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.week-total-head b {
+  color: var(--ink);
+  font: var(--body);
+  font-weight: 700;
+}
+
+.week-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 7px;
+  border-radius: 3px;
+  vertical-align: -0.5px;
 }
 
 .week-bar {
   height: 4px;
+  margin-top: 8px;
+  overflow: hidden;
   border-radius: 2px;
-  background: var(--active);
+  background: var(--fill);
 }
 
 .week-bar span {
   display: block;
   height: 100%;
   border-radius: 2px;
-  background: var(--ink);
+}
+
+.week-swatch,
+.week-bar span {
+  background: var(--goal);
+}
+
+.week-total.strength :is(.week-swatch, .week-bar span) {
+  background: var(--stripes);
+}
+
+.week-total.ride :is(.week-swatch, .week-bar span) {
+  background: var(--goal-deep);
+}
+
+.week-total.swim :is(.week-swatch, .week-bar span) {
+  background: var(--goal-light);
 }

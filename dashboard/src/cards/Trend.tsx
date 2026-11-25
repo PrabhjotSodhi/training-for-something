@@ -62,7 +62,7 @@ export function Trend({ trend }: { trend: TrendProps }) {
     (segments[index - 1] !== segments[index] && segments[index + 1] !== segments[index]);
 
   return (
-    <div className="trend" data-colour={trend.colour}>
+    <div className="trend">
       <div className="trend-head">
         <div className="card-title">{trend.title}</div>
         {trend.parts.length > 1 && (
@@ -95,12 +95,12 @@ export function Trend({ trend }: { trend: TrendProps }) {
               <Area dataKey="band" type="monotone" stroke="none" fill="var(--band)" fillOpacity={1} isAnimationActive={false} activeDot={false} />
               <Tooltip
                 isAnimationActive={false}
-                cursor={{ stroke: "var(--muted)", strokeWidth: 1 }}
+                cursor={{ stroke: "var(--faint)", strokeWidth: 1 }}
                 content={({ active, payload }) => {
                   const row = payload?.[0]?.payload as (typeof rows)[number] | undefined;
                   if (!active || !row) return null;
                   return (
-                    <div className="trend-hover" role="tooltip">
+                    <div className="hover" role="tooltip">
                       <b>{day(row.date)}</b>
                       <span>
                         {part.name}
