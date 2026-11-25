@@ -2,8 +2,11 @@ import contextlib
 import hashlib
 import io
 import json
+import os
 import shutil
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from tfs.cli import update
@@ -105,6 +108,53 @@ class UpdateTest(unittest.TestCase):
         # THEN
         self.assertEqual(code, 1)
         self.assertNotIn("install", [event[0] for event in self.events])
+
+
+class UpdateCheckTest(unittest.TestCase):
+    def setUp(self) -> None:
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.data_dir = Path(folder.name)
+        self.requests: list[str] = []
+
+    def github(self, url: str) -> bytes:
+        self.requests.append(url)
+        return json.dumps([release("9.1.0", prerelease=False)]).encode()
+
+    def check(self, fetch=None, turned_off: str = "") -> str | None:
+        """Run the check that tfs start makes, as TFS 9.0.0."""
+        with (
+            mock.patch.dict(os.environ, {"TFS_NO_UPDATE_CHECK": turned_off}),
+            mock.patch.object(update, "__version__", "9.0.0"),
+        ):
+            return update.check(self.data_dir, fetch=fetch or self.github)
+
+    def test_a_newer_release_shows_the_notice_once_for_that_version(self) -> None:
+        # GIVEN a newer release
+        # WHEN tfs start checks at start and a day later
+        notices = [self.check(), self.check()]
+        # THEN the terminal tells once, and the dashboard can show the version
+        self.assertEqual(notices[0], "TFS 9.1.0 is ready. Run tfs update.")
+        self.assertIsNone(notices[1])
+        with mock.patch.object(update, "__version__", "9.0.0"):
+            self.assertEqual(update.available(self.data_dir), "9.1.0")
+
+    def test_no_network_is_silent(self) -> None:
+        # GIVEN
+        def offline(url: str) -> bytes:
+            raise OSError("no network")
+
+        # WHEN
+        notice = self.check(fetch=offline)
+        # THEN
+        self.assertIsNone(notice)
+
+    def test_turned_off_makes_no_request(self) -> None:
+        # WHEN
+        notice = self.check(turned_off="1")
+        # THEN
+        self.assertIsNone(notice)
+        self.assertEqual(self.requests, [])
 
 
 if __name__ == "__main__":
