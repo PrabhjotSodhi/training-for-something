@@ -19,7 +19,7 @@ import questionary
 from questionary import Separator, Style
 
 from tfs import config, password_store, providers
-from tfs.cli import import_, start
+from tfs.cli import _tailscale, import_, start
 from tfs.cli.connect import connect_source
 from tfs.connectors.core import runner
 from tfs.connectors.core.contract import load_manifests, to_utc_text
@@ -80,6 +80,14 @@ def run(args: argparse.Namespace) -> int:
         for number, name in enumerate(picked, 1):
             print(f"\n── {manifests[name]['label']} ({number} of {len(picked)})")
             _set_up_app(name, manifests[name])
+        phone = _ask(
+            questionary.confirm(
+                "View TFS on your phone? It uses Tailscale, a free private network for your own devices.",
+                default=True,
+            )
+        )
+        if phone:
+            _tailscale.set_up()
         has_goal = _set_goal()
     except KeyboardInterrupt:
         print("\nSetup stopped.", file=sys.stderr)
@@ -91,7 +99,9 @@ def run(args: argparse.Namespace) -> int:
         print(f"  {error}", file=sys.stderr)
         return 1
     footer = f"Keep this window open. TFS receives phone data only while it runs.\n{_next_step(first_tool, has_goal)}"
-    return start.run(argparse.Namespace(home_wifi=False, open=True), footer=footer)
+    return start.run(
+        argparse.Namespace(home_wifi=False, open=True), footer=footer, check_phone=phone
+    )
 
 
 def fill_link(template: str, push_url: str, token: str) -> str:
