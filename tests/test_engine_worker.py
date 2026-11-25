@@ -177,6 +177,7 @@ class EngineWorkerTest(unittest.TestCase):
     def test_start_prints_the_banner_and_exits_0_after_ctrl_c(self):
         out = io.StringIO()
         with (
+            mock.patch("tfs.cli._tailscale._run", return_value=None),
             mock.patch.object(
                 start,
                 "Engine",

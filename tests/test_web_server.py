@@ -71,6 +71,15 @@ class RoutesTest(ServerTestCase):
         # THEN it answers 200 tfs
         self.assertEqual(reply, (200, b"tfs"))
 
+    def test_phone_origin_and_host_reach_ping(self):
+        # GIVEN a phone opens the dashboard through private HTTPS
+        host = "laptop.example-tailnet.ts.net"
+        self.start()
+        # WHEN it requests the engine on the same origin
+        reply = self.request("GET", "/ping", headers={"Host": host, "Origin": f"https://{host}"})
+        # THEN the engine answers
+        self.assertEqual(reply, (200, b"tfs"))
+
     def test_other_paths_are_not_found(self):
         # GIVEN a running server
         self.start()

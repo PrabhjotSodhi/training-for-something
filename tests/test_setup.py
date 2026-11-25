@@ -38,8 +38,9 @@ class FakeQuestionary:
         side_effect=lambda title, value, disabled=None, checked=False: mock.Mock(disabled=disabled)
     )
 
-    def __init__(self, *answers):
+    def __init__(self, *answers, phone=False):
         self.answers = deque([*answers, ""])
+        self.confirm = mock.Mock(return_value=mock.Mock(ask=lambda: phone))
 
     @staticmethod
     def print(text, style=None):
@@ -302,6 +303,124 @@ class SetupTest(TfsHomeTestCase):
         self.assertNotIn(providers.FIRST_MESSAGE, footer)
 
 
+class TailscaleTest(TfsHomeTestCase):
+    host = "laptop.example-tailnet.ts.net"
+    target = "http://127.0.0.1:47823"
+
+    def setUp(self):
+        super().setUp()
+        self.state = {"BackendState": "Running", "Self": {"DNSName": self.host + "."}}
+        self.routes = {}
+        self.approval = ""
+        self.commands = self.enterContext(
+            mock.patch("tfs.cli._tailscale._run", side_effect=self.run_command)
+        )
+
+    def route(self, target, port=443):
+        return {
+            "TCP": {str(port): {"HTTPS": True}},
+            "Web": {f"{self.host}:{port}": {"Handlers": {"/": {"Proxy": target}}}},
+        }
+
+    def run_command(self, *args):
+        if args == ("status", "--json"):
+            return json.dumps(self.state) if self.state else None
+        if args == ("serve", "status", "--json"):
+            return json.dumps(self.routes)
+        self.assertEqual(args, ("serve", "--bg", self.target))
+        if self.approval:
+            return self.approval
+        self.routes = self.route(self.target)
+        return ""
+
+    def run_cli(self, command="setup", phone=True):
+        output = io.StringIO()
+        with (
+            mock.patch("sys.stdin", mock.Mock(isatty=lambda: True)),
+            mock.patch.object(setup, "_connect_ai_tools", return_value=None),
+            mock.patch.object(setup, "questionary", FakeQuestionary([], phone=phone)),
+            mock.patch.object(start, "Engine"),
+            mock.patch.object(start, "sleep", side_effect=KeyboardInterrupt),
+            mock.patch.object(start.update, "watch"),
+            mock.patch.object(start.webbrowser, "open"),
+            contextlib.redirect_stdout(output),
+        ):
+            self.assertEqual(main([command]), 0)
+        return output.getvalue()
+
+    def test_free_port_sets_up_once_and_start_shows_phone_and_push_links(self):
+        # GIVEN a signed-in computer with no Serve config
+        # WHEN setup runs twice and the engine starts again
+        self.assertIn(f"https://{self.host}/", self.run_cli())
+        self.assertIn("already", self.run_cli().lower())
+        banner = self.run_cli("start")
+        # THEN only the first setup changed Serve and start shows both links
+        self.assertEqual(
+            self.commands.call_args_list.count(mock.call("serve", "--bg", self.target)), 1
+        )
+        self.assertIn(f"https://{self.host}/\n", banner)
+        self.assertIn(f"https://{self.host}/push/health_auto_export", banner)
+
+    def test_missing_or_signed_out_prints_install_steps_and_finishes(self):
+        # GIVEN Tailscale is missing or needs login
+        for state in (None, {"BackendState": "NeedsLogin"}):
+            with self.subTest(state=state):
+                self.state = state
+                # WHEN setup runs
+                output = self.run_cli()
+                # THEN the person can finish setup and come back after signing in
+                for text in (
+                    "tailscale.com/download",
+                    "same account",
+                    "tfs setup",
+                    "TFS is running",
+                ):
+                    self.assertIn(text, output)
+        self.assertTrue(
+            all(call == mock.call("status", "--json") for call in self.commands.call_args_list)
+        )
+
+    def test_busy_or_public_port_stays_untouched(self):
+        # GIVEN another app or a public route on 443
+        for routes in (
+            self.route("http://127.0.0.1:5199"),
+            {**self.route(self.target), "AllowFunnel": {f"{self.host}:443": True}},
+        ):
+            with self.subTest(routes=routes):
+                self.routes = routes
+                # WHEN setup checks the port
+                output = self.run_cli()
+                # THEN it suggests a private port without changing or advertising the existing route
+                self.assertIn(f"tailscale serve --bg --https=8443 {self.target}", output)
+                self.assertNotIn(f"https://{self.host}/", output)
+        self.assertNotIn(mock.call("serve", "--bg", self.target), self.commands.call_args_list)
+
+    def test_declining_phone_access_skips_all_commands(self):
+        # GIVEN the person declines phone access
+        # WHEN setup starts the engine
+        output = self.run_cli(phone=False)
+        # THEN no Tailscale command runs
+        self.assertIn("TFS is running", output)
+        self.commands.assert_not_called()
+
+    def test_setup_waits_for_approval_and_retries_once(self):
+        # GIVEN Serve needs approval
+        self.approval = "https://login.tailscale.com/f/serve?node=invented"
+        link = self.approval
+        # WHEN the person approves it and presses Enter
+        with mock.patch(
+            "builtins.input", side_effect=lambda *_: setattr(self, "approval", "")
+        ) as enter:
+            output = self.run_cli()
+        # THEN setup showed the approval link and the verified dashboard address
+        enter.assert_called_once()
+        self.assertIn(link, output)
+        self.assertIn(f"https://{self.host}/", output)
+        self.assertEqual(
+            self.commands.call_args_list.count(mock.call("serve", "--bg", self.target)), 2
+        )
+
+
 class PhonePageTest(TfsHomeTestCase):
     CODE = "k7q2abcd"
 
@@ -410,6 +529,7 @@ class StartHomeWifiTest(TfsHomeTestCase):
 
     def start_engine(self):
         with (
+            mock.patch("tfs.cli._tailscale._run", return_value=None),
             mock.patch("tfs.cli.start.Engine") as engine,
             mock.patch("tfs.cli.start.sleep", side_effect=KeyboardInterrupt),
             # The update check would reach GitHub.

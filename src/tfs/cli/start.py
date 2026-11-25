@@ -11,7 +11,7 @@ from contextlib import closing
 from time import sleep
 
 from tfs import config, password_store
-from tfs.cli import update
+from tfs.cli import _tailscale, update
 from tfs.connectors.core.contract import load_manifests
 from tfs.engine import Engine, EngineAlreadyRunningError, PortInUseError
 from tfs.persistence import sqlite
@@ -30,7 +30,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.set_defaults(run=run)
 
 
-def run(args: argparse.Namespace, *, footer: str = "") -> int:
+def run(args: argparse.Namespace, *, footer: str = "", check_phone: bool = True) -> int:
     """Run the engine until Ctrl+C and return the exit code. Print the footer under the banner."""
     home_wifi = args.home_wifi or _push_source_enabled()
     data_dir = config.data_dir()
@@ -67,6 +67,7 @@ def run(args: argparse.Namespace, *, footer: str = "") -> int:
                 home_wifi_port,
                 password_store.get("push_token") or "",
                 push_connectors,
+                _tailscale.phone_link() if check_phone else None,
             ),
             flush=True,
         )
@@ -109,12 +110,17 @@ def render_banner(
     home_wifi_port: int | None,
     token: str,
     push_connectors: list[tuple[str, str]],
+    phone_url: str | None = None,
 ) -> str:
     """Build the text that says TFS is running, with a push URL for each app that takes pushes."""
     lines = ["TFS is running. Press Ctrl+C to stop."]
+    if phone_url:
+        lines.append(f"Dashboard (phone): {phone_url}")
     for name, label in push_connectors:
         lines.append(label)
         lines.append(f"  Push URL (this computer): http://{host}:{port}/push/{name}")
+        if phone_url:
+            lines.append(f"  Push URL (Tailscale):     {phone_url}push/{name}")
         if home_wifi_host is not None:
             lines.append(
                 f"  Push URL (home Wi-Fi):    http://{home_wifi_host}:{home_wifi_port}/push/{name}"
