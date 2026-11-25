@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 from tfs import config
-from tfs.web.server import make_server
+from tfs.web.server import HomeWifi, make_server
 
 # Client side only. A broken server fails a test instead of hanging it.
 SAFETY_TIMEOUT_S = 10
@@ -187,7 +187,7 @@ class RoutesTest(ServerTestCase):
     def test_a_push_to_the_computers_own_ip_address_is_accepted(self):
         # GIVEN a server on a computer whose address is 192.0.2.7
         with mock.patch("tfs.web.server.own_addresses", return_value={"192.0.2.7"}):
-            self.start(push_only=True)
+            self.start(home_wifi=HomeWifi(Path("unused.db")))
         # WHEN a push arrives with that address as the Host
         status = self.request("POST", "/push/x", b"hi", headers={"Host": "192.0.2.7:47824"})[0]
         # THEN it is accepted
@@ -200,9 +200,9 @@ class RoutesTest(ServerTestCase):
                 )
         self.assertEqual(len(self.calls), 1)
 
-    def test_the_home_wifi_server_answers_pushes_only(self):
+    def test_the_home_wifi_server_refuses_unpaired_screen_requests(self):
         # GIVEN a server for the home Wi-Fi door
-        self.start(push_only=True, overview=lambda: None)
+        self.start(home_wifi=HomeWifi(Path("unused.db")), overview=lambda: None)
         # WHEN a client asks for a screen, an API route or /ping
         for path in ("/", "/api/overview", "/ping", "/docs"):
             # THEN it gets 404

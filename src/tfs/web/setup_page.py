@@ -1,10 +1,15 @@
 """The phone setup page and the temporary server `tfs setup` runs while a phone scans its QR code."""
 
-import sys
 import threading
 from collections.abc import Callable
+from datetime import UTC, datetime
 from html import escape
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from fastapi.responses import HTMLResponse
+
+from tfs import config
+from tfs.web import server
+from tfs.web.overview import read_overview
 
 SERVER_LIFETIME_S = 600
 
@@ -59,12 +64,16 @@ def render_page(title: str, buttons: list[tuple[str, str]], *, tailscale: bool =
 """
 
 
-class SetupServer(ThreadingHTTPServer):
-    """Serves the page at /setup/<code> and answers 404 to everything else."""
+def scan_page() -> str:
+    """Return the public instruction shown to unpaired phones."""
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Pair your phone</title><style>{_STYLE}</style></head>
+<body><main><p class="card">Scan the QR code from <code>tfs setup</code> on your computer.</p></main></body></html>"""
 
-    # On Windows, address reuse would let this bind next to a running TFS instead of failing.
-    allow_reuse_address = sys.platform != "win32"
-    daemon_threads = True
+
+class SetupServer:
+    """Serve setup links and the paired dashboard until setup ends."""
 
     def __init__(
         self,
@@ -78,18 +87,34 @@ class SetupServer(ThreadingHTTPServer):
         *,
         tailscale: bool = False,
     ) -> None:
-        super().__init__((bind, port), _Handler)
-        self.page = render_page(title, buttons, tailscale=tailscale).encode()
-        self.path = f"/setup/{code}"
-        self.on_reach = on_reach
-        self.reached = False
-        self.port = self.server_address[1]
+        page = render_page(title, buttons, tailscale=tailscale)
+        reached = False
+        lock = threading.Lock()
+
+        def show_setup() -> HTMLResponse:
+            nonlocal reached
+            with lock:
+                if not reached:
+                    reached = True
+                    on_reach()
+            return HTMLResponse(page, headers={"Cache-Control": "no-store"})
+
+        db = config.db_path()
+        self._server = server.make_server(
+            bind,
+            port,
+            push_handler=None,
+            home_wifi=server.HomeWifi(db, (f"/setup/{code}", show_setup)),
+            overview=lambda: read_overview(db, datetime.now(UTC).astimezone()),
+        )
+        self.port = self._server.sock.getsockname()[1]
         self._timer = threading.Timer(lifetime_s, self.stop)
         self._timer.daemon = True
         self._stopped = False
 
     def start(self) -> None:
-        threading.Thread(target=self.serve_forever, daemon=True).start()
+        """Start serving and set the setup deadline."""
+        self._server.start()
         self._timer.start()
 
     def stop(self) -> None:
@@ -98,28 +123,4 @@ class SetupServer(ThreadingHTTPServer):
             return
         self._stopped = True
         self._timer.cancel()
-        self.shutdown()
-        self.server_close()
-
-
-class _Handler(BaseHTTPRequestHandler):
-    server: SetupServer
-
-    def do_GET(self) -> None:  # noqa: N802 (the name http.server calls)
-        if self.path != self.server.path:
-            self.send_response(404)
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-            return
-        if not self.server.reached:
-            self.server.reached = True
-            self.server.on_reach()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Length", str(len(self.server.page)))
-        self.end_headers()
-        self.wfile.write(self.server.page)
-
-    def log_message(self, format, *args) -> None:
-        pass
+        self._server.stop()

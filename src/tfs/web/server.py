@@ -6,20 +6,29 @@ import logging
 import socket
 import threading
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
 from typing import BinaryIO
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import ClientDisconnect
 from uvicorn.protocols.http.h11_impl import H11Protocol
 
+from tfs.web import pairing, setup_page
 from tfs.web.overview import Overview
+from tfs.web.pairing import lan_address
 
 PushHandler = Callable[[str, BinaryIO, Mapping[str, str]], tuple[int, dict]]
 
@@ -30,6 +39,14 @@ DASHBOARD_DIR = Path(__file__).parent / "dashboard"
 BUILD_HINT = "The dashboard is not built. Run: npm --prefix dashboard install && npm --prefix dashboard run build"
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class HomeWifi:
+    """The pairing database and optional public setup link on this listener."""
+
+    db: Path
+    setup: tuple[str, Callable[[], Response]] | None = None
 
 
 class _Body(io.RawIOBase):
@@ -108,17 +125,6 @@ def _add_dashboard(
         app.mount("/assets", GuardedFiles(directory=DASHBOARD_DIR / "assets"))
 
 
-def lan_address() -> str:
-    """The address a phone on the same Wi-Fi reaches this computer at."""
-    # A UDP connect sends nothing. It only makes the OS pick the Wi-Fi address.
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-        try:
-            probe.connect(("192.0.2.1", 9))
-        except OSError:
-            return socket.gethostbyname(socket.gethostname())
-        return probe.getsockname()[0]
-
-
 def own_addresses() -> set[str]:
     """This computer's IPv4 addresses, including the one setup prints."""
     try:
@@ -131,14 +137,14 @@ def own_addresses() -> set[str]:
 
 
 def _make_app(
-    push_handler: PushHandler,
-    push_only: bool,
+    push_handler: PushHandler | None,
+    home_wifi: HomeWifi | None,
     max_body: int,
     read_timeout_s: float,
     overview: Callable[[], Overview] | None,
 ) -> FastAPI:
     # Only phones on the Wi-Fi reach the server by IP address.
-    wifi_ips = own_addresses() if push_only else set()
+    wifi_ips = own_addresses() if home_wifi else set()
     own_names = {"localhost", "127.0.0.1", socket.gethostname().lower(), *wifi_ips}
 
     async def check_host(request: Request) -> None:
@@ -154,7 +160,7 @@ def _make_app(
     async def refuse(request: Request, error: StarletteHTTPException) -> Response:
         return JSONResponse({"ok": False, "error": error.detail}, error.status_code, CLOSE)
 
-    if not push_only:
+    if home_wifi is None:
 
         @app.get("/ping")
         async def ping() -> Response:
@@ -162,6 +168,16 @@ def _make_app(
 
         _add_dashboard(app, check_host, overview)
 
+    if push_handler is not None:
+        _add_push(app, push_handler, max_body, read_timeout_s)
+    if home_wifi is not None:
+        _add_paired_dashboard(app, home_wifi, check_host, overview)
+    return app
+
+
+def _add_push(
+    app: FastAPI, push_handler: PushHandler, max_body: int, read_timeout_s: float
+) -> None:
     @app.post("/push/{name}")
     async def push(name: str, request: Request) -> Response:
         if int(request.headers.get("content-length", 0)) > max_body:
@@ -178,7 +194,48 @@ def _make_app(
             logger.error("The push handler failed.")
             raise HTTPException(500, "The push could not be handled. See the TFS log.") from error
 
-    return app
+
+def _add_paired_dashboard(
+    app: FastAPI,
+    home_wifi: HomeWifi,
+    check_host: Callable[[Request], Awaitable[None]],
+    overview: Callable[[], Overview] | None,
+) -> None:
+    if home_wifi.setup:
+        path, page = home_wifi.setup
+        app.get(path)(page)
+
+    def scan() -> Response:
+        return HTMLResponse(setup_page.scan_page(), 404, {"Cache-Control": "no-store"})
+
+    @app.get("/pair/{code}")
+    def pair(code: str) -> Response:
+        token = pairing.redeem(home_wifi.db, code)
+        if token is None:
+            return scan()
+        response = RedirectResponse(
+            "/", 303, {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+        )
+        response.set_cookie(
+            "tfs_phone", token, max_age=365 * 86400, httponly=True, samesite="strict"
+        )
+        return response
+
+    private = FastAPI(
+        docs_url=None, redoc_url=None, openapi_url=None, dependencies=[Depends(check_host)]
+    )
+
+    @private.middleware("http")
+    async def require_phone(request: Request, call_next) -> Response:
+        token = request.cookies.get("tfs_phone")
+        if not token or not await run_in_threadpool(pairing.paired, home_wifi.db, token):
+            return scan()
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
+
+    _add_dashboard(private, check_host, overview)
+    app.mount("/", private)
 
 
 def _timed_protocol(request_timeout_s: float) -> type[H11Protocol]:
@@ -224,8 +281,8 @@ def make_server(
     host: str,
     port: int,
     *,
-    push_handler: PushHandler,
-    push_only: bool = False,
+    push_handler: PushHandler | None,
+    home_wifi: HomeWifi | None = None,
     overview: Callable[[], Overview] | None = None,
     max_body: int = 1 << 30,
     read_timeout_s: float = 30,
@@ -233,9 +290,9 @@ def make_server(
     max_requests: int = 20,
     shutdown_timeout_s: float = 10,
 ) -> WebServer:
-    """Bind host and port, or raise OSError. push_only drops /ping and the screen routes. The caller starts and stops it."""
+    """Bind the screen or paired Wi-Fi listener. The caller starts and stops it."""
     config = uvicorn.Config(
-        _make_app(push_handler, push_only, max_body, read_timeout_s, overview),
+        _make_app(push_handler, home_wifi, max_body, read_timeout_s, overview),
         lifespan="off",
         log_config=None,
         access_log=False,
