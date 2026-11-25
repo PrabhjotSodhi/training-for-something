@@ -1,5 +1,6 @@
 import { createElement, type ReactNode } from "react";
 import type { components } from "./api";
+import { Lift } from "./cards/Lift";
 import { Muscles } from "./cards/Muscles";
 import { Sleep } from "./cards/Sleep";
 import { Trend } from "./cards/Trend";
@@ -17,6 +18,10 @@ function placeholder(card: Card): ReactNode {
 }
 
 export const catalogue: Record<string, { full: boolean; draw: (card: Card) => ReactNode }> = {
+  lift: {
+    full: false,
+    draw: (card) => card.type === "lift" && createElement(Lift, { lift: card.data }),
+  },
   week: {
     full: true,
     draw: (card) =>

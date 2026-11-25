@@ -91,6 +91,58 @@ class OverviewApiTest(unittest.TestCase):
     def week(self) -> dict:
         return self.get()["cards"][0]["data"]
 
+    def lift_workout(self, key, days_ago, *sets) -> None:
+        self.workout(key, self.ago(days_ago), "strength", "Strength", 40)
+        for seq, (exercise, kg, reps, kind) in enumerate(sets):
+            extras = json.dumps({"exercise_template_id": exercise, "set_type": kind})
+            self.conn.execute(
+                "INSERT INTO session_parts (record_id, seq, part_kind, label, weight_kg, reps,"
+                " extras_json) VALUES (?, ?, 'set', 'Press', ?, ?, ?)",
+                (key, seq, kg, reps, extras),
+            )
+
+    def test_lift_keeps_same_day_workouts_and_skips_warmups(self):
+        # GIVEN two workouts on one day and a heavier warmup
+        self.lift_workout("a", 0, ("p", 40, 8, "normal"), ("p", 80, 2, "warmup"))
+        self.lift_workout("b", 0, ("p", 42.5, 6, "failure"), ("p", 35, 5, "dropset"))
+        # WHEN the default card builds
+        lift = next(card["data"] for card in self.get()["cards"] if card["type"] == "lift")
+        # THEN each workout contributes its heaviest working weight and its own volume
+        exercise = lift["exercises"][0]
+        self.assertEqual(
+            [(point["date"], point["kg"]) for point in exercise["sessions"]],
+            [(self.ago(0), 40), (self.ago(0), 42.5)],
+        )
+        self.assertEqual(exercise["weekly_kg"][-1], 750)
+
+    def test_lift_picker_ranks_recent_sets_by_id_and_keeps_empty_weeks(self):
+        # GIVEN two exercises with the same name, an older workout and a bodyweight set
+        self.lift_workout("a", 14, ("p", 30, 5, "normal"), ("q", 20, 5, "normal"))
+        self.lift_workout("b", 89, ("q", 15, 8, "normal"), ("q", 0, 8, "normal"))
+        self.lift_workout("c", 90, ("old", 30, 5, "normal"))
+        self.lift_workout("d", 0, ("q", 22, 4, "normal"), ("floor", 0, 6, "normal"))
+        self.lift_workout("e", 21, ("q", 0, 8, "normal"))
+        for days_ago in (3, 5, 6):
+            self.lift_workout(f"p{days_ago}", days_ago, ("p", 30, 5, "normal"))
+        # WHEN the card builds with and without a saved exercise
+        default, saved = self.trend_cards({"type": "lift"}, {"type": "lift", "exercise": "p"})
+        # THEN the picker ranks by recent working sets and the chart spans twelve weeks
+        data = default["data"]
+        self.assertEqual([e["id"] for e in data["exercises"]], ["q", "p"])
+        self.assertEqual((data["selected"], saved["data"]["selected"]), ("q", "p"))
+        self.assertEqual(data["exercises"][0]["weekly_kg"], [None] * 8 + [0, 100, None, 88])
+        self.assertEqual(len(data["exercises"][0]["sessions"]), 3)
+
+    def test_bodyweight_only_hides_lift_in_default_and_saved_layouts(self):
+        # GIVEN working sets with no external weight
+        self.lift_workout("a", 0, ("floor", None, 8, "normal"), ("floor", 0, 8, "normal"))
+        # WHEN the default and saved layouts build
+        default = self.get()["cards"]
+        saved = self.trend_cards({"type": "lift"})
+        # THEN neither includes the card
+        self.assertNotIn("lift", [card["type"] for card in default])
+        self.assertEqual(saved, [])
+
     def get(self) -> dict:
         host, port = self.server.sock.getsockname()
         client = http.client.HTTPConnection(host, port, timeout=5)
