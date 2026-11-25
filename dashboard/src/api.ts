@@ -380,7 +380,7 @@ export interface components {
         };
         /**
          * WeekSession
-         * @description One tile: a planned or done session in its sport's unit.
+         * @description One tile: a done, planned or missed session in its sport's unit.
          */
         WeekSession: {
             /** Name */
@@ -397,7 +397,7 @@ export interface components {
              * State
              * @enum {string}
              */
-            state: "done" | "planned";
+            state: "done" | "planned" | "missed";
         };
         /**
          * WeekTotal

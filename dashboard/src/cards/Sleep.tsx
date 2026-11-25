@@ -31,7 +31,7 @@ export function Sleep({ sleep }: { sleep: SleepProps }) {
         max={scale}
         labelWidth={36}
         valueWidth={64}
-        target={sleep.target_h === null ? null : { value: sleep.target_h, label: duration(sleep.target_h) }}
+        target={sleep.target_h === null ? null : { value: sleep.target_h, label: `${duration(sleep.target_h)} goal` }}
         highlight={sleep.nights[6].date}
         missing="No data"
       />

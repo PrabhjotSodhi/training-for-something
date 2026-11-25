@@ -67,10 +67,11 @@ class OverviewApiTest(unittest.TestCase):
             )
 
     def plan(self, key, day, family, label, km, matched=None) -> None:
-        self.conn.execute(
-            "INSERT OR IGNORE INTO journal (request_id, proposal_json, before_json, approved_by,"
-            " saved_at) VALUES ('r1', '{}', '{}', 'chat', '2026-11-01T10:00:00Z')"
-        )
+        if not self.conn.execute("SELECT 1 FROM journal").fetchone():
+            self.conn.execute(
+                "INSERT INTO journal (request_id, proposal_json, before_json, approved_by,"
+                " saved_at) VALUES ('r1', '{}', '{}', 'chat', '2026-11-01T10:00:00Z')"
+            )
         self.conn.execute(
             "INSERT INTO plan_items (id, version, plan_version, local_date, family, label, why)"
             " VALUES (?, 1, 1, ?, ?, ?, 'w')",
@@ -276,6 +277,19 @@ class OverviewApiTest(unittest.TestCase):
         self.assertEqual(
             week["totals"], [{"sport": "run", "unit": "km", "done": 10.4, "planned": 10}]
         )
+
+    def test_a_planned_run_from_an_earlier_day_with_no_workout_is_missed(self):
+        # GIVEN runs planned yesterday, today and tomorrow with no workouts
+        for key, day in (("p1", "2026-11-23"), ("p2", "2026-11-24"), ("p3", "2026-11-25")):
+            self.plan(key, day, "run", "Easy run", 8)
+        # WHEN the overview is requested
+        week = self.week()
+        # THEN only yesterday's run is missed and it still counts as planned
+        self.assertEqual(
+            [s["state"] for day in week["days"] for s in day["sessions"]],
+            ["missed", "planned", "planned"],
+        )
+        self.assertEqual(week["totals"], [{"sport": "run", "unit": "km", "done": 0, "planned": 24}])
 
     def test_a_strength_workout_counts_its_sets(self):
         # GIVEN a strength workout of 18 sets on Thursday

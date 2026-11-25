@@ -70,14 +70,14 @@ class PlateOverview(Plate):
 
 
 class WeekSession(BaseModel):
-    """One tile: a planned or done session in its sport's unit."""
+    """One tile: a done, planned or missed session in its sport's unit."""
 
     name: str
     sport: str
     minutes: float | None
     amount: float
     unit: str
-    state: Literal["done", "planned"]
+    state: Literal["done", "planned", "missed"]
 
 
 class WeekDay(BaseModel):
@@ -377,7 +377,7 @@ def _week_data(connection, today: date) -> WeekData:
                 minutes=minutes,
                 amount=amount,
                 unit=unit,
-                state="done" if done else "planned",
+                state="done" if done else "missed" if day < today.isoformat() else "planned",
             )
         )
         total = totals.setdefault((sport, unit), [0, 0])

@@ -1,23 +1,10 @@
 .trend {
-  --band: rgb(120 120 128 / 0.12);
-  --goal: #ff8a00;
-}
-
-.trend[data-colour="blue"] {
-  --goal: #0a7bff;
-}
-
-.trend[data-colour="green"] {
-  --goal: #2fbf5a;
-}
-
-.trend[data-colour="purple"] {
-  --goal: #b04fe0;
+  --band: rgb(120 120 128 / 0.1);
 }
 
 @media (prefers-color-scheme: dark) {
   .trend {
-    --band: rgb(120 120 128 / 0.22);
+    --band: rgb(120 120 128 / 0.2);
   }
 }
 
@@ -33,7 +20,7 @@
   gap: 4px;
   padding: 3px;
   border-radius: 999px;
-  background: var(--page);
+  background: var(--fill);
 }
 
 .trend-chip {
@@ -120,7 +107,7 @@
 
 .trend-dot {
   fill: var(--ink);
-  opacity: 0.6;
+  opacity: 0.45;
 }
 
 .trend-x {
@@ -130,31 +117,4 @@
   padding-right: 44px;
   color: var(--muted);
   font: var(--caption);
-}
-
-.trend-hover {
-  min-width: 140px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--card);
-  color: var(--ink);
-  font: var(--caption);
-}
-
-.trend-hover b,
-.trend-hover span {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.trend-hover span {
-  color: var(--muted);
-}
-
-.trend-hover i {
-  color: var(--ink);
-  font-style: normal;
-  font-weight: 700;
 }

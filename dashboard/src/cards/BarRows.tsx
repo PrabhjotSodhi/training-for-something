@@ -25,10 +25,7 @@ export function BarRows({ rows, max, labelWidth, valueWidth, target, highlight, 
         </div>
       )}
       {rows.map((row) => (
-        <div
-          key={row.key}
-          className={row.key === highlight ? "bars-row now" : highlight ? "bars-row dim" : "bars-row"}
-        >
+        <div key={row.key} className={row.key === highlight ? "bars-row now" : "bars-row"}>
           <div className="bars-label">{row.label}</div>
           <div className="bars-track">
             {row.value === null ? (

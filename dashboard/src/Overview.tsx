@@ -16,7 +16,13 @@ export function Overview() {
         if (!response.ok) throw new Error(`TFS answered ${response.status}`);
         return response.json();
       })
-      .then(setOverview, (error: Error) => setReason(error.message));
+      .then(
+        (overview: Overview) => {
+          if (overview.plate) document.documentElement.dataset.goal = overview.plate.colour;
+          setOverview(overview);
+        },
+        (error: Error) => setReason(error.message),
+      );
   }, []);
 
   if (reason) return <p className="error">The page cannot reach TFS: {reason}</p>;
