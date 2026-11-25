@@ -14,6 +14,8 @@ from tfs.engine import Engine, EngineAlreadyRunningError, PortInUseError
 from tfs.persistence import sqlite
 from tfs.persistence.migrations import BackupFailedError, DatabaseTooNewError
 
+RUNNING_FILE = "running"
+
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     """Register the `start` command."""
@@ -44,7 +46,9 @@ def run(args: argparse.Namespace, *, footer: str = "") -> int:
         return 1
     if engine.backup_path is not None:
         print(f"Saved a backup of your database before updating it: {engine.backup_path}")
+    running = config.data_dir() / RUNNING_FILE
     try:
+        running.touch()
         manifests = load_manifests()
         push_connectors = [
             (name, manifest["label"])
@@ -68,13 +72,16 @@ def run(args: argparse.Namespace, *, footer: str = "") -> int:
             print(footer, flush=True)
         if args.open:
             webbrowser.open(f"http://{config.SCREEN_HOST}:{config.SCREEN_PORT}/")
-        # Ctrl+C interrupts sleep at once. The loop is only here because sleep needs a finite time.
-        while True:
+        # Ctrl+C interrupts sleep at once. `tfs update` stops TFS by deleting the running file.
+        while running.exists():
             sleep(1)
+        print("TFS stopped for an update.", flush=True)
+        return 0
     except KeyboardInterrupt:
         return 0
     finally:
         engine.stop()
+        running.unlink(missing_ok=True)
 
 
 def _push_source_enabled() -> bool:

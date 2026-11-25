@@ -2,6 +2,7 @@ import contextlib
 import hashlib
 import io
 import json
+import shutil
 import unittest
 from unittest import mock
 
@@ -36,6 +37,7 @@ class UpdateTest(unittest.TestCase):
 
         def install(wheel, restart: bool) -> None:
             self.events.append(("install", wheel.read_bytes(), restart))
+            shutil.rmtree(wheel.parent)
 
         options = {"helpers": list, "stop": lambda: False, **fakes}
         out = io.StringIO()

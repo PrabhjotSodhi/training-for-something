@@ -211,14 +211,15 @@ def _bind(
     try:
         return make_server(host, port, push_handler=handler, push_only=home_wifi, overview=overview)
     except OSError as error:
-        if not home_wifi and _tfs_answers_ping(port):
+        if not home_wifi and tfs_answers_ping(port):
             raise EngineAlreadyRunningError("TFS is already running.") from error
         raise PortInUseError(
             f"Port {port} is used by another app. Close it and try again."
         ) from error
 
 
-def _tfs_answers_ping(port: int) -> bool:
+def tfs_answers_ping(port: int) -> bool:
+    """Say whether a TFS engine answers on this computer's port."""
     connection = http.client.HTTPConnection(SCREEN_HOST, port, timeout=PING_TIMEOUT_S)
     try:
         connection.request("GET", "/ping")
