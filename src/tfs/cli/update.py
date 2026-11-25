@@ -80,15 +80,17 @@ def update(
     TimeoutError if it does not end in time. install gets uv, the wheel and whether to start
     TFS again, and returns the exit code.
     """
+    wheel = None
     try:
         version, name, wheel_bytes = _download(current, fetch, uv)
+        wheel = _save(name, wheel_bytes)
         _wait_for(helpers)
         restart = _stop_with(stop)
     except _EarlyExitError as ended:
+        if wheel:
+            shutil.rmtree(wheel.parent, ignore_errors=True)
         print(ended, file=sys.stderr if ended.code else sys.stdout)
         return ended.code
-    wheel = Path(tempfile.mkdtemp()) / Path(name).name
-    wheel.write_bytes(wheel_bytes)
     print(f"Installing TFS {version}", flush=True)
     try:
         return install(uv, wheel, restart)
@@ -119,6 +121,16 @@ def _download(
             1, "The download does not match the release, so TFS installed nothing."
         )
     return version, asset["name"], wheel_bytes
+
+
+def _save(name: str, wheel_bytes: bytes) -> Path:
+    """Write the wheel to a new temp folder and return its path."""
+    try:
+        wheel = Path(tempfile.mkdtemp()) / Path(name).name
+        wheel.write_bytes(wheel_bytes)
+    except OSError as error:
+        raise _EarlyExitError(1, f"Could not save the TFS download: {error}") from error
+    return wheel
 
 
 def _wait_for(helpers: Callable[[], list[str]]) -> None:
