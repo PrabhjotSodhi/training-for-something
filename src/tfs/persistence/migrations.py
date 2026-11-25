@@ -3,7 +3,7 @@
 import re
 import sqlite3
 from collections.abc import Callable
-from contextlib import closing
+from contextlib import closing, suppress
 from datetime import UTC, datetime
 from importlib import resources
 from importlib.resources.abc import Traversable
@@ -108,7 +108,8 @@ def _back_up(conn: sqlite3.Connection, folder: Path, schema_number: int) -> Path
             conn.backup(copy)
         partial.replace(target)
     except (OSError, sqlite3.Error) as error:
-        partial.unlink(missing_ok=True)
+        with suppress(OSError):
+            partial.unlink()
         raise BackupFailedError(
             f"TFS could not save a backup in {folder} ({error}), so it did not update your "
             "database. Free some disk space or fix the folder, then try again."

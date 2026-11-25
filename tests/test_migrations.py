@@ -295,7 +295,7 @@ class MigrateTest(unittest.TestCase):
         # WHEN it migrates to schema 2
         migrate(conn, migrations_dir=self.migrations, on_backup=saved.append)
         # THEN the backup holds the schema 1 rows and its path was reported
-        self.assertEqual(saved, self.backups())
+        self.assertEqual([path.resolve() for path in saved], [path.resolve() for path in self.backups()])
         self.assertRegex(saved[0].name, r"tfs-v1-\d{4}-\d{2}-\d{2}\.db")
         with closing(sqlite3.connect(saved[0])) as backup:
             self.assertEqual(backup.execute("SELECT x FROM a").fetchall(), [(41,)])
