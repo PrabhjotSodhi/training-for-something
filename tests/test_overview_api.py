@@ -161,14 +161,18 @@ class OverviewApiTest(unittest.TestCase):
         self.assertEqual(first_run["message"], providers.FIRST_MESSAGE)
 
     def test_an_enabled_source_with_no_records_is_waiting_and_a_phone_source_says_so(self):
-        # GIVEN a file source and a phone source with no records, and a turned off source
+        # GIVEN a file source and a phone source with no records, a turned off source and a
+        # source with one live record
         self.conn.execute("INSERT INTO sources(connector) VALUES ('hevy')")
+        self.conn.execute("INSERT INTO sources(connector) VALUES ('testapp')")
+        insert_file(self.conn, 1, "2026-10-01T00:00:00Z", "testapp")
+        insert_workout(self.conn, "r1", "testapp")
         self.conn.execute("INSERT INTO sources(connector) VALUES ('health_auto_export')")
         self.conn.execute("INSERT INTO sources(connector, enabled) VALUES ('garmin', 0)")
         # WHEN the overview is requested
         waiting = self.get()["first_run"]["waiting"]
         # THEN each enabled source with no records is named, and only the phone one is flagged
-        self.assertEqual(
+        self.assertCountEqual(
             waiting,
             [
                 {"app": "Health Auto Export", "phone": True},
@@ -179,6 +183,13 @@ class OverviewApiTest(unittest.TestCase):
     def test_a_goal_means_no_first_run_panel(self):
         # GIVEN a goal
         self.conn.execute("INSERT INTO goals VALUES ('g1', 'race', '2027-04-11', '{}')")
+        # WHEN the overview is requested
+        # THEN there is no panel
+        self.assertIsNone(self.get()["first_run"])
+
+    def test_a_goal_dated_before_today_means_no_first_run_panel(self):
+        # GIVEN a goal whose date has passed
+        self.conn.execute("INSERT INTO goals VALUES ('g1', 'race', '2026-01-01', '{}')")
         # WHEN the overview is requested
         # THEN there is no panel
         self.assertIsNone(self.get()["first_run"])

@@ -635,13 +635,15 @@ def read_overview(db_path: Path, today: date) -> Overview:
     since = (today - timedelta(days=WINDOW_DAYS - 1)).isoformat()
     with closing(open_reader(db_path)) as connection:
         saved = _rows(connection, "SELECT layout_json FROM coach_v1_overview")
+        has_goal = bool(_rows(connection, "SELECT 1 FROM coach_v1_goals LIMIT 1"))
+        first_run = None if has_goal else _first_run(connection)
         if saved:
             layout = json.loads(saved[0][0])
             plate = {**layout["plate"], "data": _plate_data(connection, layout["plate"], today)}
             return Overview.model_validate(
                 {
                     "plate": plate,
-                    "first_run": None if plate["data"] else _first_run(connection),
+                    "first_run": first_run,
                     "cards": _cards(connection, layout["cards"], today, layout["plate"]["colour"]),
                 }
             )
@@ -672,5 +674,4 @@ def read_overview(db_path: Path, today: date) -> Overview:
         cards = _cards(
             connection, [card for card in DEFAULT_CARDS if _has_data(card, have)], today, "orange"
         )
-        first_run = None if plate else _first_run(connection)
     return Overview.model_validate({"plate": plate, "first_run": first_run, "cards": cards})

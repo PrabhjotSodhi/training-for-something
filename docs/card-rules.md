@@ -56,9 +56,9 @@ Plus Jakarta Sans for everything, with tabular figures on numbers. The font file
 
 ## First-run panel
 
-1. While no goal is set, one card sits where the plate goes. Once a goal exists the plate replaces it.
-2. It shows the latest workout (date, type, duration, source app), or "No workouts yet.", then one line per turned on app with no records: "Waiting for the first data from {app}." A phone app adds "Keep the TFS window open."
-3. Below that: "Set your first training goal in your AI tool" and a "Copy first message" button. The button reads "Copied" for 2 seconds. The message is `providers.FIRST_MESSAGE`.
+1. While no goal is saved, one card sits where the plate goes. Once any goal exists the card is gone.
+2. It shows the latest workout (date, type, duration, source app), or "No workouts yet.". Below that: "Set your first training goal in your AI tool" and a "Copy first message" button. The button copies the same first message as setup and confirms the copy. If the copy fails, the message shows as text under the button.
+3. Last, one line per turned on app with no records: "Waiting for the first data from {app}." A phone app adds "Keep the TFS window open."
 
 ## This week card
 

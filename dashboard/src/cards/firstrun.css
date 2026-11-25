@@ -24,3 +24,8 @@
   font: var(--body);
   cursor: pointer;
 }
+
+.first-run-message {
+  margin-top: 12px;
+  user-select: text;
+}
