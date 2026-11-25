@@ -1,0 +1,26 @@
+.first-run {
+  margin-bottom: 12px;
+}
+
+.first-run .card-headline::first-letter {
+  text-transform: uppercase;
+}
+
+.first-run .card-note {
+  margin-top: 4px;
+}
+
+.first-run-step {
+  margin-top: 24px;
+}
+
+.first-run button {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--active);
+  color: var(--ink);
+  font: var(--body);
+  cursor: pointer;
+}

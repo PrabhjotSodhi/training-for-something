@@ -10,6 +10,8 @@ from typing import Annotated, Literal
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
+from tfs import providers
+from tfs.connectors.core.contract import load_manifests
 from tfs.mcp.tool_access import open_reader, query
 from tfs.proposals.models import Plate, SetsByMuscleCard, SleepCard, TrendCard, WeekCard
 from tfs.scores.readiness import normal_band
@@ -184,10 +186,35 @@ class SetsByMuscleOverviewCard(SetsByMuscleCard):
     data: SetsByMuscleData | None = None
 
 
+class FirstRunWorkout(BaseModel):
+    """The latest workout, with the app it came from when known."""
+
+    date: str
+    type: str
+    minutes: float | None
+    source: str | None
+
+
+class WaitingSource(BaseModel):
+    """A turned on app with no records yet. A phone app also needs the TFS window open."""
+
+    app: str
+    phone: bool
+
+
+class FirstRun(BaseModel):
+    """What the Overview shows while no goal is set."""
+
+    workout: FirstRunWorkout | None
+    waiting: list[WaitingSource]
+    message: str
+
+
 class Overview(BaseModel):
     """The plate and the cards to draw."""
 
     plate: PlateOverview | None
+    first_run: FirstRun | None
     cards: list[
         Annotated[
             WeekOverviewCard | SleepOverviewCard | TrendOverviewCard | SetsByMuscleOverviewCard,
@@ -419,6 +446,41 @@ def _sets_by_muscle_data(connection, today: date) -> SetsByMuscleData:
     )
 
 
+def _first_run(connection) -> FirstRun:
+    manifests = load_manifests()
+    labels = {name: manifest["label"] for name, manifest in manifests.items()}
+    latest = _rows(
+        connection,
+        "SELECT local_date, family, duration_min, source FROM coach_v1_workouts"
+        " ORDER BY start_utc DESC LIMIT 1",
+    )
+    sources = _rows(
+        connection,
+        "SELECT connector FROM coach_v1_sources WHERE enabled = 1 AND covered_until IS NULL"
+        " ORDER BY connector",
+    )
+    workout = None
+    if latest:
+        day, family, minutes, source = latest[0]
+        workout = FirstRunWorkout(
+            date=day,
+            type=family or "other",
+            minutes=minutes,
+            source=source and labels.get(source, source),
+        )
+    return FirstRun(
+        workout=workout,
+        waiting=[
+            WaitingSource(
+                app=labels.get(name, name),
+                phone=manifests.get(name, {}).get("routes", {}).get("push", False),
+            )
+            for (name,) in sources
+        ],
+        message=providers.FIRST_MESSAGE,
+    )
+
+
 def _state(value: float, low: float, high: float) -> str:
     return "Above normal" if value > high else "Below normal" if value < low else "Normal"
 
@@ -579,6 +641,7 @@ def read_overview(db_path: Path, today: date) -> Overview:
             return Overview.model_validate(
                 {
                     "plate": plate,
+                    "first_run": None if plate["data"] else _first_run(connection),
                     "cards": _cards(connection, layout["cards"], today, layout["plate"]["colour"]),
                 }
             )
@@ -609,4 +672,5 @@ def read_overview(db_path: Path, today: date) -> Overview:
         cards = _cards(
             connection, [card for card in DEFAULT_CARDS if _has_data(card, have)], today, "orange"
         )
-    return Overview.model_validate({"plate": plate, "cards": cards})
+        first_run = None if plate else _first_run(connection)
+    return Overview.model_validate({"plate": plate, "first_run": first_run, "cards": cards})

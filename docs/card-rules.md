@@ -54,6 +54,12 @@ Plus Jakarta Sans for everything, with tabular figures on numbers. The font file
 6. No forecast shows "No forecast yet". A row with no value today shows "No data". No plan items hides "Week N of M".
 7. Week 1 is the week the plan starts. M is the weeks from the plan start to the goal date, rounded up.
 
+## First-run panel
+
+1. While no goal is set, one card sits where the plate goes. Once a goal exists the plate replaces it.
+2. It shows the latest workout (date, type, duration, source app), or "No workouts yet.", then one line per turned on app with no records: "Waiting for the first data from {app}." A phone app adds "Keep the TFS window open."
+3. Below that: "Set your first training goal in your AI tool" and a "Copy first message" button. The button reads "Copied" for 2 seconds. The message is `providers.FIRST_MESSAGE`.
+
 ## This week card
 
 1. The card spans both columns. It shows Monday to Sunday of the current week, one column per day, today's column marked.

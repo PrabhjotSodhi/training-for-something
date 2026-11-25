@@ -76,6 +76,31 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * FirstRun
+         * @description What the Overview shows while no goal is set.
+         */
+        FirstRun: {
+            workout: components["schemas"]["FirstRunWorkout"] | null;
+            /** Waiting */
+            waiting: components["schemas"]["WaitingSource"][];
+            /** Message */
+            message: string;
+        };
+        /**
+         * FirstRunWorkout
+         * @description The latest workout, with the app it came from when known.
+         */
+        FirstRunWorkout: {
+            /** Date */
+            date: string;
+            /** Type */
+            type: string;
+            /** Minutes */
+            minutes: number | null;
+            /** Source */
+            source: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -97,6 +122,7 @@ export interface components {
          */
         Overview: {
             plate: components["schemas"]["PlateOverview"] | null;
+            first_run: components["schemas"]["FirstRun"] | null;
             /** Cards */
             cards: (components["schemas"]["WeekOverviewCard"] | components["schemas"]["SleepOverviewCard"] | components["schemas"]["TrendOverviewCard"] | components["schemas"]["SetsByMuscleOverviewCard"])[];
         };
@@ -305,6 +331,16 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /**
+         * WaitingSource
+         * @description A turned on app with no records yet. A phone app also needs the TFS window open.
+         */
+        WaitingSource: {
+            /** App */
+            app: string;
+            /** Phone */
+            phone: boolean;
         };
         /**
          * WeekData

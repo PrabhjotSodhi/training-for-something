@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { components } from "./api";
 import { catalogue } from "./catalogue";
+import { FirstRun } from "./cards/FirstRun";
 import { Plate } from "./cards/Plate";
 
 type Overview = components["schemas"]["Overview"];
@@ -32,6 +33,7 @@ export function Overview() {
   return (
     <>
       {overview.plate && <Plate plate={overview.plate} />}
+      {overview.first_run && <FirstRun firstRun={overview.first_run} />}
       <div className="cards">
         {overview.cards.map((card, index) => {
           const entry = catalogue[card.type];
