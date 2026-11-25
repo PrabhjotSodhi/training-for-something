@@ -185,7 +185,7 @@ def _next_step(tool: providers.Provider | mcp_tools.Tool | None) -> str:
     if tool.command:
         opening = f"Open a new terminal and run `{tool.command}`."
     else:
-        opening = f"If {tool.label} is open, restart it, then start a new chat."
+        opening = f"Open {tool.label}, or restart it if it is open. Then start a new chat."
     return f"{opening}\nPaste this: {providers.FIRST_MESSAGE}"
 
 
