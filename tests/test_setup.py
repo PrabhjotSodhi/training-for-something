@@ -10,6 +10,7 @@ import tempfile
 import unittest
 import urllib.request
 from collections import deque
+from datetime import date
 from pathlib import Path
 from unittest import mock
 
@@ -19,6 +20,7 @@ from tfs.connectors.core.contract import load_manifests
 from tfs.persistence import sqlite
 from tfs.persistence.migrations import migrate
 from tfs.providers import mcp_tools
+from tfs.web.overview import read_overview
 from tfs.web.server import make_server
 
 REPO = "PrabhjotSodhi/training-for-something"
@@ -30,22 +32,25 @@ PUSH_URL = "http://studio.local:47824/push/health_auto_export"
 
 
 class FakeQuestionary:
-    """Answers each question from a list, in order."""
+    """Answers each question from a list, in order, then skips the goal."""
 
     Choice = mock.Mock(
         side_effect=lambda title, value, disabled=None, checked=False: mock.Mock(disabled=disabled)
     )
 
     def __init__(self, *answers):
-        self.answers = deque(answers)
+        self.answers = deque([*answers, "Skip for now"])
 
     @staticmethod
     def print(text, style=None):
         sys.stdout.write(f"{text}\n")
 
     def __getattr__(self, kind):
-        def question(message, **options):
+        def question(message, validate=lambda answer: True, **options):
             answer = self.answers.popleft()
+            while (problem := validate(answer)) is not True:
+                sys.stdout.write(f"{problem}\n")
+                answer = self.answers.popleft()
             return mock.Mock(ask=lambda: answer)
 
         return question
@@ -242,6 +247,52 @@ class SetupTest(TfsHomeTestCase):
         code, out, err, _ = self.run_setup(FakeQuestionary(), FakeCommands(found=set()), tty=False)
         self.assertEqual(code, 1)
         self.assertEqual(out + err, "Run tfs setup in a terminal.\n")
+
+    def run_goal_setup(self, *goal_answers):
+        commands = FakeCommands(found={"claude"}, plugin_list=f"  {PLUGIN}\n")
+        return self.run_setup(FakeQuestionary([], *goal_answers), commands)
+
+    def stored_goals(self):
+        with contextlib.closing(sqlite.connect(config.db_path())) as conn:
+            return [tuple(row) for row in conn.execute("SELECT type, local_date FROM goals")]
+
+    def test_given_goal_answers_when_setup_finishes_then_the_overview_has_a_plate(self):
+        # GIVEN a type, a name, a future date and a target
+        answers = ("Get stronger", "First powerlifting meet", "2099-03-14", "Squat 140 kg")
+        # WHEN setup finishes
+        self.run_goal_setup(*answers)
+        # THEN the save path stored the goal and the Overview shows it on the plate
+        plate = read_overview(config.db_path(), date(2030, 1, 1)).plate
+        self.assertEqual(
+            (plate.data.goal, plate.data.date), ("First powerlifting meet", "2099-03-14")
+        )
+
+    def test_given_skip_for_now_when_setup_finishes_then_no_goal_is_stored(self):
+        # GIVEN the person skips the goal
+        # WHEN setup finishes
+        self.run_goal_setup("Skip for now")
+        # THEN no goal is stored
+        self.assertEqual(self.stored_goals(), [])
+
+    def test_given_a_past_date_when_setup_asks_then_it_says_why_and_asks_again(self):
+        # GIVEN a past date, then a future one
+        answers = ("Something else", "Hike the coast track", "2020-01-01", "2099-03-14", "")
+        # WHEN setup asks for the date
+        _, out, _, _ = self.run_goal_setup(*answers)
+        # THEN it says why and saves the second date
+        self.assertIn("Pick a date after today.", out)
+        self.assertEqual(self.stored_goals(), [("Hike the coast track", "2099-03-14")])
+
+    def test_given_a_saved_goal_when_setup_finishes_then_the_next_step_asks_for_a_first_plan(self):
+        # GIVEN a goal saved by an earlier setup
+        self.run_goal_setup("Get stronger", "First powerlifting meet", "2099-03-14", "")
+        # WHEN setup runs again
+        _, out, _, started = self.run_goal_setup()
+        # THEN it names the goal and the next step asks for a first training plan
+        self.assertIn("Goal: First powerlifting meet on 2099-03-14", out)
+        footer = started.call_args.kwargs["footer"]
+        self.assertIn("Use TFS to build my first training plan for my goal.", footer)
+        self.assertNotIn(providers.FIRST_MESSAGE, footer)
 
 
 class PhonePageTest(TfsHomeTestCase):

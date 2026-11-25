@@ -25,7 +25,8 @@ from tfs.connectors.core import runner
 from tfs.connectors.core.contract import load_manifests, to_utc_text
 from tfs.importer.session import sync
 from tfs.persistence import sqlite
-from tfs.persistence.migrations import BackupFailedError, DatabaseTooNewError
+from tfs.persistence.migrations import BackupFailedError, DatabaseTooNewError, migrate
+from tfs.proposals import apply, journal
 from tfs.providers import mcp_tools
 from tfs.web import setup_page
 from tfs.web.server import lan_address
@@ -79,13 +80,14 @@ def run(args: argparse.Namespace) -> int:
         for number, name in enumerate(picked, 1):
             print(f"\n── {manifests[name]['label']} ({number} of {len(picked)})")
             _set_up_app(name, manifests[name])
+        has_goal = _set_goal()
     except KeyboardInterrupt:
         print("\nSetup stopped.", file=sys.stderr)
         return 1
     except _NO_CONSOLE:
         print("\nRun tfs setup in PowerShell, Windows Terminal or Command Prompt.", file=sys.stderr)
         return 1
-    footer = f"Keep this window open. TFS receives phone data only while it runs.\n{_next_step(first_tool)}"
+    footer = f"Keep this window open. TFS receives phone data only while it runs.\n{_next_step(first_tool, has_goal)}"
     return start.run(argparse.Namespace(home_wifi=False, open=True), footer=footer)
 
 
@@ -179,14 +181,71 @@ def _connect_ai_tools() -> providers.Provider | mcp_tools.Tool | None:
     return next((tool for tool in programs if tool in connected), None)
 
 
-def _next_step(tool: providers.Provider | mcp_tools.Tool | None) -> str:
+def _set_goal() -> bool:
+    """Ask for a goal unless one exists, and save it. Return True when a goal exists."""
+    config.data_dir().mkdir(parents=True, exist_ok=True)
+    with contextlib.closing(sqlite.connect(config.db_path())) as conn:
+        migrate(conn)
+        goal = conn.execute("SELECT type, local_date FROM goals ORDER BY local_date").fetchone()
+        version = journal.version(conn)
+    if goal:
+        print(f"\nGoal: {goal['type']} on {goal['local_date']}")
+        return True
+    print()
+    kinds = ["Get stronger", "Get fitter", "Train for an event", "Something else", "Skip for now"]
+    if _ask(questionary.select("What kind of goal is it?", choices=kinds)) == "Skip for now":
+        return False
+    name = _ask(
+        questionary.text(
+            'Name your goal, for example "First powerlifting meet"',
+            validate=lambda typed: bool(typed.strip()) or "Type a name for your goal.",
+        )
+    )
+    day = _ask(questionary.text("What date are you aiming for? (YYYY-MM-DD)", validate=_future_day))
+    target = _ask(questionary.text('Any target? Press Enter to skip, for example "Squat 140 kg"'))
+    goal_action = {
+        "action": "set_goal",
+        "item": "goal",
+        "type": name.strip(),
+        "date": date.fromisoformat(day.strip()).isoformat(),
+        "target": {"description": target.strip() or name.strip()},
+    }
+    apply.save(
+        config.db_path(),
+        {
+            "plan_version": version,
+            "why": "Set in tfs setup.",
+            "sources": [],
+            "actions": [goal_action],
+        },
+        request_id=f"setup-{secrets.token_hex(8)}",
+        approved_by="screen",
+        now=datetime.now(UTC).astimezone(),
+    )
+    return True
+
+
+def _future_day(typed: str) -> bool | str:
+    try:
+        day = date.fromisoformat(typed.strip())
+    except ValueError:
+        return "Type the date as YYYY-MM-DD, for example 2027-04-12."
+    return day > datetime.now(UTC).astimezone().date() or "Pick a date after today."
+
+
+def _next_step(tool: providers.Provider | mcp_tools.Tool | None, has_goal: bool) -> str:
     if tool is None:
         return "To connect your AI tool, run tfs setup again."
     if tool.command:
         opening = f"Open a new terminal and run `{tool.command}`."
     else:
         opening = f"Open {tool.label}, or restart it if it is open. Then start a new chat."
-    return f"{opening}\nPaste this: {providers.FIRST_MESSAGE}"
+    message = (
+        "Use TFS to build my first training plan for my goal. Ask me one question at a time."
+        if has_goal
+        else providers.FIRST_MESSAGE
+    )
+    return f"{opening}\nPaste this: {message}"
 
 
 def _tool_choice(
