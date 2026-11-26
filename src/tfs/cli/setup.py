@@ -26,7 +26,6 @@ from tfs.connectors.core.contract import load_manifests, to_utc_text
 from tfs.importer.session import sync
 from tfs.persistence import sqlite
 from tfs.persistence.migrations import BackupFailedError, DatabaseTooNewError, migrate
-from tfs.proposals import apply, journal
 from tfs.providers import mcp_tools
 from tfs.web import setup_page
 from tfs.web.pairing import make_pairing_link, wifi_host
@@ -71,20 +70,15 @@ def run(args: argparse.Namespace) -> int:
     try:
         first_tool = _connect_ai_tools()
         manifests = load_manifests()
-        picked = _ask(
-            _checklist(
-                "Which apps hold your data?",
-                [questionary.Choice(m["label"], value=n) for n, m in manifests.items()],
-            )
-        )
+        picked = _pick_apps(manifests)
 
         def finish_setup() -> tuple[str, str | None]:
             for number, name in enumerate(picked, 1):
                 print(f"\n── {manifests[name]['label']} ({number} of {len(picked)})")
                 _set_up_app(name, manifests[name])
-            has_goal = _set_goal()
+            message = _goal_message()
             phone_url = _phone_setup(manifests)
-            footer = f"Keep this window open. TFS receives phone data only while it runs.\n{_next_step(first_tool, has_goal)}"
+            footer = f"Keep this window open. TFS receives phone data only while it runs.\n{_next_step(first_tool, message)}"
             return footer, phone_url
 
         return start.run(argparse.Namespace(home_wifi=True, open=True), finish_setup=finish_setup)
@@ -108,13 +102,74 @@ def fill_link(template: str, push_url: str, token: str, route: str = "Wi-Fi") ->
     )
 
 
-def _checklist(message: str, choices: list) -> questionary.Question:
+def _checklist(message: str, choices: list, **options) -> questionary.Question:
     return questionary.checkbox(
         message,
         choices=[*choices, _CHECKLIST_HINT],
         instruction="",
         style=_CHECKLIST_STYLE,
+        **options,
     )
+
+
+def _pick_apps(manifests: dict) -> list[str]:
+    connected = {}
+    if config.db_path().is_file():
+        with contextlib.closing(sqlite.connect(config.db_path(), "read_only")) as conn:
+            connected = dict(
+                conn.execute("SELECT connector, last_received_at FROM sources WHERE enabled = 1")
+            )
+    kept = set(connected)
+
+    def track_ticks(selected: list[str]) -> bool:
+        # The checklist validates every toggle. Only untouched ticks can skip setup.
+        kept.intersection_update(selected)
+        return True
+
+    choices = []
+    for name, manifest in manifests.items():
+        if name in connected:
+            received = connected[name]
+            detail = (
+                f"connected, last data {_ago(received)}" if received else "connected, no data yet"
+            )
+        else:
+            needs = [
+                step.rstrip(".")
+                for step in manifest.get("setup", {}).get("steps", [])
+                if step.startswith("Needs ")
+            ]
+            needs.extend(ask["label"] for ask in manifest["asks"])
+            if manifest["routes"]["files"]:
+                needs.append("Export file from your phone")
+            detail = ", ".join(needs)
+        choices.append(
+            questionary.Choice(
+                f"{manifest['label']:<22} {detail}", value=name, checked=name in connected
+            )
+        )
+    picked = _ask(
+        _checklist(
+            "Which apps hold your data?", choices, validate=track_ticks, erase_when_done=True
+        )
+    )
+    for name in picked:
+        questionary.print(f"  ✔ {manifests[name]['label']}", style=_GREEN)
+    fresh = [name for name in picked if name not in kept]
+    if not fresh:
+        questionary.print("  No new apps", style=_DIM)
+    return fresh
+
+
+def _ago(received: str) -> str:
+    minutes = max(
+        0, int((datetime.now(UTC) - datetime.fromisoformat(received)).total_seconds() // 60)
+    )
+    if minutes < 60:
+        return f"{minutes} min ago"
+    if minutes < 1440:
+        return f"{minutes // 60} hr ago"
+    return f"{minutes // 1440} d ago"
 
 
 @contextlib.contextmanager
@@ -191,8 +246,8 @@ def _connect_ai_tools() -> providers.Provider | mcp_tools.Tool | None:
     return next((tool for tool in programs if tool in connected), None)
 
 
-def _set_goal() -> bool:
-    """Ask for a goal unless one exists, and save it. Return True when a goal exists."""
+def _goal_message() -> str:
+    """Choose the first chat message from a saved goal or one typed during setup."""
     config.data_dir().mkdir(parents=True, exist_ok=True)
     today = datetime.now(UTC).astimezone().date()
     with contextlib.closing(sqlite.connect(config.db_path())) as conn:
@@ -201,59 +256,42 @@ def _set_goal() -> bool:
             "SELECT type, local_date FROM goals WHERE local_date >= ? ORDER BY local_date",
             (today.isoformat(),),
         ).fetchone()
-        version = journal.version(conn)
     if goal:
         print(f"\nGoal: {goal['type']} on {goal['local_date']}")
-        return True
+        return providers.PLAN_MESSAGE
     print()
     name = _ask(
         questionary.text(
-            'Name your goal, for example "First powerlifting meet". Press Enter to skip'
+            "What are you training for? Press Enter to skip",
+            instruction=(
+                "\n  Local powerlifting meet in June, squat 140 kg"
+                "\n  Lose 10 kg in 6 months"
+                "\n  Sub 90 minute Hyrox Sydney 2027"
+                "\n  Sub 3:30 Auckland Marathon, October 2027"
+                "\n  Olympic triathlon in February, under 2:45"
+                "\n  Physique show on 14 March 2027"
+                "\n  Run 5 km without stopping by summer\n"
+            ),
+            style=Style([("instruction", _DIM)]),
         )
     ).strip()
     if not name:
-        return False
-    day = _ask(questionary.text("What date are you aiming for? (YYYY-MM-DD)", validate=_future_day))
-    target = _ask(questionary.text('Any target? Press Enter to skip, for example "Squat 140 kg"'))
-    request_id = f"setup-{secrets.token_hex(8)}"
-    goal_action = {
-        "action": "set_goal",
-        "item": request_id,
-        "type": name,
-        "date": date.fromisoformat(day.strip()).isoformat(),
-        "target": {"description": target.strip() or name},
-    }
-    apply.save(
-        config.db_path(),
-        {
-            "plan_version": version,
-            "why": "Set in tfs setup.",
-            "sources": [],
-            "actions": [goal_action],
-        },
-        request_id=request_id,
-        approved_by="screen",
-        now=datetime.now(UTC).astimezone(),
+        return providers.FIRST_MESSAGE
+    return (
+        f"Use TFS to set up my goal: {name}. Look up anything you need, "
+        "then build my first training plan. Ask me one question at a time."
     )
-    return True
 
 
-def _future_day(typed: str) -> bool | str:
-    try:
-        day = date.fromisoformat(typed.strip())
-    except ValueError:
-        return "Type the date as YYYY-MM-DD, for example 2027-04-12."
-    return day > datetime.now(UTC).astimezone().date() or "Pick a date after today."
-
-
-def _next_step(tool: providers.Provider | mcp_tools.Tool | None, has_goal: bool) -> str:
+def _next_step(tool: providers.Provider | mcp_tools.Tool | None, message: str) -> str:
     if tool is None:
-        return "To connect your AI tool, run tfs setup again."
-    if tool.command:
+        opening = "To connect your AI tool, run tfs setup again."
+        if message in (providers.FIRST_MESSAGE, providers.PLAN_MESSAGE):
+            return opening
+    elif tool.command:
         opening = f"Open a new terminal and run `{tool.command}`."
     else:
         opening = f"Open {tool.label}, or restart it if it is open. Then start a new chat."
-    message = providers.PLAN_MESSAGE if has_goal else providers.FIRST_MESSAGE
     return f"{opening}\nPaste this: {message}"
 
 
