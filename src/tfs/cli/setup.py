@@ -11,6 +11,7 @@ import time
 import webbrowser
 from collections.abc import Callable, Iterator
 from datetime import UTC, date, datetime
+from functools import cache
 from pathlib import Path
 from urllib.parse import quote
 
@@ -29,6 +30,7 @@ from tfs.persistence.migrations import BackupFailedError, DatabaseTooNewError, m
 from tfs.providers import mcp_tools
 from tfs.web import setup_page
 from tfs.web.pairing import make_pairing_link, wifi_host
+from tfs.web.server import HomeWifi
 
 # prompt_toolkit raises this on Windows when the terminal is not a real console, such as Git Bash.
 # Its module refuses to import on other systems, so the tuple stays empty there.
@@ -38,7 +40,7 @@ if sys.platform == "win32":
 
     _NO_CONSOLE = (NoConsoleScreenBufferError,)
 
-_BIND = "0.0.0.0"  # noqa: S104 (a phone on the Wi-Fi must reach it)
+_SCAN_HINT_S = 30
 _BOLD, _GREEN, _RED, _DIM = "bold", "fg:ansigreen", "fg:ansired", "fg:ansibrightblack"
 # prompt_toolkit draws ticked items reversed (white background) unless the style says otherwise.
 _CHECKLIST_STYLE = Style(
@@ -72,12 +74,18 @@ def run(args: argparse.Namespace) -> int:
         manifests = load_manifests()
         picked = _pick_apps(manifests)
 
-        def finish_setup() -> tuple[str, str | None]:
+        @cache
+        def offer_tailscale() -> str | None:
+            return _tailscale.set_up(
+                lambda text, default: _ask(questionary.confirm(text, default=default)), print_qr
+            )
+
+        def finish_setup(wifi: HomeWifi) -> tuple[str, str | None]:
             for number, name in enumerate(picked, 1):
                 print(f"\n── {manifests[name]['label']} ({number} of {len(picked)})")
-                _set_up_app(name, manifests[name])
+                _set_up_app(name, manifests[name], wifi, offer_tailscale)
             message = _goal_message()
-            phone_url = _phone_setup(manifests)
+            phone_url = _phone_setup(manifests, wifi, offer_tailscale)
             footer = f"Keep this window open. TFS receives phone data only while it runs.\n{_next_step(first_tool, message)}"
             return footer, phone_url
 
@@ -351,23 +359,41 @@ def _wait_for_data(manifests: dict) -> None:
                 return
 
 
-def _phone_setup(manifests: dict) -> str | None:
+def _wait_for_scan(reached: threading.Event, offer_tailscale: Callable[[], str | None]) -> bool:
+    deadline = time.monotonic() + _SCAN_HINT_S
+    hinted = False
+    while not reached.is_set():
+        if not hinted and time.monotonic() >= deadline:
+            print("Your phone has not reached TFS. Check both are on the same Wi-Fi.", flush=True)
+            offer_tailscale()
+            if not reached.is_set():
+                print("Waiting for your phone... (Enter to skip)", flush=True)
+            hinted = True
+            continue
+        if _enter_within_second():
+            return False
+    return True
+
+
+def _phone_setup(
+    manifests: dict, wifi: HomeWifi, offer_tailscale: Callable[[], str | None]
+) -> str | None:
     _wait_for_data(manifests)
     print(
         "\nView TFS on your phone\n  Scan this code with your phone on this Wi-Fi."
         "\n  Only phones that scan it can open TFS."
     )
     with contextlib.closing(sqlite.connect(config.db_path(), "read_only")) as conn:
-        paired = "SELECT COUNT(*) FROM phone_pairings WHERE code_expires_at IS NULL"
-        before = conn.execute(paired).fetchone()[0]
-        print_qr(make_pairing_link())
-        print("Waiting for your phone... (Enter to skip)", flush=True)
-        while conn.execute(paired).fetchone()[0] == before:
-            if _enter_within_second():
-                break
-        phone_url = _tailscale.set_up(
-            lambda text, default: _ask(questionary.confirm(text, default=default)), print_qr
-        )
+        link = make_pairing_link()
+        reached = threading.Event()
+        wifi.pairing_scan = (link.rsplit("/", 1)[1], reached)
+        try:
+            print_qr(link)
+            print("Waiting for your phone... (Enter to skip)", flush=True)
+            _wait_for_scan(reached, offer_tailscale)
+        finally:
+            wifi.pairing_scan = None
+        phone_url = offer_tailscale()
         if not phone_url:
             return None
         print("Scan to open TFS anywhere. Add it to your home screen.")
@@ -380,7 +406,7 @@ def _phone_setup(manifests: dict) -> str | None:
                 print(
                     f"You use {label}. Add its Tailscale automations so your data also arrives away from home."
                 )
-                _show_links(name, label, links, phone_url)
+                _show_links(name, label, links, wifi, offer_tailscale, phone_url)
         return phone_url
 
 
@@ -395,7 +421,9 @@ def _tool_choice(
     return questionary.Choice(f"{tool.label:<22} found, {tested}", value=tool, checked=True)
 
 
-def _set_up_app(name: str, manifest: dict) -> None:
+def _set_up_app(
+    name: str, manifest: dict, wifi: HomeWifi, offer_tailscale: Callable[[], str | None]
+) -> None:
     setup = manifest.get("setup", {})
     for step in setup.get("steps", []):
         print(f"  {step}")
@@ -404,7 +432,7 @@ def _set_up_app(name: str, manifest: dict) -> None:
             _import_file(name)
         if manifest["routes"]["push"]:
             connect_source(name, {})
-            _show_links(name, manifest["label"], setup.get("links", []))
+            _show_links(name, manifest["label"], setup.get("links", []), wifi, offer_tailscale)
         if manifest["asks"]:
             _connect_with_asks(name, manifest, setup.get("opens"))
     except _CONNECT_ERRORS as error:
@@ -431,7 +459,14 @@ def _import_file(name: str) -> None:
         print(output.getvalue(), end="")
 
 
-def _show_links(name: str, label: str, links: list[dict], phone_url: str | None = None) -> None:
+def _show_links(
+    name: str,
+    label: str,
+    links: list[dict],
+    wifi: HomeWifi,
+    offer_tailscale: Callable[[], str | None],
+    phone_url: str | None = None,
+) -> None:
     token = password_store.get("push_token")
     if not token:
         token = secrets.token_urlsafe(32)
@@ -446,28 +481,12 @@ def _show_links(name: str, label: str, links: list[dict], phone_url: str | None 
         for link in links
     ]
     code = secrets.token_urlsafe(6)
-    if sys.platform == "win32" and not phone_url:
-        questionary.print("  If Windows asks, allow TFS on private networks.", style=_DIM)
-    try:
-        server = setup_page.SetupServer(
-            _BIND,
-            0,
-            code,
-            f"Connect {label}",
-            buttons,
-            _phone_reached,
-            tailscale=bool(phone_url),
-        )
-    except OSError:
-        questionary.print("  Close TFS, then run tfs setup again.", style=_RED)
-        return
-    server.start()
-    try:
-        print_qr(f"http://{wifi_host()}:{server.port}/setup/{code}")
+    page = setup_page.render_page(f"Connect {label}", buttons, tailscale=bool(phone_url))
+    with setup_page.show(wifi, code, page, _phone_reached) as reached:
+        print_qr(f"{wifi_url}setup/{code}")
         questionary.print("  Waiting for your phone... (Enter to skip)", style=_DIM)
-        input()
-    finally:
-        server.stop()
+        if _wait_for_scan(reached, offer_tailscale):
+            input()
 
 
 def _phone_reached() -> None:

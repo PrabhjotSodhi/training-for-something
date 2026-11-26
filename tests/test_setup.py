@@ -23,7 +23,6 @@ from prompt_toolkit.application import create_app_session
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
-from tests.test_engine import free_port
 from tests.test_setup_page import Hrefs
 from tfs import config, password_store, providers
 from tfs.cli import _tailscale, main, setup, start
@@ -96,15 +95,30 @@ class FakeCommands:
         return True, self.mcp_list if argv[1:3] == ["mcp", "list"] else ""
 
 
+@contextlib.contextmanager
+def wifi_listener():
+    wifi = HomeWifi(config.db_path())
+    server = make_server("127.0.0.1", 0, push_handler=None, home_wifi=wifi)
+    server.start()
+    try:
+        with mock.patch.object(config, "HOME_WIFI_PORT", server.sock.getsockname()[1]):
+            yield wifi
+    finally:
+        server.stop()
+
+
 def run_without_engine(args, *, finish_setup):
     with mock.patch.object(setup, "_phone_setup"):
-        footer, _ = finish_setup()
+        footer, _ = finish_setup(HomeWifi(config.db_path()))
         sys.stdout.write(footer)
     return 0
 
 
 class TfsHomeTestCase(unittest.TestCase):
     def setUp(self):
+        self.powershell = self.enterContext(
+            mock.patch.object(start, "_powershell", return_value='{"allowed":true,"blocks":[]}')
+        )
         home = tempfile.TemporaryDirectory()
         self.addCleanup(home.cleanup)
         environment = mock.patch.dict(os.environ, {"TFS_HOME": home.name})
@@ -491,6 +505,7 @@ class TailscaleTest(TfsHomeTestCase):
             mock.patch.object(start.update, "watch"),
             contextlib.redirect_stdout(output),
         ):
+            engine.return_value.home_wifi = getattr(self, "wifi", HomeWifi(config.db_path()))
             self.assertEqual(main([command]), 0)
         engine.assert_called_once()
         engine.return_value.start.assert_called_once_with()
@@ -498,12 +513,14 @@ class TailscaleTest(TfsHomeTestCase):
         return output.getvalue()
 
     def test_phone_page_offers_each_automation_for_each_available_route(self):
-        port = free_port()
+        self.wifi = self.enterContext(wifi_listener())
+        port = config.HOME_WIFI_PORT
         pages = []
 
         def read_page(url):
             if "/setup/" not in url:
                 return
+            self.assertEqual(urlsplit(url).port, port)
             with contextlib.closing(
                 http.client.HTTPConnection("127.0.0.1", urlsplit(url).port, timeout=5)
             ) as client:
@@ -522,9 +539,7 @@ class TailscaleTest(TfsHomeTestCase):
 
                 # WHEN the person opens the setup page
                 with (
-                    mock.patch.object(setup, "_BIND", "127.0.0.1"),
                     mock.patch.object(setup, "wifi_host", return_value="127.0.0.1"),
-                    mock.patch.object(config, "HOME_WIFI_PORT", port),
                     mock.patch.object(setup, "print_qr", side_effect=read_page),
                 ):
                     out = self.run_cli(phone=phone, apps=["health_auto_export"])
@@ -721,6 +736,17 @@ class PhonePageTest(TfsHomeTestCase):
     CODE = "k7q2abcd"
 
     def run_push_setup(self, picked, answers, on_enter=lambda url: None):
+        wifi = self.enterContext(wifi_listener())
+
+        def finish(args, *, finish_setup):
+            with mock.patch.object(setup, "_phone_setup"):
+                finish_setup(wifi)
+            return 0
+
+        def press_enter():
+            on_enter(qr.call_args.args[0])
+            return True
+
         questionary = FakeQuestionary(picked, *answers)
         out, err = io.StringIO(), io.StringIO()
 
@@ -730,12 +756,12 @@ class PhonePageTest(TfsHomeTestCase):
             mock.patch("tfs.providers.shutil.which", FakeCommands(found=set()).which),
             mock.patch("tfs.cli.setup.connect_source"),
             mock.patch("tfs.cli.setup.import_.run") as imported,
-            mock.patch("tfs.cli.setup.start.run", side_effect=run_without_engine),
+            mock.patch("tfs.cli.setup.start.run", side_effect=finish),
             mock.patch("tfs.cli.setup.wifi_host", return_value="127.0.0.1"),
-            mock.patch("tfs.cli.setup._BIND", "127.0.0.1"),
+            mock.patch.object(setup, "_enter_within_second", side_effect=press_enter),
             mock.patch("tfs.cli.setup.secrets.token_urlsafe", return_value=self.CODE),
             mock.patch.object(setup, "print_qr") as qr,
-            mock.patch("builtins.input", side_effect=lambda: on_enter(qr.call_args.args[0])),
+            mock.patch("builtins.input", return_value=""),
             contextlib.redirect_stdout(out),
             contextlib.redirect_stderr(err),
         ):
@@ -756,20 +782,69 @@ class PhonePageTest(TfsHomeTestCase):
         self.assertIn("✔ Your phone reached this computer.", out)
         self.assertIn("Tap each button on the page, then press Enter.", out)
 
-    def test_given_enter_before_any_request_then_no_phone_line_and_the_address_stops_answering(
+    def test_given_enter_before_any_request_then_no_phone_line_and_the_code_stops_working(
         self,
     ):
         qr, out, _ = self.run_push_setup(["health_auto_export"], [])
         self.assertNotIn("Your phone reached", out)
-        with self.assertRaises(OSError):
-            socket.create_connection(("127.0.0.1", urlsplit(qr.call_args.args[0]).port), timeout=5)
+        url = urlsplit(qr.call_args.args[0])
+        with contextlib.closing(
+            http.client.HTTPConnection("127.0.0.1", url.port, timeout=5)
+        ) as phone:
+            phone.request("GET", url.path)
+            self.assertEqual(phone.getresponse().status, 404)
 
-    def test_given_the_port_is_in_use_then_setup_says_so_and_goes_on_to_the_next_app(self):
-        with mock.patch.object(setup.setup_page, "SetupServer", side_effect=OSError):
-            _, out, imported = self.run_push_setup(["health_auto_export", "apple_health"], [""])
-        self.assertIn("Close TFS, then run tfs setup again.", out)
-        self.assertIn("2 of 2", out)
-        imported.assert_not_called()
+    def test_busy_home_port_reports_the_problem_before_showing_a_code(self):
+        # GIVEN another listener on the requested Wi-Fi port
+        from tfs.engine import Engine
+
+        with (
+            wifi_listener(),
+            mock.patch("tfs.engine.HOME_WIFI_HOST", "127.0.0.1"),
+            mock.patch.object(
+                start,
+                "Engine",
+                side_effect=lambda data, **kw: Engine(
+                    data, screen_port=0, home_wifi_port=config.HOME_WIFI_PORT, **kw
+                ),
+            ),
+            contextlib.redirect_stderr(io.StringIO()) as err,
+        ):
+            finish = mock.Mock()
+            # WHEN setup starts the engine
+            result = start.run(argparse.Namespace(home_wifi=True, open=False), finish_setup=finish)
+            # THEN setup reports the port and never shows a dead link
+            self.assertEqual(result, 1)
+            self.assertIn(str(config.HOME_WIFI_PORT), err.getvalue())
+            finish.assert_not_called()
+
+    def test_late_scan_still_reaches_the_page_during_the_backup_offer(self):
+        # GIVEN a setup code whose first wait has elapsed
+        pages = []
+
+        def scan():
+            with contextlib.closing(
+                http.client.HTTPConnection("127.0.0.1", config.HOME_WIFI_PORT, timeout=5)
+            ) as phone:
+                phone.request("GET", urlsplit(self.url).path)
+                pages.append(phone.getresponse().read())
+
+        with (
+            mock.patch.object(setup, "_SCAN_HINT_S", 0),
+            mock.patch.object(setup, "questionary", FakeQuestionary()),
+            mock.patch.object(setup, "_phone_reached") as reached,
+            wifi_listener() as wifi,
+            mock.patch.object(setup, "wifi_host", return_value="127.0.0.1"),
+            mock.patch.object(setup, "print_qr", side_effect=lambda url: setattr(self, "url", url)),
+            mock.patch("builtins.input", return_value=""),
+            contextlib.redirect_stdout(io.StringIO()) as out,
+        ):
+            # WHEN the phone scans while Tailscale is offered
+            setup._show_links("example", "Example", [], wifi, scan)
+        # THEN setup reports the timeout and accepts the scan
+        self.assertIn("Your phone has not reached TFS.", out.getvalue())
+        self.assertIn(b"Connect Example", pages[0])
+        reached.assert_called_once()
 
 
 class PushUrlHostTest(unittest.TestCase):
@@ -800,6 +875,61 @@ class PushUrlHostTest(unittest.TestCase):
 
 
 class StartHomeWifiTest(TfsHomeTestCase):
+    def test_setup_reports_the_verified_result_after_one_prompt(self):
+        # GIVEN a Windows block on the listening Python
+        block = "Example Python"
+        for approved in (True, False):
+            after = (True, []) if approved else (False, [block])
+            with (
+                self.subTest(approved=approved),
+                mock.patch.object(sys, "platform", "win32"),
+                mock.patch.object(start, "_firewall_state", side_effect=[(False, [block]), after]),
+                mock.patch.object(
+                    start, "_elevate_firewall", side_effect=None if approved else OSError
+                ) as prompt,
+                contextlib.redirect_stdout(io.StringIO()) as out,
+            ):
+                # WHEN the user accepts or cancels the admin prompt
+                start._check_firewall(setup=True)
+                # THEN setup continues and names the rule only if it was turned off
+                prompt.assert_called_once_with()
+                self.assertIn("Windows needs your OK once", out.getvalue())
+                self.assertEqual(block in out.getvalue(), approved)
+                self.assertEqual("run tfs setup again." in out.getvalue(), not approved)
+
+    def test_start_checks_the_firewall_without_changing_rules(self):
+        # GIVEN a Windows computer with a missing rule, a block, or working rules
+        self.enable("health_auto_export")
+        for allowed, blocks in ((False, []), (True, ["Example Python"]), (True, [])):
+            with (
+                self.subTest(allowed=allowed, blocks=blocks),
+                mock.patch.object(sys, "platform", "win32"),
+                mock.patch.object(start, "_elevate_firewall", side_effect=AssertionError),
+            ):
+                self.powershell.return_value = json.dumps({"allowed": allowed, "blocks": blocks})
+                # WHEN the engine starts
+                self.start_engine()
+                # THEN only a broken route needs attention
+                self.assertEqual(
+                    "Run tfs setup to fix it." in self.output, not allowed or bool(blocks)
+                )
+                script = self.powershell.call_args.args[0]
+                self.assertIn("ActiveStore", script)
+                self.assertNotIn("Disable-NetFirewallRule", script)
+                self.assertNotIn("New-NetFirewallRule", script)
+
+    def test_repair_script_limits_rules_to_the_home_network_and_base_python(self):
+        # GIVEN a base interpreter with spaces and a quote
+        with mock.patch.object(sys, "_base_executable", "C:/Pat's Tools/python.exe"):
+            # WHEN setup builds the script
+            script = start._firewall_script(repair=True)
+        # THEN the allow rule is port based and only matching blocks are disabled
+        self.assertIn("Pat''s Tools", script)
+        self.assertIn("-Direction Inbound -Action Allow -Protocol TCP", script)
+        self.assertIn("-LocalPort 47824 -Profile Private -RemoteAddress LocalSubnet", script)
+        self.assertIn("Disable-NetFirewallRule", script)
+        self.assertNotIn("Remove-NetFirewallRule", script)
+
     def enable(self, connector):
         config.data_dir().mkdir(parents=True, exist_ok=True)
         conn = sqlite.connect(config.db_path())
@@ -811,13 +941,16 @@ class StartHomeWifiTest(TfsHomeTestCase):
     def start_engine(self):
         with (
             mock.patch("tfs.cli._tailscale._run", return_value=None),
+            # Tests that fake Windows would send shutil.which down its Windows path.
+            mock.patch("tfs.cli._tailscale._program", return_value=None),
             mock.patch("tfs.cli.start.Engine") as engine,
             mock.patch("tfs.cli.start.sleep", side_effect=KeyboardInterrupt),
             # The update check would reach GitHub.
             mock.patch("tfs.cli.update.watch"),
-            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stdout(io.StringIO()) as out,
         ):
             start.run(argparse.Namespace(home_wifi=False, open=False))
+            self.output = out.getvalue()
         return engine
 
     def test_given_a_push_source_is_on_then_the_home_wifi_listener_starts(self):
