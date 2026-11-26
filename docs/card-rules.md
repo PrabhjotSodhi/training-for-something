@@ -16,7 +16,7 @@ Plus Jakarta Sans for everything, with tabular figures on numbers. The font file
 ## Shell
 
 1. The page has no sidebar. Its content is centred, at most 1440 px wide, with 24 px on the left and right.
-2. Overview starts with its content. The settings gear floats and takes no space: in the screen's top right corner when the screen is wide enough to leave empty space beside the page (1560 px and up), otherwise in the bottom right corner. It is a 36 px round button with a 44 px tap area. The Settings back button is a 36 px round button with the fill and ink colours. Both have a visible focus ring.
+2. Overview starts with its content. The settings gear is a 56 px round button that stays in the bottom right corner while you scroll, with the card colour, line border and a soft shadow. The page ends with enough space that it never covers the last card. The Settings back button is a 36 px round button with the fill and ink colours. Both have a visible focus ring.
 3. The page uses the appearance saved on this device. System follows the device setting. Light and Dark set a fixed theme before the page paints.
 4. Desktop width comes first.
 

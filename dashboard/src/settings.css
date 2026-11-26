@@ -27,30 +27,36 @@
   border-radius: 50%;
 }
 
-/* The gear floats in the bottom right corner of the screen, so it takes no space. */
+/* The gear stays in the bottom right corner while you scroll, like a phone's floating button. */
 .settings-link {
   position: fixed;
   z-index: 1;
-  right: 16px;
-  bottom: 16px;
+  right: 24px;
+  bottom: 24px;
+  width: 56px;
+  height: 56px;
 }
 
 .settings-link::before {
+  box-sizing: border-box;
+  width: 56px;
+  height: 56px;
   background: var(--card);
   border: 1px solid var(--line);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.16);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
 }
 
-/* Wide screens have empty space beside the page, so the gear sits at the top right there. */
-@media (min-width: 1560px) {
-  .settings-link {
-    position: absolute;
-    top: 20px;
-    right: 20px;
-    bottom: auto;
-  }
+.settings-link svg {
+  width: 26px;
+  height: 26px;
+}
 
-  .settings-link::before { box-shadow: none; }
+/* Room at the end so the gear never covers the last card. */
+.page:has(.settings-link) { padding-bottom: 104px; }
+
+@media (max-width: 699px) {
+  .settings-link { right: 16px; bottom: 16px; }
+  .page:has(.settings-link) { padding-bottom: 88px; }
 }
 
 .settings-title {
