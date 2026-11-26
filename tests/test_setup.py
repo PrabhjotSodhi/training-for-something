@@ -941,6 +941,8 @@ class StartHomeWifiTest(TfsHomeTestCase):
     def start_engine(self):
         with (
             mock.patch("tfs.cli._tailscale._run", return_value=None),
+            # Tests that fake Windows would send shutil.which down its Windows path.
+            mock.patch("tfs.cli._tailscale._program", return_value=None),
             mock.patch("tfs.cli.start.Engine") as engine,
             mock.patch("tfs.cli.start.sleep", side_effect=KeyboardInterrupt),
             # The update check would reach GitHub.
