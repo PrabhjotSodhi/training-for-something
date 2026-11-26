@@ -27,17 +27,31 @@
   border-radius: 50%;
 }
 
-.overview-plate, .with-settings { position: relative; }
-
+/* The gear floats in the bottom right corner of the screen, so it takes no space. */
 .settings-link {
-  position: absolute;
+  position: fixed;
   z-index: 1;
-  top: 20px;
-  right: 20px;
+  right: 16px;
+  bottom: 16px;
 }
 
-.overview-plate > .settings-link { top: 28px; right: 32px; }
-.card.with-settings { padding-top: 72px; }
+.settings-link::before {
+  background: var(--card);
+  border: 1px solid var(--line);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.16);
+}
+
+/* Wide screens have empty space beside the page, so the gear sits at the top right there. */
+@media (min-width: 1560px) {
+  .settings-link {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    bottom: auto;
+  }
+
+  .settings-link::before { box-shadow: none; }
+}
 
 .settings-title {
   display: flex;
@@ -166,9 +180,6 @@
 }
 
 @media (max-width: 699px) {
-  .settings-link { top: 12px; right: 12px; }
-  .overview-plate > .settings-link { top: 20px; right: 16px; }
-  .card.with-settings { padding-top: 64px; }
   .settings-groups { display: flex; flex-direction: column; align-items: stretch; }
   .card.settings-rows { padding-inline: 16px; }
 }

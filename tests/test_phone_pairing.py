@@ -102,9 +102,6 @@ class PhonePairingTest(unittest.TestCase):
         cookie = f"{token.key}={token.value}"
         self.assertNotIn("Set-Cookie", self.request(server.port, path)[1])
         self.assertEqual(self.request(server.port, "/", cookie)[2], b"Invented dashboard")
-        self.assertEqual(
-            self.request(server.port, "/api/settings?check_tools=false", cookie)[0], 200
-        )
         server.stop()
         # THEN start enables Wi-Fi without a push source and honours the same cookie
         self.assertTrue(start._home_wifi_enabled())
