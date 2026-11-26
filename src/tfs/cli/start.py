@@ -34,33 +34,41 @@ def _firewall_script(*, repair: bool) -> str:
     python = sys._base_executable.translate(
         {ord(ch): "'" + ch for ch in "'\u2018\u2019\u201a\u201b"}
     )
-    store = "PersistentStore" if repair else "ActiveStore"
-    query = f"""$ErrorActionPreference = 'Stop'
+    script = f"""$ErrorActionPreference = 'Stop'
 $python = '{python}'
 $name = 'TFS home Wi-Fi'
-$rules = Get-NetFirewallRule -PolicyStore {store}
-$allow = $rules | Where-Object Name -eq $name
-$blocks = @($rules | Where-Object {{ $_.Direction -eq 'Inbound' -and $_.Action -eq 'Block' -and $_.Enabled -eq 'True' }} |
-    Where-Object {{ $_.Profile -eq 'Any' -or ([int]$_.Profile -band 2) }} |
-    Where-Object {{
-        $app = ($_ | Get-NetFirewallApplicationFilter).Program
-        $app -and [Environment]::ExpandEnvironmentVariables($app) -eq $python
-    }})
 """
     if repair:
         return (
-            query
-            + f"""if (!$allow) {{
-    New-NetFirewallRule -Name $name -DisplayName $name -Direction Inbound -Action Allow -Protocol TCP -LocalPort {config.HOME_WIFI_PORT} -Profile Private -RemoteAddress LocalSubnet
-}} elseif ($allow.Enabled -ne 'True') {{
-    $allow | Enable-NetFirewallRule
+            script
+            + f"""$settings = @{{
+    Direction = 'Inbound'
+    Action = 'Allow'
+    Protocol = 'TCP'
+    LocalPort = {config.HOME_WIFI_PORT}
+    Profile = 'Private'
+    RemoteAddress = 'LocalSubnet'
+    Program = $python
+    Enabled = 'True'
 }}
-foreach ($block in $blocks) {{ $block | Disable-NetFirewallRule }}
+if (Get-NetFirewallRule -Name $name -PolicyStore PersistentStore -ErrorAction SilentlyContinue) {{
+    Set-NetFirewallRule -Name $name @settings
+}} else {{
+    New-NetFirewallRule -Name $name -DisplayName $name @settings
+}}
 """
         )
     return (
-        query
-        + """[Console]::OutputEncoding = [Text.Encoding]::UTF8
+        script
+        + """$rules = Get-NetFirewallRule -PolicyStore ActiveStore
+$allow = $rules | Where-Object Name -eq $name
+$blocks = @($rules | Where-Object { $_.Direction -eq 'Inbound' -and $_.Action -eq 'Block' -and $_.Enabled -eq 'True' } |
+    Where-Object { $_.Profile -eq 'Any' -or ([int]$_.Profile -band 2) } |
+    Where-Object {
+        $app = ($_ | Get-NetFirewallApplicationFilter).Program
+        $app -and [Environment]::ExpandEnvironmentVariables($app) -eq $python
+    })
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
 @{allowed = ($allow.Enabled -eq 'True'); blocks = @($blocks | ForEach-Object { $_.DisplayName })} | ConvertTo-Json -Compress
 """
     )
@@ -95,27 +103,35 @@ def _elevate_firewall() -> None:
     )
 
 
-def _check_firewall(*, setup: bool) -> None:
+def _check_firewall(*, setup: bool) -> bool:
+    """Report Windows firewall problems and say whether to offer Wi-Fi pairing."""
     if sys.platform != "win32":
-        return
+        return True
     allowed, blocks = _firewall_state() or (False, [])
-    if allowed and not blocks:
-        return
-    if setup:
+    if setup and not allowed and not blocks:
         print(
             "Windows needs your OK once so your phone can reach TFS on your home Wi-Fi.", flush=True
         )
         with suppress(OSError, subprocess.SubprocessError):
             _elevate_firewall()
-        if state := _firewall_state():
-            allowed, remaining = state
-            for name in sorted(set(blocks) - set(remaining)):
-                print(f"Turned off firewall rule: {name}")
-            if allowed and not remaining:
-                return
+        allowed, blocks = _firewall_state() or (False, [])
+    if blocks:
+        if setup:
+            print(
+                "Windows is blocking Python on home networks, so your phone cannot reach TFS over Wi-Fi."
+            )
+        else:
+            print(
+                "Windows is blocking Python on home networks, so phones cannot reach TFS over Wi-Fi. Use Tailscale to view TFS on your phone."
+            )
+        return False
+    if allowed:
+        return True
+    if setup:
         print("Phone viewing over Wi-Fi will not work until you run tfs setup again.")
     else:
         print("Your phone cannot reach TFS over Wi-Fi. Run tfs setup to fix it.")
+    return False
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -139,9 +155,8 @@ def run(
     home_wifi = args.home_wifi or _home_wifi_enabled()
     data_dir = config.data_dir()
     engine = Engine(data_dir, home_wifi=home_wifi, new_version=lambda: update.available(data_dir))
-    # Set up the rule before listening so Windows does not ask about Python first.
-    if home_wifi:
-        _check_firewall(setup=finish_setup is not None)
+    if home_wifi and finish_setup is None:
+        _check_firewall(setup=False)
     try:
         engine.start()
     except (

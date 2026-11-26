@@ -7,7 +7,7 @@ Versions follow Python's PEP 440. Each release starts with "Breaking changes". E
 ### Added
 
 - `tfs update` installs the newest release after checking its SHA-256, then starts TFS again if it was running (#287). On Windows it stops its own helpers and continues while your AI tools stay open. If it stopped a helper, it asks you to restart your AI tools. An AI tool left open on Mac or Linux asks you to restart it.
-- Setup ticks connected apps for you. Type your goal once and setup includes it in the message to paste into your AI tool. On Windows, setup asks for admin approval if the firewall needs a change for phone access on home Wi-Fi.
+- Setup ticks connected apps for you. Type your goal once and setup includes it in the message to paste into your AI tool. On Windows, setup asks for admin approval to add or repair its own firewall rule for home Wi-Fi. It changes no other rules. If Windows blocks Python, setup offers Tailscale.
 - `tfs start` checks GitHub for a newer release at start and every 24 hours. The terminal says "TFS {version} is ready. Run tfs update." once per version, and the dashboard shows it with a copy button. Set `TFS_NO_UPDATE_CHECK=1` to turn the check off.
 - Before an update changes your database, TFS saves a copy in the `backups` folder of the data folder and keeps the 2 newest (#288). `tfs start` prints the path.
 - `coach_v1_app_targets` lists your Hevy routines after each sync, and `coach_v1_plan_items` has `send_into_json`.

@@ -131,7 +131,36 @@ class TfsHomeTestCase(unittest.TestCase):
 
 
 class SetupTest(TfsHomeTestCase):
-    def run_setup(self, questionary, commands, *, tty=True):
+    def test_python_block_skips_admin_and_pairing_and_offers_tailscale(self):
+        # GIVEN the Python block wins even when the TFS rule is on
+        self.powershell.return_value = '{"allowed":true,"blocks":["Example Python"]}'
+
+        def finish(args, *, finish_setup):
+            finish_setup(HomeWifi(config.db_path()))
+            return 0
+
+        with (
+            mock.patch.object(sys, "platform", "win32"),
+            mock.patch.object(start, "_elevate_firewall") as prompt,
+            mock.patch.object(setup, "make_pairing_link", side_effect=AssertionError) as pairing,
+            mock.patch.object(_tailscale, "_program", return_value=None),
+            mock.patch.object(setup, "_wait_for_data"),
+        ):
+            # WHEN setup reaches phone viewing
+            code, out, _, _ = self.run_setup(
+                FakeQuestionary([]), FakeCommands(set()), finish=finish
+            )
+        # THEN setup offers Tailscale without asking for admin or making a pairing code
+        self.assertIn(
+            "Windows is blocking Python on home networks, so your phone cannot reach TFS over Wi-Fi.",
+            out,
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("Tailscale works anywhere", out)
+        prompt.assert_not_called()
+        pairing.assert_not_called()
+
+    def run_setup(self, questionary, commands, *, tty=True, finish=run_without_engine):
         out, err = io.StringIO(), io.StringIO()
         with (
             mock.patch("sys.stdin", mock.Mock(isatty=lambda: tty)),
@@ -139,7 +168,7 @@ class SetupTest(TfsHomeTestCase):
             mock.patch("tfs.providers.shutil.which", commands.which),
             mock.patch("tfs.providers.run_command", commands.run),
             mock.patch("tfs.cli.setup.webbrowser.open"),
-            mock.patch("tfs.cli.setup.start.run", side_effect=run_without_engine) as started,
+            mock.patch("tfs.cli.setup.start.run", side_effect=finish) as started,
             contextlib.redirect_stdout(out),
             contextlib.redirect_stderr(err),
         ):
@@ -574,6 +603,29 @@ class TailscaleTest(TfsHomeTestCase):
                     )
                     self.assertEqual("Tailscale app is connected" in page, route == "Tailscale")
 
+    def test_blocked_wifi_offers_only_the_available_tailscale_automations(self):
+        # GIVEN Windows blocks Python and the person accepts or declines Tailscale
+        self.powershell.return_value = '{"allowed":true,"blocks":["Example Python"]}'
+        for accept in (True, False):
+            with (
+                self.subTest(accept=accept),
+                tempfile.TemporaryDirectory() as home,
+                mock.patch.dict(os.environ, TFS_HOME=home),
+                mock.patch.object(sys, "platform", "win32"),
+                mock.patch.object(setup, "_wait_for_scan", side_effect=AssertionError),
+                mock.patch.object(setup, "print_qr") as qr,
+            ):
+                # WHEN setup connects the push source
+                out = self.run_cli(phone=accept, apps=["health_auto_export"])
+                # THEN every automation code goes straight to the private route
+                self.assertIn("Tailscale is already on this computer", out)
+                urls = [call.args[0] for call in qr.call_args_list]
+                self.assertFalse(any(url.startswith("http://") for url in urls))
+                targets = [parse_qs(urlsplit(url).query)["url"][0] for url in urls if "?" in url]
+                self.assertEqual(
+                    targets, [f"https://{self.host}/push/health_auto_export"] * (2 if accept else 0)
+                )
+
     def test_free_port_sets_up_once_and_start_shows_phone_and_push_links(self):
         # GIVEN a signed-in computer with no Serve config
         # WHEN setup runs twice and the engine starts again
@@ -882,14 +934,13 @@ class PushUrlHostTest(unittest.TestCase):
 
 class StartHomeWifiTest(TfsHomeTestCase):
     def test_setup_reports_the_verified_result_after_one_prompt(self):
-        # GIVEN a Windows block on the listening Python
-        block = "Example Python"
+        # GIVEN a missing TFS rule and no block on Python
         for approved in (True, False):
-            after = (True, []) if approved else (False, [block])
+            after = (approved, [])
             with (
                 self.subTest(approved=approved),
                 mock.patch.object(sys, "platform", "win32"),
-                mock.patch.object(start, "_firewall_state", side_effect=[(False, [block]), after]),
+                mock.patch.object(start, "_firewall_state", side_effect=[(False, []), after]),
                 mock.patch.object(
                     start, "_elevate_firewall", side_effect=None if approved else OSError
                 ) as prompt,
@@ -897,10 +948,9 @@ class StartHomeWifiTest(TfsHomeTestCase):
             ):
                 # WHEN the user accepts or cancels the admin prompt
                 start._check_firewall(setup=True)
-                # THEN setup continues and names the rule only if it was turned off
+                # THEN setup reports when the rule is still missing
                 prompt.assert_called_once_with()
                 self.assertIn("Windows needs your OK once", out.getvalue())
-                self.assertEqual(block in out.getvalue(), approved)
                 self.assertEqual("run tfs setup again." in out.getvalue(), not approved)
 
     def test_start_checks_the_firewall_without_changing_rules(self):
@@ -916,9 +966,10 @@ class StartHomeWifiTest(TfsHomeTestCase):
                 # WHEN the engine starts
                 self.start_engine()
                 # THEN only a broken route needs attention
-                self.assertEqual(
-                    "Run tfs setup to fix it." in self.output, not allowed or bool(blocks)
-                )
+                blocked = "Windows is blocking Python on home networks, so phones cannot reach TFS over Wi-Fi. Use Tailscale to view TFS on your phone."
+                missing = "Your phone cannot reach TFS over Wi-Fi. Run tfs setup to fix it."
+                self.assertEqual(blocked in self.output.splitlines(), bool(blocks))
+                self.assertEqual(missing in self.output.splitlines(), not allowed and not blocks)
                 script = self.powershell.call_args.args[0]
                 self.assertIn("ActiveStore", script)
                 self.assertNotIn("Disable-NetFirewallRule", script)
@@ -929,12 +980,25 @@ class StartHomeWifiTest(TfsHomeTestCase):
         with mock.patch.object(sys, "_base_executable", "C:/Pat's Tools/python.exe"):
             # WHEN setup builds the script
             script = start._firewall_script(repair=True)
-        # THEN the allow rule is port based and only matching blocks are disabled
+        # THEN both branches apply the same settings to the exact TFS rule name
         self.assertIn("Pat''s Tools", script)
-        self.assertIn("-Direction Inbound -Action Allow -Protocol TCP", script)
-        self.assertIn("-LocalPort 47824 -Profile Private -RemoteAddress LocalSubnet", script)
-        self.assertIn("Disable-NetFirewallRule", script)
-        self.assertNotIn("Remove-NetFirewallRule", script)
+        self.assertIn("$name = 'TFS home Wi-Fi'", script)
+        self.assertIn("if (Get-NetFirewallRule -Name $name ", script)
+        update, create = script.split("} else {")
+        self.assertIn("Set-NetFirewallRule -Name $name @settings", update)
+        self.assertIn("New-NetFirewallRule -Name $name -DisplayName $name @settings", create)
+        for setting in (
+            "Direction = 'Inbound'",
+            "Action = 'Allow'",
+            "Protocol = 'TCP'",
+            "LocalPort = 47824",
+            "Profile = 'Private'",
+            "RemoteAddress = 'LocalSubnet'",
+            "Program = $python",
+            "Enabled = 'True'",
+        ):
+            self.assertIn(setting, script)
+        self.assertNotRegex(script, r"(?i)(Disable|Remove|Enable)-NetFirewall")
 
     def enable(self, connector):
         config.data_dir().mkdir(parents=True, exist_ok=True)

@@ -73,6 +73,7 @@ def run(args: argparse.Namespace) -> int:
         first_tool = _connect_ai_tools()
         manifests = load_manifests()
         picked = _pick_apps(manifests)
+        pair_over_wifi = start._check_firewall(setup=True)
 
         @cache
         def offer_tailscale() -> str | None:
@@ -83,9 +84,11 @@ def run(args: argparse.Namespace) -> int:
         def finish_setup(wifi: HomeWifi) -> tuple[str, str | None]:
             for number, name in enumerate(picked, 1):
                 print(f"\n── {manifests[name]['label']} ({number} of {len(picked)})")
-                _set_up_app(name, manifests[name], wifi, offer_tailscale)
+                _set_up_app(name, manifests[name], wifi, offer_tailscale, pair_over_wifi)
             message = _goal_message()
-            phone_url = _phone_setup(manifests, wifi, offer_tailscale)
+            phone_url = _phone_setup(
+                manifests, wifi, offer_tailscale, picked=picked, pair_over_wifi=pair_over_wifi
+            )
             footer = f"Keep this window open. TFS receives phone data only while it runs.\n{_next_step(first_tool, message)}"
             return footer, phone_url
 
@@ -376,14 +379,19 @@ def _wait_for_scan(reached: threading.Event, offer_tailscale: Callable[[], str |
 
 
 def _phone_setup(
-    manifests: dict, wifi: HomeWifi, offer_tailscale: Callable[[], str | None]
+    manifests: dict,
+    wifi: HomeWifi,
+    offer_tailscale: Callable[[], str | None],
+    *,
+    picked: list[str],
+    pair_over_wifi: bool,
 ) -> str | None:
     _wait_for_data(manifests)
-    print(
-        "\nView TFS on your phone\n  Scan this code with your phone on this Wi-Fi."
-        "\n  Only phones that scan it can open TFS."
-    )
-    with contextlib.closing(sqlite.connect(config.db_path(), "read_only")) as conn:
+    if pair_over_wifi:
+        print(
+            "\nView TFS on your phone\n  Scan this code with your phone on this Wi-Fi."
+            "\n  Only phones that scan it can open TFS."
+        )
         link = make_pairing_link()
         reached = threading.Event()
         wifi.pairing_scan = (link.rsplit("/", 1)[1], reached)
@@ -393,12 +401,15 @@ def _phone_setup(
             _wait_for_scan(reached, offer_tailscale)
         finally:
             wifi.pairing_scan = None
-        phone_url = offer_tailscale()
-        if not phone_url:
-            return None
-        print("Scan to open TFS anywhere. Add it to your home screen.")
-        print_qr(phone_url)
+    phone_url = offer_tailscale()
+    if not phone_url:
+        return None
+    print("Scan to open TFS anywhere. Add it to your home screen.")
+    print_qr(phone_url)
+    with contextlib.closing(sqlite.connect(config.db_path(), "read_only")) as conn:
         for (name,) in conn.execute("SELECT connector FROM sources WHERE enabled = 1"):
+            if not pair_over_wifi and name in picked:
+                continue
             manifest = manifests.get(name, {})
             links = manifest.get("setup", {}).get("links")
             if links:
@@ -406,7 +417,15 @@ def _phone_setup(
                 print(
                     f"You use {label}. Add its Tailscale automations so your data also arrives away from home."
                 )
-                _show_links(name, label, links, wifi, offer_tailscale, phone_url)
+                _show_links(
+                    name,
+                    label,
+                    links,
+                    wifi,
+                    offer_tailscale,
+                    phone_url,
+                    pair_over_wifi=pair_over_wifi,
+                )
         return phone_url
 
 
@@ -422,7 +441,11 @@ def _tool_choice(
 
 
 def _set_up_app(
-    name: str, manifest: dict, wifi: HomeWifi, offer_tailscale: Callable[[], str | None]
+    name: str,
+    manifest: dict,
+    wifi: HomeWifi,
+    offer_tailscale: Callable[[], str | None],
+    pair_over_wifi: bool,
 ) -> None:
     setup = manifest.get("setup", {})
     for step in setup.get("steps", []):
@@ -432,7 +455,14 @@ def _set_up_app(
             _import_file(name)
         if manifest["routes"]["push"]:
             connect_source(name, {})
-            _show_links(name, manifest["label"], setup.get("links", []), wifi, offer_tailscale)
+            _show_links(
+                name,
+                manifest["label"],
+                setup.get("links", []),
+                wifi,
+                offer_tailscale,
+                pair_over_wifi=pair_over_wifi,
+            )
         if manifest["asks"]:
             _connect_with_asks(name, manifest, setup.get("opens"))
     except _CONNECT_ERRORS as error:
@@ -466,12 +496,18 @@ def _show_links(
     wifi: HomeWifi,
     offer_tailscale: Callable[[], str | None],
     phone_url: str | None = None,
+    *,
+    pair_over_wifi: bool = True,
 ) -> None:
+    if not pair_over_wifi:
+        phone_url = phone_url or offer_tailscale()
+        if not phone_url:
+            return
     token = password_store.get("push_token")
     if not token:
         token = secrets.token_urlsafe(32)
         password_store.set("push_token", token)
-    wifi_url = f"http://{wifi_host()}:{config.HOME_WIFI_PORT}/"
+    wifi_url = f"http://{wifi_host()}:{config.HOME_WIFI_PORT}/" if pair_over_wifi else None
     route = "Tailscale" if phone_url else "Wi-Fi"
     buttons = [
         (
@@ -480,6 +516,11 @@ def _show_links(
         )
         for link in links
     ]
+    if not pair_over_wifi:
+        for title, link in buttons:
+            print(title)
+            print_qr(link)
+        return
     code = secrets.token_urlsafe(6)
     page = setup_page.render_page(f"Connect {label}", buttons, tailscale=bool(phone_url))
     with setup_page.show(wifi, code, page, _phone_reached) as reached:
