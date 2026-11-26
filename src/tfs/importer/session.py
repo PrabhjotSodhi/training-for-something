@@ -286,7 +286,18 @@ def process_pending(
     results = []
     for (sha256,) in pending:
         results.append(read_file(conn, data_dir, sha256, tz=tz, module=module))
-    rebuild_pending(conn, tz=tz)
+    rebuilt = rebuild_pending(conn, tz=tz)
+    if pending or rebuilt:
+        wait_for_saves(conn)
+        conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+        # A Save can append during the bulk copy. Trim its tail without waiting on readers.
+        wait_for_saves(conn)
+        timeout = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+        conn.execute("PRAGMA busy_timeout=0")
+        try:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        finally:
+            conn.execute(f"PRAGMA busy_timeout={timeout}")
     return results
 
 

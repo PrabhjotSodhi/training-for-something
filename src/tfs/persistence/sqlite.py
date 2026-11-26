@@ -42,13 +42,15 @@ def connect(path: Path, role: str = "default") -> sqlite3.Connection:
         conn = sqlite3.connect(path, isolation_level=None, timeout=0)
         _switch_to_wal(conn, path)
         conn.execute("PRAGMA foreign_keys=ON")
-    synchronous = "NORMAL" if role == "import" else "FULL"
-    conn.execute(f"PRAGMA synchronous={synchronous}")
+        # The next writer trims a checkpointed log to 64 MiB when it reuses it.
+        conn.execute("PRAGMA journal_size_limit=67108864")
+    # Each writer flushes its own work so a Save never has to flush earlier import batches.
+    conn.execute("PRAGMA synchronous=FULL")
     conn.execute("PRAGMA busy_timeout=5000")
     conn.row_factory = sqlite3.Row
     if role == "import":
-        # Fewer checkpoints cut random writes on hard drives without growing the batches.
-        conn.execute("PRAGMA wal_autocheckpoint=10000")
+        # Leave checkpoints to the end of the import unless the log reaches a million pages.
+        conn.execute("PRAGMA wal_autocheckpoint=1000000")
     elif role == "save":
         # A Save never runs a checkpoint, so its speed does not depend on the disk.
         # SQLite also checkpoints when the last connection closes, so turn that off too.

@@ -4,6 +4,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
@@ -166,6 +167,21 @@ class ReadFileTest(SessionTest):
 
 
 class ProcessPendingTest(SessionTest):
+    def test_finished_import_is_checkpointed_before_close(self) -> None:
+        # GIVEN the schema is on disk and the file is pending in the write log
+        self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        self.save(b"first")
+
+        # WHEN the import finishes with its connection still open
+        process_pending(self.conn, self.data_dir, module=THIS)
+
+        # THEN the database file alone contains the imported record
+        disk_only = config.db_path().as_uri() + "?immutable=1"
+        with closing(sqlite3.connect(disk_only, uri=True)) as disk:
+            self.assertEqual(
+                disk.execute("SELECT key FROM source_records").fetchall(), [("first",)]
+            )
+
     def test_one_failing_file_does_not_block_the_next(self) -> None:
         broken = self.save(b"boom")
         fine = self.save(b"fine")
