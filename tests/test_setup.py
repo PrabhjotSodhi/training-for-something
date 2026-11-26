@@ -12,12 +12,16 @@ import tempfile
 import unittest
 import urllib.request
 from collections import deque
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest import mock
 from urllib.parse import parse_qs, urlsplit
 
 import qrcode
+import questionary
+from prompt_toolkit.application import create_app_session
+from prompt_toolkit.input import create_pipe_input
+from prompt_toolkit.output import DummyOutput
 
 from tests.test_engine import free_port
 from tests.test_setup_page import Hrefs
@@ -29,7 +33,6 @@ from tfs.importer.session import read_file
 from tfs.persistence import sqlite
 from tfs.persistence.migrations import migrate
 from tfs.providers import mcp_tools
-from tfs.web.overview import read_overview
 from tfs.web.server import HomeWifi, make_server
 
 REPO = "PrabhjotSodhi/training-for-something"
@@ -63,6 +66,8 @@ class FakeQuestionary:
     def __getattr__(self, kind):
         def question(message, validate=lambda answer: True, **options):
             self.print(message)
+            if options.get("instruction"):
+                self.print(options["instruction"])
             answer = self.answers.popleft()
             while (problem := validate(answer)) is not True:
                 sys.stdout.write(f"{problem}\n")
@@ -253,6 +258,40 @@ class SetupTest(TfsHomeTestCase):
             self.run_setup(questionary, FakeCommands(found=set()))
         imported.assert_not_called()
 
+    def test_enter_keeps_connected_app_and_reticking_reopens_its_steps(self):
+        # GIVEN an enabled app with a recent arrival
+        name = "health_auto_export"
+        arrived = datetime.now(UTC) - timedelta(minutes=2)
+        with contextlib.closing(sqlite.connect(config.db_path())) as conn:
+            migrate(conn)
+            conn.execute(
+                "INSERT INTO sources (connector, last_received_at) VALUES (?, ?)",
+                (name, arrived.isoformat().replace("+00:00", "Z")),
+            )
+        prompts = FakeQuestionary("", "")
+        prompts.Choice = questionary.Choice
+
+        def checkbox(message, choices, **options):
+            app = next(c for c in choices if c.value == name)
+            self.assertIn("connected, last data 2 min ago", app.title)
+            return questionary.checkbox(message, choices, initial_choice=app, **options)
+
+        prompts.checkbox = checkbox
+        for retick in (False, True):
+            # WHEN the person accepts the defaults or unticks and reticks the app
+            with (
+                self.subTest(retick=retick),
+                create_pipe_input() as keys,
+                create_app_session(input=keys, output=DummyOutput()),
+                mock.patch.object(setup, "_set_up_app") as steps,
+            ):
+                keys.send_text("  \r" if retick else "\r")
+                _, out, _, _ = self.run_setup(prompts, FakeCommands(found=set()))
+                # THEN only a fresh tick runs setup
+                self.assertEqual(steps.call_count, int(retick))
+                self.assertIn("✔ Health Auto Export", out)
+                self.assertEqual("No new apps" in out, not retick)
+
     def test_given_a_terminal_that_is_not_a_windows_console_then_it_names_one_and_exits_1(self):
         class NoConsoleError(Exception):
             pass
@@ -277,47 +316,54 @@ class SetupTest(TfsHomeTestCase):
         with contextlib.closing(sqlite.connect(config.db_path())) as conn:
             return [tuple(row) for row in conn.execute("SELECT type, local_date FROM goals")]
 
-    def test_given_goal_answers_when_setup_finishes_then_the_overview_has_a_plate(self):
-        # GIVEN a name, a future date and a target
-        answers = ("First powerlifting meet", "2099-03-14", "Squat 140 kg")
+    def test_typed_goal_goes_in_the_paste_message_without_saving(self):
+        # GIVEN one goal answer
+        prompts = FakeQuestionary([])
+        prompts.text = mock.Mock(return_value=mock.Mock(ask=lambda: "Hike the coast track"))
         # WHEN setup finishes
-        self.run_goal_setup(*answers)
-        # THEN the save path stored the goal and the Overview shows it on the plate
-        plate = read_overview(config.db_path(), datetime(2030, 1, 1, tzinfo=UTC)).plate
-        self.assertEqual(
-            (plate.data.goal, plate.data.date), ("First powerlifting meet", "2099-03-14")
+        _, out, _, _ = self.run_setup(prompts, FakeCommands({"claude"}, plugin_list=PLUGIN))
+        # THEN setup asked once and passed the goal to the AI
+        prompts.text.assert_called_once()
+        self.assertEqual(self.stored_goals(), [])
+        self.assertIn(
+            "Paste this: Use TFS to set up my goal: Hike the coast track. Look up anything "
+            "you need, then build my first training plan. Ask me one question at a time.",
+            out,
         )
 
     def test_given_an_empty_name_when_setup_finishes_then_no_goal_is_stored(self):
         # GIVEN the person presses Enter on the name
         # WHEN setup finishes
-        self.run_goal_setup("")
+        _, out, _, _ = self.run_goal_setup("")
         # THEN no goal is stored
         self.assertEqual(self.stored_goals(), [])
-
-    def test_given_a_past_date_when_setup_asks_then_it_says_why_and_asks_again(self):
-        # GIVEN a past date, then a future one
-        answers = ("Hike the coast track", "2020-01-01", "2099-03-14", "")
-        # WHEN setup asks for the date
-        _, out, _, _ = self.run_goal_setup(*answers)
-        # THEN it says why and saves the second date
-        self.assertIn("Pick a date after today.", out)
-        self.assertEqual(self.stored_goals(), [("Hike the coast track", "2099-03-14")])
+        self.assertIn(f"Paste this: {providers.FIRST_MESSAGE}", out)
+        self.assertIn(
+            "What are you training for? Press Enter to skip\n\n"
+            "  Local powerlifting meet in June, squat 140 kg\n"
+            "  Lose 10 kg in 6 months\n"
+            "  Sub 90 minute Hyrox Sydney 2027\n"
+            "  Sub 3:30 Auckland Marathon, October 2027\n"
+            "  Olympic triathlon in February, under 2:45\n"
+            "  Physique show on 14 March 2027\n"
+            "  Run 5 km without stopping by summer\n",
+            out,
+        )
 
     def test_given_a_saved_goal_when_setup_finishes_then_the_next_step_asks_for_a_first_plan(self):
-        # GIVEN a past goal, so setup asks again and saves a new one
+        # GIVEN a saved goal with a future date
         config.data_dir().mkdir(parents=True, exist_ok=True)
         with contextlib.closing(sqlite.connect(config.db_path())) as conn:
             migrate(conn)
             conn.execute(
                 "INSERT INTO goals (id, type, local_date, target_json)"
-                " VALUES ('old', 'Hike the coast track', '2020-01-01', '{}')"
+                " VALUES ('walk', 'Hike the coast track', '2099-03-14', '{}')"
             )
-        self.run_goal_setup("First powerlifting meet", "2099-03-14", "")
         # WHEN setup runs again
         _, out, _, _ = self.run_goal_setup()
         # THEN it names the goal and the next step asks for a first training plan
-        self.assertIn("Goal: First powerlifting meet on 2099-03-14", out)
+        self.assertNotIn("What are you training for?", out)
+        self.assertIn("Goal: Hike the coast track on 2099-03-14", out)
         self.assertIn(providers.PLAN_MESSAGE, out)
         self.assertNotIn(providers.FIRST_MESSAGE, out)
 
@@ -465,7 +511,11 @@ class TailscaleTest(TfsHomeTestCase):
                 pages.append(client.getresponse().read().decode())
 
         for phone in (True, False):
-            with self.subTest(phone=phone):
+            with (
+                self.subTest(phone=phone),
+                tempfile.TemporaryDirectory() as home,
+                mock.patch.dict(os.environ, TFS_HOME=home),
+            ):
                 # GIVEN a fresh phone setup with or without private access
                 self.routes = self.route(self.target, port=8444)
                 pages.clear()
@@ -478,9 +528,12 @@ class TailscaleTest(TfsHomeTestCase):
                     mock.patch.object(setup, "print_qr", side_effect=read_page),
                 ):
                     out = self.run_cli(phone=phone, apps=["health_auto_export"])
-                self.assertLess(out.index("Name your goal"), out.index("View TFS on your phone"))
                 self.assertLess(
-                    out.index("Health Auto Export (1 of 1)"), out.index("Name your goal")
+                    out.index("What are you training for?"), out.index("View TFS on your phone")
+                )
+                self.assertLess(
+                    out.index("Health Auto Export (1 of 1)"),
+                    out.index("What are you training for?"),
                 )
                 # THEN each button installs a distinct automation with its route's address
                 routes = {"Wi-Fi": f"http://127.0.0.1:{port}/"}
