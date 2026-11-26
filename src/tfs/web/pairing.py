@@ -2,6 +2,7 @@
 
 import hashlib
 import hmac
+import re
 import secrets
 import socket
 import sys
@@ -46,26 +47,40 @@ def make_pairing_link(*, port: int | None = None) -> str:
                 "DELETE FROM phone_pairings WHERE code_expires_at <= ?", (to_utc_text(now),)
             )
             conn.execute(
-                "INSERT INTO phone_pairings VALUES (?, ?)",
+                "INSERT INTO phone_pairings (secret_hash, code_expires_at) VALUES (?, ?)",
                 (_hash(code), to_utc_text(now + timedelta(minutes=10))),
             )
     return f"http://{wifi_host()}:{port or config.HOME_WIFI_PORT}/pair/{code}"
 
 
-def redeem(db: Path, code: str) -> str | None:
+def _device_label(agent: str) -> str | None:
+    ios = re.search(
+        r"\b(iPhone|iPad)\b[^;)]*; CPU (?:iPhone )?OS ([0-9]{1,3}(?:_[0-9]{1,3}){0,2})\b", agent
+    )
+    if ios:
+        device, version = ios.groups()
+        system = "iOS" if device == "iPhone" else "iPadOS"
+        return f"{device} · {system} {version.replace('_', '.')}"
+    android = re.search(r"\bAndroid ([0-9]{1,3}(?:\.[0-9]{1,3}){0,2})\b", agent)
+    return android.group() if android else None
+
+
+def redeem(db: Path, code: str, user_agent: str = "") -> str | None:
     """Replace a fresh code with a phone token in one transaction."""
     digest = _hash(code)
     with closing(connect(db)) as conn, transaction(conn):
+        now = to_utc_text(datetime.now(UTC))
         row = conn.execute(
             "SELECT secret_hash FROM phone_pairings WHERE secret_hash = ? AND code_expires_at > ?",
-            (digest, to_utc_text(datetime.now(UTC))),
+            (digest, now),
         ).fetchone()
         if row is None or not hmac.compare_digest(row[0], digest):
             return None
         token = secrets.token_urlsafe(32)
         conn.execute(
-            "UPDATE phone_pairings SET secret_hash = ?, code_expires_at = NULL WHERE secret_hash = ?",
-            (_hash(token), digest),
+            "UPDATE phone_pairings SET secret_hash = ?, code_expires_at = NULL,"
+            " device = ?, paired_at = ? WHERE secret_hash = ?",
+            (_hash(token), _device_label(user_agent), now, digest),
         )
     return token
 

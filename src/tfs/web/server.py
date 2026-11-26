@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, TypedDict, Unpack
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
@@ -29,6 +29,7 @@ from uvicorn.protocols.http.h11_impl import H11Protocol
 from tfs.web import pairing, setup_page
 from tfs.web.overview import Overview
 from tfs.web.pairing import lan_address
+from tfs.web.settings import Settings
 
 PushHandler = Callable[[str, BinaryIO, Mapping[str, str]], tuple[int, dict]]
 
@@ -48,6 +49,13 @@ class HomeWifi:
     db: Path
     setup: tuple[str, Callable[[], Response]] | None = None
     pairing_scan: tuple[str, threading.Event] | None = None
+
+
+class DashboardReaders(TypedDict, total=False):
+    """The read-only routes available on this listener."""
+
+    overview: Callable[[], Overview]
+    settings: Callable[[bool], Settings]
 
 
 class _Body(io.RawIOBase):
@@ -103,6 +111,7 @@ def _add_dashboard(
     app: FastAPI,
     check_host: Callable[[Request], Awaitable[None]],
     overview: Callable[[], Overview] | None,
+    settings: Callable[[bool], Settings] | None,
 ) -> None:
     @app.get("/")
     async def dashboard() -> Response:
@@ -114,6 +123,9 @@ def _add_dashboard(
         app.get("/api/overview", response_model=Overview, response_model_exclude_unset=True)(
             overview
         )
+
+    if settings:
+        app.get("/api/settings", response_model=Settings)(settings)
 
     if (DASHBOARD_DIR / "assets").is_dir():
 
@@ -142,7 +154,8 @@ def _make_app(
     home_wifi: HomeWifi | None,
     max_body: int,
     read_timeout_s: float,
-    overview: Callable[[], Overview] | None,
+    overview: Callable[[], Overview] | None = None,
+    settings: Callable[[bool], Settings] | None = None,
 ) -> FastAPI:
     # Only phones on the Wi-Fi reach the server by IP address.
     wifi_ips = own_addresses() if home_wifi else set()
@@ -167,12 +180,12 @@ def _make_app(
         async def ping() -> Response:
             return PlainTextResponse("tfs")
 
-        _add_dashboard(app, check_host, overview)
+        _add_dashboard(app, check_host, overview, settings)
 
     if push_handler is not None:
         _add_push(app, push_handler, max_body, read_timeout_s)
     if home_wifi is not None:
-        _add_paired_dashboard(app, home_wifi, check_host, overview)
+        _add_paired_dashboard(app, home_wifi, check_host, overview, settings)
     return app
 
 
@@ -201,6 +214,7 @@ def _add_paired_dashboard(
     home_wifi: HomeWifi,
     check_host: Callable[[Request], Awaitable[None]],
     overview: Callable[[], Overview] | None,
+    settings: Callable[[bool], Settings] | None,
 ) -> None:
     def scan() -> Response:
         return HTMLResponse(setup_page.scan_page(), 404, {"Cache-Control": "no-store"})
@@ -211,8 +225,8 @@ def _add_paired_dashboard(
         return active[1]() if active and active[0] == code else scan()
 
     @app.get("/pair/{code}")
-    def pair(code: str) -> Response:
-        token = pairing.redeem(home_wifi.db, code)
+    def pair(code: str, request: Request) -> Response:
+        token = pairing.redeem(home_wifi.db, code, request.headers.get("user-agent", ""))
         if token is None:
             return scan()
         waiting = home_wifi.pairing_scan
@@ -239,7 +253,7 @@ def _add_paired_dashboard(
         response.headers["Cache-Control"] = "private, no-store"
         return response
 
-    _add_dashboard(private, check_host, overview)
+    _add_dashboard(private, check_host, overview, settings)
     app.mount("/", private)
 
 
@@ -288,16 +302,16 @@ def make_server(
     *,
     push_handler: PushHandler | None,
     home_wifi: HomeWifi | None = None,
-    overview: Callable[[], Overview] | None = None,
     max_body: int = 1 << 30,
     read_timeout_s: float = 30,
     request_timeout_s: float = 15 * 60,
     max_requests: int = 20,
     shutdown_timeout_s: float = 10,
+    **dashboard: Unpack[DashboardReaders],
 ) -> WebServer:
     """Bind the screen or paired Wi-Fi listener. The caller starts and stops it."""
     config = uvicorn.Config(
-        _make_app(push_handler, home_wifi, max_body, read_timeout_s, overview),
+        _make_app(push_handler, home_wifi, max_body, read_timeout_s, **dashboard),
         lifespan="off",
         log_config=None,
         access_log=False,

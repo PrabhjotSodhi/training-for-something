@@ -8,8 +8,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tfs import config
+from tests.helpers import open_database
+from tfs import config, providers
 from tfs.web.server import HomeWifi, make_server
+from tfs.web.settings import settings_reader
 
 # Client side only. A broken server fails a test instead of hanging it.
 SAFETY_TIMEOUT_S = 10
@@ -63,6 +65,51 @@ class ServerTestCase(unittest.TestCase):
 
 
 class RoutesTest(ServerTestCase):
+    def test_settings_lists_connections_and_reuses_tool_checks_for_sixty_seconds(self):
+        # GIVEN one connected source, a paired phone and an unused pairing code
+        conn = open_database(self)
+        db = Path(conn.execute("PRAGMA database_list").fetchone()[2])
+        conn.execute(
+            "INSERT INTO sources (connector, last_received_at) VALUES ('hevy', '2026-11-01T00:00:00Z')"
+        )
+        conn.execute(
+            "INSERT INTO phone_pairings (secret_hash, code_expires_at) VALUES (x'01', NULL), (x'02', '2099-01-01')"
+        )
+        self.start(settings=settings_reader(db))
+        with (
+            mock.patch.object(providers, "find", side_effect=lambda tool: tool.command),
+            mock.patch.object(providers.mcp_tools, "find", return_value=None),
+            mock.patch.object(
+                providers, "run_command", side_effect=[(True, providers.PLUGIN), (True, "")] * 2
+            ) as run,
+            mock.patch("tfs.web.settings.monotonic", return_value=100) as clock,
+        ):
+            # WHEN the page loads the fast rows, then asks for tool status twice
+            fast = json.loads(self.request("GET", "/api/settings?check_tools=false")[1])
+            run.assert_not_called()
+            result = json.loads(self.request("GET", "/api/settings")[1])
+            clock.return_value += 59
+            self.assertEqual(json.loads(self.request("GET", "/api/settings")[1]), result)
+            # THEN each installed program ran once and a fresh visit after expiry checks again
+            self.assertEqual(run.call_count, 2)
+            clock.return_value += 1
+            self.request("GET", "/api/settings")
+            self.assertEqual(run.call_count, 4)
+        self.assertEqual(fast["phones"], [{"device": None, "paired_at": None}])
+        self.assertTrue(all(tool["status"] is None for tool in fast["tools"]))
+        self.assertEqual(
+            {tool["status"] for tool in result["tools"]},
+            {"Connected", "Found, not connected", "Not installed"},
+        )
+        self.assertIn(
+            {"label": "Hevy", "connected": True, "last_received_at": "2026-11-01T00:00:00Z"},
+            fast["apps"],
+        )
+        self.assertTrue(any(not app["connected"] for app in fast["apps"]))
+        self.assertEqual(
+            self.request("GET", "/api/settings", headers={"Host": "unknown.test"})[0], 421
+        )
+
     def test_ping_answers_tfs(self):
         # GIVEN a running server
         self.start()
@@ -204,7 +251,7 @@ class RoutesTest(ServerTestCase):
         # GIVEN a server for the home Wi-Fi door
         self.start(home_wifi=HomeWifi(Path("unused.db")), overview=lambda: None)
         # WHEN a client asks for a screen, an API route or /ping
-        for path in ("/", "/api/overview", "/ping", "/docs"):
+        for path in ("/", "/api/overview", "/api/settings", "/ping", "/docs"):
             # THEN it gets 404
             with self.subTest(path=path):
                 self.assertEqual(self.request("GET", path)[0], 404)

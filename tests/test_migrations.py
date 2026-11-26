@@ -48,6 +48,21 @@ class MigrateTest(unittest.TestCase):
         self.assertEqual(table_names(conn), set())
         self.assertFalse(conn.in_transaction)
 
+    def test_existing_phone_keeps_its_token_without_invented_device_details(self):
+        # GIVEN a database with a phone paired before device labels
+        conn = self.open()
+        sql = resources.files("tfs.persistence.sql").joinpath("0014_phone_pairings.sql")
+        conn.executescript(sql.read_text(encoding="utf-8"))
+        conn.execute("INSERT INTO phone_pairings VALUES (x'01', NULL)")
+        conn.execute("PRAGMA user_version = 14")
+        # WHEN the database upgrades
+        migrate(conn)
+        # THEN the old phone stays paired with unknown details
+        self.assertEqual(
+            tuple(conn.execute("SELECT * FROM phone_pairings").fetchone()),
+            (b"\x01", None, None, None),
+        )
+
     def test_applies_a_file_to_a_new_database_and_a_second_run_changes_nothing(self):
         self.write("0001_a.sql", "CREATE TABLE a (x INTEGER);")
         conn = self.open()

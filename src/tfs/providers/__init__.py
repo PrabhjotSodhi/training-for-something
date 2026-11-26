@@ -3,9 +3,10 @@
 import shutil
 import subprocess
 from collections.abc import Callable
+from pathlib import Path
 from typing import NamedTuple
 
-from tfs.providers import claude_code, codex
+from tfs.providers import claude_code, codex, mcp_tools
 
 REPO = "PrabhjotSodhi/training-for-something"
 PLUGIN = "tfs@training-for-something"
@@ -23,6 +24,21 @@ class Provider(NamedTuple):
 
 
 PROVIDERS = tuple(Provider(m.LABEL, m.COMMAND, m.INSTALL) for m in (claude_code, codex))
+ALL_TOOLS = (*PROVIDERS, *mcp_tools.TOOLS)
+
+
+def detect(
+    home: Path,
+) -> tuple[dict[Provider | mcp_tools.Tool, str | None], set[Provider | mcp_tools.Tool]]:
+    """Find each supported tool and check which ones already reach TFS."""
+    programs = {tool: find(tool) for tool in PROVIDERS}
+    programs.update({tool: mcp_tools.find(tool, home) for tool in mcp_tools.TOOLS})
+    connected = {tool for tool in PROVIDERS if programs[tool] and is_connected(programs[tool])} | {
+        tool
+        for tool in mcp_tools.TOOLS
+        if programs[tool] and mcp_tools.is_connected(tool, programs[tool], home, run_command)
+    }
+    return programs, connected
 
 
 def run_command(argv: list[str]) -> tuple[bool, str]:

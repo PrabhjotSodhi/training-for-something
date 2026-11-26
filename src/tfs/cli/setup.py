@@ -222,15 +222,7 @@ def _connect_ai_tools() -> providers.Provider | mcp_tools.Tool | None:
     """Connect the tools the person picks. Return the first tool that ends up connected, or None."""
     home = Path.home()
     with _spinner("Looking for your AI tools"):
-        programs = {tool: providers.find(tool) for tool in providers.PROVIDERS}
-        programs |= {tool: mcp_tools.find(tool, home) for tool in mcp_tools.TOOLS}
-        connected = {
-            p for p in providers.PROVIDERS if programs[p] and providers.is_connected(programs[p])
-        } | {
-            t
-            for t in mcp_tools.TOOLS
-            if programs[t] and mcp_tools.is_connected(t, programs[t], home, providers.run_command)
-        }
+        programs, connected = providers.detect(home)
     if not any(programs.values()):
         names = ", ".join(tool.label for tool in (*providers.PROVIDERS, *mcp_tools.TOOLS))
         questionary.print(

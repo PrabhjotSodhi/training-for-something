@@ -1,5 +1,6 @@
 import hashlib
 import http.client
+import json
 import tempfile
 import threading
 import unittest
@@ -47,20 +48,41 @@ class PhonePairingTest(unittest.TestCase):
         self.addCleanup(engine.stop)
         return engine._running[1].sock.getsockname()[1]
 
-    def request(self, port, path, cookie="", method="GET"):
+    def request(self, port, path, cookie="", method="GET", user_agent=""):
         with closing(http.client.HTTPConnection("127.0.0.1", port, timeout=5)) as client:
-            client.request(method, path, headers={"Cookie": cookie})
+            client.request(method, path, headers={"Cookie": cookie, "User-Agent": user_agent})
             response = client.getresponse()
             return response.status, response.headers, response.read()
+
+    def test_redeeming_a_link_saves_only_the_device_label_and_utc_time(self):
+        # GIVEN four phones that send different user agents
+        port = self.engine_port()
+        for agent, label in (
+            ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X)", "iPhone · iOS 18.1"),
+            ("Mozilla/5.0 (iPad; CPU OS 18_1 like Mac OS X)", "iPad · iPadOS 18.1"),
+            ("Mozilla/5.0 (Linux; Android 15; Invented)", "Android 15"),
+            ("Unknown invented device", None),
+        ):
+            with self.subTest(label=label):
+                # WHEN the phone redeems a fresh code
+                path = urlsplit(make_pairing_link(port=port)).path
+                status, headers, _ = self.request(port, path, user_agent=agent)
+                self.assertEqual(status, 303)
+                cookie = headers["Set-Cookie"].split(";")[0]
+                # THEN Settings shows its short label and a UTC pairing time
+                _, _, body = self.request(port, "/api/settings?check_tools=false", cookie)
+                phone = next(p for p in json.loads(body)["phones"] if p["device"] == label)
+                self.assertTrue(phone["paired_at"].endswith("Z"))
+                self.assertEqual(datetime.fromisoformat(phone["paired_at"]).tzinfo, UTC)
 
     def test_unpaired_visitors_only_see_the_scan_page(self):
         # GIVEN both Wi-Fi listeners and missing or incorrect phone tokens
         for port in (self.setup_server().port, self.engine_port()):
             for cookie in ("", "tfs_phone=invented"):
-                for path in ("/", "/api/overview", "/assets/app.js"):
+                for path in ("/", "/api/overview", "/api/settings", "/assets/app.js"):
                     # WHEN the visitor requests private content
                     status, headers, body = self.request(port, path, cookie)
-                    # THEN all three routes return the same public instruction
+                    # THEN every route returns the same public instruction
                     self.assertEqual(status, 404)
                     self.assertIn(b"Scan the QR code", body)
                     self.assertNotIn(b"Invented", body)
@@ -84,7 +106,7 @@ class PhonePairingTest(unittest.TestCase):
         # THEN start enables Wi-Fi without a push source and honours the same cookie
         self.assertTrue(start._home_wifi_enabled())
         port = self.engine_port()
-        for route in ("/", "/assets/app.js", "/api/overview"):
+        for route in ("/", "/assets/app.js", "/api/overview", "/api/settings?check_tools=false"):
             status, headers, _ = self.request(port, route, cookie)
             self.assertEqual(status, 200)
             self.assertIn("no-store", headers["Cache-Control"])

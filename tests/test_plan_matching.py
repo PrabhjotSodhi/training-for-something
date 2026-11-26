@@ -291,7 +291,7 @@ class PlanMatchingTest(unittest.TestCase):
         self.conn.execute("ALTER TABLE plan_items DROP COLUMN send_into_json")
         self.conn.execute("PRAGMA user_version=4")
         self.assertEqual(self.conn.execute("SELECT count(*) FROM rebuild_dates").fetchone()[0], 0)
-        self.assertEqual(migrate(self.conn), 14)
+        self.assertEqual(migrate(self.conn), 15)
         self.assertEqual(process_pending(self.conn, self.path.parent, tz=UTC), [])
         self.assertEqual(self.matches(), expected)
         self.save({"action": "mark_done", "item": "p1"})
