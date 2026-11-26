@@ -13,6 +13,7 @@ _MAX_DAYS = 28
 _OVERLAP = timedelta(days=1)
 _DEFAULT_WAIT_S = 300
 _PAGE_SIZE = 99
+_RESULT_KEYS = {"hrv": "hrvSummaries", "resting_hr": "data", "weight": "dailyWeightSummaries"}
 _ACTIVITIES = (
     "/activitylist-service/activities/search/activities"
     "?startDate={start}&endDate={end}&limit={limit}&start={offset}"
@@ -66,16 +67,29 @@ def fetch(cursor: dict | None, secrets: dict, out_dir: str, http, now: str) -> d
         status, reply_headers, body = http(url, headers)
         if status != 200:
             return _stopped(status, reply_headers, cursor, now_time, "activities")
-        files.append(_save(out_dir, "activities", len(files) + 1, body))
-        more = len(json.loads(body)) == _PAGE_SIZE
+        activities = json.loads(body)
+        if activities != []:
+            files.append(_save(out_dir, "activities", len(files) + 1, body))
+        more = len(activities) == _PAGE_SIZE
         offset += _PAGE_SIZE
     for fmt, path in _PATHS.items():
         status, reply_headers, body = http(_API + path.format(**dates), headers)
         if status != 200:
             return _stopped(status, reply_headers, cursor, now_time, fmt)
-        files.append(_save(out_dir, fmt, len(files) + 1, body))
+        if not _empty_page(fmt, body):
+            files.append(_save(out_dir, fmt, len(files) + 1, body))
     next_cursor = {"since": to_utc_text(now_time - _OVERLAP)}
     return {"files": files, "cursor": next_cursor, "auth_failed": False, "wait_until": None}
+
+
+def _empty_page(fmt: str, body: bytes) -> bool:
+    try:
+        page = json.loads(body)
+    except ValueError:
+        return False  # Keep unreadable pages for the reader to report.
+    if isinstance(page, dict) and fmt in _RESULT_KEYS:
+        page = page.get(_RESULT_KEYS[fmt])
+    return page == []
 
 
 def _save(out_dir: str, fmt: str, number: int, body: bytes) -> dict:
