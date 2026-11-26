@@ -6,6 +6,8 @@ import shlex
 import shutil
 import subprocess
 import sys
+import webbrowser
+from collections.abc import Callable
 from pathlib import Path
 
 from tfs import config
@@ -116,15 +118,48 @@ def _shell_program(program: str) -> str:
     return prefix + shlex.quote(program)
 
 
-def set_up() -> str | None:
+def set_up(confirm: Callable[[str, bool], bool], print_qr: Callable[[str], None]) -> str | None:
     """Set up private phone access and return its verified URL when available."""
     program = _program()
-    if not program or not (host := _hostname(program)):
+    host = _hostname(program) if program else ""
+    if host:
+        if not confirm(
+            "Tailscale is already on this computer. Use it to open TFS away from home too? "
+            "It works anywhere and is more secure.",
+            True,
+        ):
+            return None
+    else:
+        if not confirm(
+            "Use TFS away from home too? Tailscale works anywhere and is more secure. "
+            "It is free and needs an account and its app.",
+            False,
+        ):
+            return None
+        if not confirm("Do you have a Tailscale account?", False):
+            webbrowser.open("https://login.tailscale.com/start")
+            print("Create your account in the browser, then press Enter.")
+            input()
+        while not host:
+            if program:
+                print("Open Tailscale on this computer and sign in, then press Enter.")
+            else:
+                webbrowser.open("https://tailscale.com/download")
+                print("Install Tailscale on this computer and sign in, then press Enter.")
+            input()
+            program = _program()
+            host = _hostname(program) if program else ""
+            if not host and not confirm("Tailscale is still not signed in. Try again?", False):
+                return None
         print(
-            "Install Tailscale on this computer and your phone from https://tailscale.com/download."
+            "Install Tailscale on your phone and sign in with the same account, then press Enter."
         )
-        print("Sign in on both with the same account, then run tfs setup again.")
-        return None
+        print_qr("https://tailscale.com/download/ios")
+        input()
+    return _serve(program, host)
+
+
+def _serve(program: str, host: str) -> str | None:
     for attempt in range(2):
         ports = _ports(program, host)
         if ports is None:
@@ -144,6 +179,7 @@ def set_up() -> str | None:
         output = _run(program, "serve", "--bg", _TARGET)
         if output and output.startswith(_APPROVAL_PREFIX) and attempt == 0:
             print(f"Open this link to approve Tailscale Serve: {output}", flush=True)
+            webbrowser.open(output)
             input("Press Enter after approval to try again. ")
             continue
         if output is not None and (url := _link(host, _ports(program, host) or {})):

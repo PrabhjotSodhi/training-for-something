@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests.helpers import insert_file, insert_workout, open_database
-from tests.test_setup import FakeCommands, FakeQuestionary
+from tests.test_setup import FakeCommands, FakeQuestionary, run_without_engine
 from tfs import config
 from tfs.cli import main
 from tfs.connectors.core import runner
@@ -161,7 +161,7 @@ class GarminSetupTest(unittest.TestCase):
             mock.patch("tfs.providers.shutil.which", FakeCommands(found=set()).which),
             mock.patch("pathlib.Path.home", return_value=Path(home.name)),
             mock.patch("tfs.cli.setup.webbrowser.open"),
-            mock.patch("tfs.cli.setup.start.run", return_value=0),
+            mock.patch("tfs.cli.setup.start.run", side_effect=run_without_engine),
             contextlib.redirect_stdout(out),
         ):
             # WHEN setup connects Garmin

@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests.test_proposals import ADD, proposal
-from tests.test_setup import FakeCommands, FakeQuestionary
+from tests.test_setup import FakeCommands, FakeQuestionary, run_without_engine
 from tfs import config, password_store
 from tfs.cli import main
 from tfs.connectors.core import runner
@@ -124,7 +124,7 @@ class SetupSyncTest(HevyTestCase):
             mock.patch("tfs.providers.shutil.which", FakeCommands(found=set()).which),
             mock.patch("pathlib.Path.home", return_value=Path("no-such-home")),
             mock.patch("tfs.cli.setup.webbrowser.open"),
-            mock.patch("tfs.cli.setup.start.run", return_value=0),
+            mock.patch("tfs.cli.setup.start.run", side_effect=run_without_engine),
             contextlib.redirect_stdout(out),
             contextlib.redirect_stderr(err),
         ):
