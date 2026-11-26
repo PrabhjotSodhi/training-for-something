@@ -66,7 +66,7 @@ Every card takes one goal colour from the layout's plate, orange with no plate: 
 1. While no goal is saved, the panel sits where the plate goes. Once any goal exists the panel is gone.
 2. It uses the plate itself in the default colour, orange: the same gradient, shade, size and white text. Its three groups fill the plate's three places.
 3. Top left, where the forecast sits: "Your latest workout", the duration as the 96 px number with "min", and under it one line with the type, date and source app, such as "Run · Wed 25 Nov · Hevy". With no workouts the number is replaced by "No workouts yet" in the number style. It never shows a zero.
-4. Top right, where Today sits: "Next step", one row "Set your first training goal in your AI tool", then a solid white "Copy first message" button with dark text, the one solid shape on the plate. The button copies the same first message as setup and reads "Copied. Paste it into your AI tool." for 2 seconds. If the copy fails, the message shows as text under the button.
+4. Top right, where Today sits: "Next step", one row "Set your first training goal in your AI tool", then a solid white "Copy first message" button with dark text, the one solid shape on the plate. The button copies a generic first goal message and reads "Copied. Paste it into your AI tool." for 2 seconds. The terminal message includes any goal you typed in setup. If the copy fails, the message shows as text under the button.
 5. Along the bottom, where the timeline sits: one caption line per turned on app with no records, "Waiting for the first data from {app}." A phone app adds "Keep the TFS window open." Nothing shows there when no app is waiting.
 
 ## This week card
