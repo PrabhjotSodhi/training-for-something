@@ -112,7 +112,7 @@ def read(path: str, fmt: str, out_path: str) -> dict:
 
 def operate(data_dir: Path, data: bytes = DATA, now: str = NOW) -> None:
     """Save one file, read it and rebuild the dates it changed, as an import does."""
-    conn = connect(data_dir / "tfs.db")
+    conn = connect(data_dir / "tfs.db", "import")
     migrate(conn)
     saved = save_raw(
         conn,
