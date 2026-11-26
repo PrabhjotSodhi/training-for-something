@@ -36,16 +36,37 @@ class SqliteTest(unittest.TestCase):
             self.assertEqual(pragma(conn, "foreign_keys"), 1)
             self.assertEqual(pragma(conn, "busy_timeout"), 5000)
             self.assertEqual(pragma(conn, "wal_autocheckpoint"), 1000)
+            self.assertEqual(pragma(conn, "journal_size_limit"), 64 * 1024 * 1024)
 
-    def test_import_role_uses_normal_sync_and_checkpoints_every_10000_pages(self):
+    def test_import_flushes_each_batch_and_limits_the_write_log(self):
         with closing(connect(self.path, role="import")) as conn:
-            self.assertEqual(pragma(conn, "synchronous"), 1)
-            self.assertEqual(pragma(conn, "wal_autocheckpoint"), 10000)
+            self.assertEqual(pragma(conn, "synchronous"), 2)
+            self.assertEqual(pragma(conn, "wal_autocheckpoint"), 1_000_000)
+            self.assertEqual(pragma(conn, "journal_size_limit"), 64 * 1024 * 1024)
 
     def test_save_role_never_checkpoints(self):
         with closing(connect(self.path, role="save")) as conn:
             self.assertEqual(pragma(conn, "wal_autocheckpoint"), 0)
             self.assertEqual(pragma(conn, "synchronous"), 2)
+
+    def test_next_writer_shrinks_the_checkpointed_log_while_another_connection_stays_open(self):
+        limit = 64 * 1024 * 1024
+        log = Path(f"{self.path}-wal")
+        # GIVEN an import has checkpointed a log larger than the retention limit
+        with closing(connect(self.path)) as keeper:
+            keeper.execute("CREATE TABLE sample (value BLOB)")
+            with closing(connect(self.path, "import")) as importer:
+                importer.execute("INSERT INTO sample VALUES (zeroblob(?))", (limit,))
+                importer.execute("PRAGMA wal_checkpoint(PASSIVE)").fetchone()
+            self.assertGreater(log.stat().st_size, limit)
+
+            # WHEN another connection writes after the import closes
+            with closing(connect(self.path, "save")) as writer:
+                writer.execute("INSERT INTO sample VALUES (NULL)")
+
+            # THEN the open database keeps both writes and only a bounded log
+            self.assertEqual(keeper.execute("SELECT count(*) FROM sample").fetchone()[0], 2)
+            self.assertLessEqual(log.stat().st_size, limit)
 
     def test_save_role_keeps_the_write_log_when_the_last_connection_closes(self):
         with closing(connect(self.path, role="save")) as conn:
