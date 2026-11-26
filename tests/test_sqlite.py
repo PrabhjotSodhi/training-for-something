@@ -37,9 +37,10 @@ class SqliteTest(unittest.TestCase):
             self.assertEqual(pragma(conn, "busy_timeout"), 5000)
             self.assertEqual(pragma(conn, "wal_autocheckpoint"), 1000)
 
-    def test_import_role_uses_the_default_settings(self):
+    def test_import_role_uses_normal_sync_and_checkpoints_every_10000_pages(self):
         with closing(connect(self.path, role="import")) as conn:
-            self.assertEqual(pragma(conn, "wal_autocheckpoint"), 1000)
+            self.assertEqual(pragma(conn, "synchronous"), 1)
+            self.assertEqual(pragma(conn, "wal_autocheckpoint"), 10000)
 
     def test_save_role_never_checkpoints(self):
         with closing(connect(self.path, role="save")) as conn:
@@ -62,6 +63,7 @@ class SqliteTest(unittest.TestCase):
     def test_read_only_role_cannot_create_tables(self):
         connect(self.path).close()
         with closing(connect(self.path, role="read_only")) as conn:
+            self.assertEqual(pragma(conn, "synchronous"), 2)
             self.assertEqual(pragma(conn, "busy_timeout"), 5000)
             with self.assertRaises(sqlite3.OperationalError):
                 conn.execute("CREATE TABLE x (a)")

@@ -111,4 +111,6 @@ class CrashRawTest(unittest.TestCase):
 
         self.restart(folder)
 
+        with contextlib.closing(connect(folder / "tfs.db")) as conn:
+            self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
         self.assertEqual(self.snapshot(folder), self.uncrashed())

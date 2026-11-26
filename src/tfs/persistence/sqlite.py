@@ -41,11 +41,15 @@ def connect(path: Path, role: str = "default") -> sqlite3.Connection:
     else:
         conn = sqlite3.connect(path, isolation_level=None, timeout=0)
         _switch_to_wal(conn, path)
-        conn.execute("PRAGMA synchronous=FULL")
         conn.execute("PRAGMA foreign_keys=ON")
+    synchronous = "NORMAL" if role == "import" else "FULL"
+    conn.execute(f"PRAGMA synchronous={synchronous}")
     conn.execute("PRAGMA busy_timeout=5000")
     conn.row_factory = sqlite3.Row
-    if role == "save":
+    if role == "import":
+        # Fewer checkpoints cut random writes on hard drives without growing the batches.
+        conn.execute("PRAGMA wal_autocheckpoint=10000")
+    elif role == "save":
         # A Save never runs a checkpoint, so its speed does not depend on the disk.
         # SQLite also checkpoints when the last connection closes, so turn that off too.
         conn.execute("PRAGMA wal_autocheckpoint=0")

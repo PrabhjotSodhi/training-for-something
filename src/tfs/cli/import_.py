@@ -26,7 +26,7 @@ def run(args: argparse.Namespace) -> int:
     """Import the file and return the exit code."""
     config.data_dir().mkdir(parents=True, exist_ok=True)
     try:
-        with closing(sqlite.connect(config.db_path())) as conn:
+        with closing(sqlite.connect(config.db_path(), role="import")) as conn:
             migrate(conn)
             result = import_file(
                 conn,
