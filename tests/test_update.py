@@ -44,8 +44,8 @@ class UpdateTest(unittest.TestCase):
             self.events.append(("fetch", url))
             return json.dumps(releases).encode() if url == update.RELEASES_URL else WHEEL
 
-        def install(uv: str, wheel, restart: bool) -> int:
-            self.events.append(("install", wheel.read_bytes(), restart))
+        def install(uv: str, wheel, restart: bool, notice: str) -> int:
+            self.events.append(("install", wheel.read_bytes(), restart, notice))
             shutil.rmtree(wheel.parent)
             return 0
 
@@ -69,7 +69,7 @@ class UpdateTest(unittest.TestCase):
         code, _ = self.update("9.1.0a1", releases, stop=lambda: True)
         # THEN
         self.assertEqual(code, 0)
-        self.assertEqual(self.events[-1], ("install", WHEEL, True))
+        self.assertEqual(self.events[-1], ("install", WHEEL, True, ""))
 
     def test_the_highest_release_with_a_matching_wheel_wins_in_any_list_order(self) -> None:
         # GIVEN an rc listed first, the final after it, and a newer tag whose wheel is misnamed
@@ -104,34 +104,52 @@ class UpdateTest(unittest.TestCase):
         self.assertEqual(self.events, [("fetch", update.RELEASES_URL)])
         self.assertIn("9.1.0", out)
 
-    def test_a_running_helper_holds_the_install_until_it_exits(self) -> None:
-        # GIVEN a helper that runs for two checks
-        checks = iter([["Claude Code"], ["Claude Code"], []])
-        active = [True]
+    def test_update_stops_each_helper_before_installing(self) -> None:
+        # GIVEN two helper launchers from this install
+        running = {23: "First tool", 24: "Second tool"}
+        helpers = mock.Mock(side_effect=[list(running.items()), []])
 
-        def helpers() -> list[str]:
-            names = next(checks)
-            active[0] = bool(names)
-            return names
-
-        def install(uv: str, wheel, restart: bool) -> int:
-            self.assertFalse(active[0], "installed while a helper runs")
-            self.events.append(("install",))
-            shutil.rmtree(wheel.parent)
-            return 0
+        def stop_helper(command, **kwargs):
+            running.pop(int(command[command.index("/PID") + 1]))
+            return subprocess.CompletedProcess(command, 0)
 
         # WHEN
-        code, out = self.update(
-            "9.0.0", [release("9.1.0", prerelease=False)], helpers=helpers, install=install
-        )
+        with (
+            mock.patch.object(update.subprocess, "run", side_effect=stop_helper),
+            mock.patch.object(
+                update, "_ended", side_effect=lambda pid, timeout: pid not in running
+            ),
+        ):
+            code, _ = self.update("9.0.0", [release("9.1.0", prerelease=False)], helpers=helpers)
         # THEN
         self.assertEqual(code, 0)
-        self.assertIn("Claude Code", out)
-        self.assertTrue(self.installed())
+        self.assertFalse(running)
+        notice = "TFS updated to 9.1.0. Restart your AI tools to use the new version."
+        self.assertEqual(self.events[-1], ("install", WHEEL, False, notice))
+
+    def test_a_helper_that_stays_running_names_the_tool_and_leaves_tfs_running(self) -> None:
+        # GIVEN
+        helpers = mock.Mock(side_effect=[[(23, "Example tool")], []])
+        stop = mock.Mock()
+        # WHEN
+        with (
+            mock.patch.object(
+                update.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)
+            ),
+            mock.patch.object(update, "_ended", return_value=False),
+        ):
+            code, out = self.update(
+                "9.0.0", [release("9.1.0", prerelease=False)], helpers=helpers, stop=stop
+            )
+        # THEN
+        self.assertEqual(code, 1)
+        self.assertIn("Example tool", out)
+        self.assertFalse(self.installed())
+        stop.assert_not_called()
 
     def test_ctrl_c_while_a_helper_runs_installs_nothing(self) -> None:
         # GIVEN
-        def helpers() -> list[str]:
+        def helpers() -> list[tuple[int, str]]:
             raise KeyboardInterrupt
 
         # WHEN
@@ -142,7 +160,7 @@ class UpdateTest(unittest.TestCase):
 
     def test_a_failed_process_check_installs_nothing(self) -> None:
         # GIVEN
-        def helpers() -> list[str]:
+        def helpers() -> list[tuple[int, str]]:
             raise subprocess.TimeoutExpired("powershell", 30)
 
         # WHEN
@@ -249,6 +267,15 @@ class HelpersTest(unittest.TestCase):
                 "CommandLine": f'"{python}" "C:\\bin\\tfs.exe" "mcp"',
             },
         ]
+        listing.append(
+            {
+                **listing[-1],
+                "ProcessId": 4,
+                "ParentProcessId": 5,
+                "CommandLine": f'other.exe "{python}" mcp',
+            }
+        )
+        listing.append({**listing[1], "ProcessId": 5})
         done = subprocess.CompletedProcess([], 0, stdout=json.dumps(listing))
         # WHEN
         with (
@@ -257,7 +284,7 @@ class HelpersTest(unittest.TestCase):
         ):
             names = update._helpers()
         # THEN
-        self.assertEqual(names, ["Claude Code"])
+        self.assertEqual(names, [(2, "Claude Code")])
 
 
 class UpdateCheckTest(unittest.TestCase):
