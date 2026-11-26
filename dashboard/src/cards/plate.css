@@ -32,7 +32,7 @@
 .plate-body {
   flex: 1;
   display: grid;
-  grid-template-columns: 1fr 300px;
+  grid-template-columns: minmax(0, 1fr) 300px;
   grid-template-rows: 1fr auto;
   gap: 20px 48px;
   padding: 32px 36px;
@@ -51,7 +51,7 @@
 .plate-hero {
   font: 700 96px/0.95 "Plus Jakarta Sans", sans-serif;
   letter-spacing: -0.045em;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .plate-hero span {
@@ -103,6 +103,11 @@
   color: var(--ink-2);
   font: var(--caption);
   white-space: nowrap;
+}
+
+.plate-today > .plate-label {
+  min-height: 44px;
+  padding-right: 52px;
 }
 
 .plate-today dl > div {
@@ -199,6 +204,14 @@
 
   .plate-road:not(.first-run-waiting) {
     order: -1;
+  }
+
+  .plate-today > .plate-label { min-height: 0; padding-right: 0; }
+
+  .plate-body:not(:has(.plate-road-top)) .plate-forecast > .plate-label,
+  .plate-road-top {
+    min-height: 44px;
+    padding-right: 52px;
   }
 
   .plate-road-top {

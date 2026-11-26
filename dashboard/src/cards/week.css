@@ -90,11 +90,9 @@
   color: var(--muted);
 }
 
-@media (prefers-color-scheme: dark) {
-  .week-tile.strength.done,
-  .week-tile.swim.done {
-    color: #fff;
-  }
+[data-theme="dark"] .week-tile.strength.done,
+[data-theme="dark"] .week-tile.swim.done {
+  color: #fff;
 }
 
 .week-name,

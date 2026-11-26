@@ -16,9 +16,17 @@ Plus Jakarta Sans for everything, with tabular figures on numbers. The font file
 ## Shell
 
 1. The page has no sidebar. Its content is centred, at most 1440 px wide, with 24 px on the left and right.
-2. A slim bar above the plate shows the name "Training For Something" in text, left aligned with the content. The right end stays empty.
-3. The page follows the system setting for light or dark.
+2. Overview starts with its content. A 36 px round settings gear sits inside the first card at the top right, aligned with its padding. Leave room for the gear beside the text. The gear and back button use the fill and ink colours, a visible focus ring and a 44 px hit area.
+3. The page uses the appearance saved on this device. System follows the device setting. Light and Dark set a fixed theme before the page paints.
 4. Desktop width comes first.
+
+## Settings
+
+1. Settings starts with a round back button with a left chevron. The title sits beside it, vertically centred. Groups appear in this order: Appearance, Apps, AI tools, Phones and About.
+2. Each group has a title above one card. Rows are 44 px tall, with a label on the left and a muted value on the right. A 1 px line separates adjacent rows inside the card.
+3. Appearance has a segmented System, Light and Dark control. Apps, AI tools and Phones give setup instructions in caption text below their cards. Phones also gives the command to forget all pairings.
+4. Apps and AI tools show an 8 px decorative dot before the muted status text. “Connected” and “Last data” use `var(--goal)`. All other states use `var(--faint)`. Hide the dot from screen readers.
+5. Apps and AI tools show a decorative 28 px logo tile with a 7 px radius, 12 px before the label. Each paired phone has a row with a phone tile, device kind and any known system version and pairing date. With no pairs, Home Wi-Fi reads “None”.
 
 ## Phone
 

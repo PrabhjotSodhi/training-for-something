@@ -4,6 +4,24 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
+    <script>
+      (() => {
+        const root = document.documentElement;
+        const system = matchMedia("(prefers-color-scheme: dark)");
+        function apply(choice) {
+          root.dataset.appearance = choice;
+          root.dataset.theme = choice === "system" ? (system.matches ? "dark" : "light") : choice;
+        }
+        let saved;
+        try { saved = localStorage.getItem("tfs-appearance"); } catch {}
+        apply(saved === "light" || saved === "dark" ? saved : "system");
+        system.addEventListener("change", () => apply(root.dataset.appearance));
+        window.setAppearance = (choice) => {
+          apply(choice);
+          try { localStorage.setItem("tfs-appearance", choice); } catch {}
+        };
+      })();
+    </script>
     <title>Training For Something</title>
   </head>
   <body>

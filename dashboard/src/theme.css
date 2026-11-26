@@ -38,7 +38,7 @@
   --body: 400 15px/21px "Plus Jakarta Sans", sans-serif;
   --caption: 400 12px/16px "Plus Jakarta Sans", sans-serif;
 
-  color-scheme: light dark;
+  color-scheme: light;
 }
 
 :root[data-goal="blue"] {
@@ -55,32 +55,31 @@
   --on-goal: #ffffff;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --page: #0a0a0b;
-    --card: #1c1c1e;
-    --ink: #f5f5f7;
-    --muted: #98989f;
-    --faint: rgb(235 235 245 / 0.28);
-    --line: #2c2c2e;
-    --fill: rgb(120 120 128 / 0.24);
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0a0a0b;
+  --card: #1c1c1e;
+  --ink: #f5f5f7;
+  --muted: #98989f;
+  --faint: rgb(235 235 245 / 0.5);
+  --line: #2c2c2e;
+  --fill: rgb(120 120 128 / 0.24);
 
-    --goal: #ff9f0a;
-    --goal-ink: var(--goal);
-    --goal-light: oklch(from var(--goal) calc(l * 0.55) calc(c * 0.7) h);
-  }
+  --goal: #ff9f0a;
+  --goal-ink: var(--goal);
+  --goal-light: oklch(from var(--goal) calc(l * 0.55) calc(c * 0.7) h);
+}
 
-  :root[data-goal="blue"] {
-    --goal: #0a84ff;
-  }
+:root[data-theme="dark"][data-goal="blue"] {
+  --goal: #0a84ff;
+}
 
-  :root[data-goal="green"] {
-    --goal: #30d158;
-  }
+:root[data-theme="dark"][data-goal="green"] {
+  --goal: #30d158;
+}
 
-  :root[data-goal="purple"] {
-    --goal: #bf5af2;
-  }
+:root[data-theme="dark"][data-goal="purple"] {
+  --goal: #bf5af2;
 }
 
 body {
@@ -96,16 +95,9 @@ body {
   box-sizing: border-box;
   max-width: 1440px;
   margin: 0 auto;
-  padding: 0 24px 24px;
+  padding: 24px;
 }
 
-.name {
-  display: flex;
-  align-items: center;
-  height: 56px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
 
 .cards {
   display: grid;
@@ -200,7 +192,7 @@ body {
 
 @media (max-width: 699px) {
   .page {
-    padding: 0 16px 16px;
+    padding: 16px;
   }
 
   .cards {

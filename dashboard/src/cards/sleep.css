@@ -4,12 +4,10 @@
   --stage-awake: rgb(120 120 128 / 0.32);
 }
 
-@media (prefers-color-scheme: dark) {
-  .sleep {
-    --stage-deep: oklch(from var(--goal) calc(l * 0.52) calc(c * 0.85) h);
-    --stage-rem: color-mix(in srgb, var(--goal) 50%, white);
-    --stage-awake: rgb(235 235 245 / 0.32);
-  }
+[data-theme="dark"] .sleep {
+  --stage-deep: oklch(from var(--goal) calc(l * 0.52) calc(c * 0.85) h);
+  --stage-rem: color-mix(in srgb, var(--goal) 50%, white);
+  --stage-awake: rgb(235 235 245 / 0.32);
 }
 
 .sleep .part-deep {

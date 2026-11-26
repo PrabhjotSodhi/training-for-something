@@ -10,6 +10,7 @@ import threading
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
+from typing import Unpack
 
 from tfs import password_store, scores
 from tfs.config import HOME_WIFI_PORT, SCREEN_HOST, SCREEN_PORT
@@ -21,7 +22,8 @@ from tfs.persistence.sqlite import connect, transaction
 from tfs.scheduling import jobs, scheduler
 from tfs.web.overview import Overview, read_overview
 from tfs.web.push import make_push_handler
-from tfs.web.server import HomeWifi, PushHandler, WebServer, make_server
+from tfs.web.server import DashboardReaders, HomeWifi, PushHandler, WebServer, make_server
+from tfs.web.settings import settings_reader
 
 HOME_WIFI_HOST = "0.0.0.0"
 PING_TIMEOUT_S = 1
@@ -85,9 +87,10 @@ class Engine:
             result.new_version = self._new_version()
             return result
 
+        dashboard = DashboardReaders(overview=overview, settings=settings_reader(db_path))
         servers: list[WebServer] = []
         try:
-            servers.append(_bind(SCREEN_HOST, self._screen_port, handler, overview=overview))
+            servers.append(_bind(SCREEN_HOST, self._screen_port, handler, **dashboard))
             if self.home_wifi:
                 servers.append(
                     _bind(
@@ -95,7 +98,7 @@ class Engine:
                         self._home_wifi_port,
                         handler,
                         home_wifi=self.home_wifi,
-                        overview=overview,
+                        **dashboard,
                     )
                 )
             self._prepare_data(db_path)
@@ -215,11 +218,11 @@ def _bind(
     handler: PushHandler,
     *,
     home_wifi: HomeWifi | None = None,
-    overview: Callable[[], Overview] | None = None,
+    **dashboard: Unpack[DashboardReaders],
 ) -> WebServer:
     """Bind a server. A taken port raises PortInUseError, or EngineAlreadyRunningError if TFS holds it."""
     try:
-        return make_server(host, port, push_handler=handler, home_wifi=home_wifi, overview=overview)
+        return make_server(host, port, push_handler=handler, home_wifi=home_wifi, **dashboard)
     except OSError as error:
         if home_wifi is None and tfs_answers_ping(port):
             raise EngineAlreadyRunningError("TFS is already running.") from error
