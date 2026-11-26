@@ -168,6 +168,18 @@ class HevySendTest(unittest.TestCase):
         self.assertEqual(list(self.http.saved), [NAMED["id"]])
         self.assertEqual(self.plan_status(path), [["p1", "sent"]])
 
+    def test_sync_after_approval_preserves_the_changed_routine(self):
+        # GIVEN an approved change into an existing routine
+        conn, path = self.plan_with_hevy()
+        self.approve(path, {**ADD, "send_into": {"hevy": NAMED["id"]}})
+        # WHEN a sync records the person's newer edit before delivery
+        self.http.saved[NAMED["id"]].update(updated_at=VERSION, title="New title")
+        conn.execute("UPDATE app_targets SET remote_version = ?, title = 'New title'", (VERSION,))
+        self.assertTrue(jobs.run_one(path, to_utc_text(NOW)))
+        # THEN the job reports a conflict without writing to Hevy
+        self.assertEqual(conn.execute("SELECT status FROM jobs").fetchone()[0], "conflict")
+        self.assertEqual(self.http.writes(), [])
+
     def test_removing_a_session_sent_to_a_named_routine_queues_nothing(self):
         # GIVEN a session sent into a named routine
         conn, path = self.plan_with_hevy()
@@ -428,8 +440,10 @@ class HevySendTest(unittest.TestCase):
         self.assertEqual(self.send(http=bad_reply)["status"], "unknown")
         self.assertEqual(len(real.writes()), 1)
 
-    def test_full_free_account_without_a_named_routine_writes_nothing(self):
+    def test_routine_limit_refusal_can_be_replaced_with_a_named_routine(self):
         # GIVEN no named routine and a full free account
+        conn, path = self.plan_with_hevy()
+        self.approve(path, ADD)
         real = self.http
 
         def limited(method, url, headers, body):
@@ -438,10 +452,20 @@ class HevySendTest(unittest.TestCase):
             return real(method, url, headers, body)
 
         # WHEN TFS sends
-        result = self.send(http=limited)
+        with mock.patch.object(self, "http", side_effect=limited):
+            self.assertTrue(jobs.run_one(path, to_utc_text(NOW)))
+        result = json.loads(conn.execute("SELECT result_json FROM jobs").fetchone()[0])
         # THEN nothing is written and the person is asked to pick an existing routine
         self.assertEqual(result["status"], "needs_you")
-        self.assertEqual(real.saved, {})
+        self.assertEqual(real.saved, {NAMED["id"]: NAMED})
         self.assertNotIn("auth_failed", result)
         self.assertIn("Pick an existing routine", result["message"])
         self.assertNotIn("invented-key", json.dumps(result))
+        self.approve(
+            path,
+            {"action": "change_session", "item": "p1", "send_into": {"hevy": NAMED["id"]}},
+            version=1,
+        )
+        self.assertTrue(jobs.run_one(path, to_utc_text(NOW)))
+        self.assertEqual([call[:2] for call in real.writes()], [("PUT", "/routines/routine-r")])
+        self.assertEqual(self.plan_status(path), [["p1", "sent"]])

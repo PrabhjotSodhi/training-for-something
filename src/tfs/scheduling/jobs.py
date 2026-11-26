@@ -101,12 +101,19 @@ def prepare(
     after = {key: {**_state(row), "status": "cancelled"} for key, row in pending.items()}
     for item, names in targets.items():
         for name in names:
+            payload = items[item]
+            if named := payload["send_into"].get(name):
+                version = conn.execute(
+                    "SELECT remote_version FROM app_targets WHERE connector = ? AND remote_id = ?",
+                    (name, named),
+                ).fetchone()
+                payload = {**payload, "remote_version": version[0] if version else None}
             key = str(uuid.uuid4())
             before[key] = None
             after[key] = {
                 "item_id": item,
                 "connector": name,
-                "payload_json": encode(items[item]),
+                "payload_json": encode(payload),
                 "status": "pending",
                 "next_attempt_at": saved_at,
             }
@@ -161,11 +168,7 @@ def _claim(conn: sqlite3.Connection, now: str, manifests: dict) -> dict | None:
             # Payloads queued before send_into existed lack the key.
             named = item.get("send_into", {}).get(row["connector"])
             if named:
-                version = conn.execute(
-                    "SELECT remote_version FROM app_targets WHERE connector = ? AND remote_id = ?",
-                    (row["connector"], named),
-                ).fetchone()
-                job.update(remote_id=named, remote_version=version and version[0])
+                job.update(remote_id=named, remote_version=item.pop("remote_version", None))
             conn.execute(
                 "UPDATE jobs SET status = 'sending', attempts = attempts + 1 WHERE id = ?",
                 (row["id"],),
