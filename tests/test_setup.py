@@ -24,6 +24,8 @@ from tests.test_setup_page import Hrefs
 from tfs import config, password_store, providers
 from tfs.cli import _tailscale, main, setup, start
 from tfs.connectors.core.contract import load_manifests
+from tfs.importer.raw_store import save_raw
+from tfs.importer.session import read_file
 from tfs.persistence import sqlite
 from tfs.persistence.migrations import migrate
 from tfs.providers import mcp_tools
@@ -47,7 +49,12 @@ class FakeQuestionary:
 
     def __init__(self, *answers, phone=False):
         self.answers = deque([*answers, ""])
-        self.confirm = mock.Mock(return_value=mock.Mock(ask=lambda: phone))
+        self.phone = iter(phone) if isinstance(phone, list) else None
+        self.default_phone = phone
+
+    def confirm(self, message, default=True):
+        self.print(message)
+        return mock.Mock(ask=lambda: next(self.phone) if self.phone else self.default_phone)
 
     @staticmethod
     def print(text, style=None):
@@ -55,6 +62,7 @@ class FakeQuestionary:
 
     def __getattr__(self, kind):
         def question(message, validate=lambda answer: True, **options):
+            self.print(message)
             answer = self.answers.popleft()
             while (problem := validate(answer)) is not True:
                 sys.stdout.write(f"{problem}\n")
@@ -83,6 +91,13 @@ class FakeCommands:
         return True, self.mcp_list if argv[1:3] == ["mcp", "list"] else ""
 
 
+def run_without_engine(args, *, finish_setup):
+    with mock.patch.object(setup, "_phone_setup"):
+        footer, _ = finish_setup()
+        sys.stdout.write(footer)
+    return 0
+
+
 class TfsHomeTestCase(unittest.TestCase):
     def setUp(self):
         home = tempfile.TemporaryDirectory()
@@ -105,7 +120,7 @@ class SetupTest(TfsHomeTestCase):
             mock.patch("tfs.providers.shutil.which", commands.which),
             mock.patch("tfs.providers.run_command", commands.run),
             mock.patch("tfs.cli.setup.webbrowser.open"),
-            mock.patch("tfs.cli.setup.start.run", return_value=0) as started,
+            mock.patch("tfs.cli.setup.start.run", side_effect=run_without_engine) as started,
             contextlib.redirect_stdout(out),
             contextlib.redirect_stderr(err),
         ):
@@ -128,12 +143,11 @@ class SetupTest(TfsHomeTestCase):
 
     def test_given_claude_already_connected_then_nothing_is_installed(self):
         commands = FakeCommands(found={"claude"}, plugin_list=f"  {PLUGIN}\n")
-        _, out, _, started = self.run_setup(FakeQuestionary([]), commands)
+        _, out, _, _ = self.run_setup(FakeQuestionary([]), commands)
         self.assertEqual(commands.calls, [["claude", "plugin", "list"]])
         self.assertIn("✔ Claude Code   TFS connected", out)
-        footer = started.call_args.kwargs["footer"]
-        self.assertIn("run `claude`", footer)
-        self.assertIn(providers.FIRST_MESSAGE, footer)
+        self.assertIn("run `claude`", out)
+        self.assertIn(providers.FIRST_MESSAGE, out)
 
     def test_given_a_tool_left_unpicked_then_nothing_is_installed_for_it(self):
         commands = FakeCommands(found={"claude", "codex"})
@@ -192,9 +206,8 @@ class SetupTest(TfsHomeTestCase):
             self.assertIn(label, out)
         self.assertEqual(code, 0)
         started.assert_called_once()
-        footer = started.call_args.kwargs["footer"]
-        self.assertIn("run tfs setup again", footer)
-        self.assertNotIn(providers.FIRST_MESSAGE, footer)
+        self.assertIn("run tfs setup again", out)
+        self.assertNotIn(providers.FIRST_MESSAGE, out)
 
     def test_given_a_tool_with_a_command_and_a_file_when_setup_connects_it_then_the_file_holds_tfs(
         self,
@@ -302,12 +315,53 @@ class SetupTest(TfsHomeTestCase):
             )
         self.run_goal_setup("First powerlifting meet", "2099-03-14", "")
         # WHEN setup runs again
-        _, out, _, started = self.run_goal_setup()
+        _, out, _, _ = self.run_goal_setup()
         # THEN it names the goal and the next step asks for a first training plan
         self.assertIn("Goal: First powerlifting meet on 2099-03-14", out)
-        footer = started.call_args.kwargs["footer"]
-        self.assertIn(providers.PLAN_MESSAGE, footer)
-        self.assertNotIn(providers.FIRST_MESSAGE, footer)
+        self.assertIn(providers.PLAN_MESSAGE, out)
+        self.assertNotIn(providers.FIRST_MESSAGE, out)
+
+
+class FirstDataTest(TfsHomeTestCase):
+    def test_wait_names_the_readings_committed_between_polls(self):
+        # GIVEN a connected app with no readings
+        source = "health_auto_export"
+        with contextlib.closing(sqlite.connect(config.db_path())) as conn:
+            migrate(conn)
+            conn.execute("INSERT INTO sources (connector) VALUES (?)", (source,))
+
+            def receive():
+                fixtures = Path(__file__).parent / "fixtures" / source
+                metrics = json.loads((fixtures / "metrics.json").read_text())["data"]["metrics"]
+                data = json.loads((fixtures / "workouts.json").read_text())["data"]
+                data["metrics"] = [next(m for m in metrics if m["name"] == "step_count")]
+                raw = save_raw(
+                    conn,
+                    self.home,
+                    source,
+                    "rest_json",
+                    "json",
+                    io.BytesIO(json.dumps({"data": data}).encode()),
+                    now="2030-01-01T00:00:00Z",
+                )
+                read_file(conn, self.home, raw.sha256)
+                return False
+
+            # WHEN Enter skips an empty wait, then a later wait receives a push
+            out = io.StringIO()
+            with (
+                contextlib.redirect_stdout(out),
+                mock.patch.object(setup, "_enter_within_second", side_effect=[True]),
+            ):
+                setup._wait_for_data(load_manifests())
+            self.assertNotIn("arrived", out.getvalue())
+            with (
+                contextlib.redirect_stdout(out),
+                mock.patch.object(setup, "_enter_within_second", side_effect=receive),
+            ):
+                setup._wait_for_data(load_manifests())
+        # THEN setup names the two types of stored records
+        self.assertIn("✔ Steps and workouts arrived from Health Auto Export.", out.getvalue())
 
 
 class TailscaleRunnerTest(unittest.TestCase):
@@ -359,6 +413,9 @@ class TailscaleTest(TfsHomeTestCase):
         self.commands = self.enterContext(
             mock.patch("tfs.cli._tailscale._run", side_effect=self.run_command)
         )
+        self.enter = self.enterContext(mock.patch("builtins.input", return_value=""))
+        self.enterContext(mock.patch.object(setup, "_enter_within_second", return_value=True))
+        self.browser = self.enterContext(mock.patch.object(start.webbrowser, "open"))
 
     def route(self, target, port=443):
         return {
@@ -383,62 +440,77 @@ class TailscaleTest(TfsHomeTestCase):
             mock.patch("sys.stdin", mock.Mock(isatty=lambda: True)),
             mock.patch.object(setup, "_connect_ai_tools", return_value=None),
             mock.patch.object(setup, "questionary", FakeQuestionary(apps, phone=phone)),
-            mock.patch.object(start, "Engine"),
+            mock.patch.object(start, "Engine") as engine,
             mock.patch.object(start, "sleep", side_effect=KeyboardInterrupt),
             mock.patch.object(start.update, "watch"),
-            mock.patch.object(start.webbrowser, "open"),
             contextlib.redirect_stdout(output),
         ):
             self.assertEqual(main([command]), 0)
+        engine.assert_called_once()
+        engine.return_value.start.assert_called_once_with()
+        engine.return_value.stop.assert_called_once_with()
         return output.getvalue()
 
     def test_phone_page_offers_each_automation_for_each_available_route(self):
         port = free_port()
-        page = ""
+        pages = []
 
-        def read_page():
-            nonlocal page
+        def read_page(url):
+            if "/setup/" not in url:
+                return
             with contextlib.closing(
-                http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                http.client.HTTPConnection("127.0.0.1", urlsplit(url).port, timeout=5)
             ) as client:
-                client.request("GET", "/setup/invented")
-                page = client.getresponse().read().decode()
+                client.request("GET", urlsplit(url).path)
+                pages.append(client.getresponse().read().decode())
 
         for phone in (True, False):
             with self.subTest(phone=phone):
                 # GIVEN a fresh phone setup with or without private access
                 self.routes = self.route(self.target, port=8444)
+                pages.clear()
 
                 # WHEN the person opens the setup page
                 with (
                     mock.patch.object(setup, "_BIND", "127.0.0.1"),
                     mock.patch.object(setup, "wifi_host", return_value="127.0.0.1"),
                     mock.patch.object(config, "HOME_WIFI_PORT", port),
-                    mock.patch.object(setup.secrets, "token_urlsafe", return_value="invented"),
-                    mock.patch("builtins.input", read_page),
+                    mock.patch.object(setup, "print_qr", side_effect=read_page),
                 ):
-                    self.run_cli(phone=phone, apps=["health_auto_export"])
+                    out = self.run_cli(phone=phone, apps=["health_auto_export"])
+                self.assertLess(out.index("Name your goal"), out.index("View TFS on your phone"))
+                self.assertLess(
+                    out.index("Health Auto Export (1 of 1)"), out.index("Name your goal")
+                )
                 # THEN each button installs a distinct automation with its route's address
                 routes = {"Wi-Fi": f"http://127.0.0.1:{port}/"}
                 if phone:
                     routes["Tailscale"] = f"https://{self.host}:8444/"
-                parser = Hrefs()
-                parser.feed(page)
-                queries = [parse_qs(urlsplit(link).query) for link in parser.found]
-                self.assertEqual(
-                    [(q["name"][0], q["url"][0]) for q in queries],
-                    [
-                        (f"TFS {kind} ({route})", f"{base}push/health_auto_export")
-                        for route, base in routes.items()
-                        for kind in ("metrics", "workouts")
-                    ],
-                )
-                self.assertEqual("Tailscale app is connected" in page, phone)
+                self.assertEqual(len(pages), len(routes))
+                for (route, base), page in zip(routes.items(), pages, strict=True):
+                    parser = Hrefs()
+                    parser.feed(page)
+                    queries = [parse_qs(urlsplit(link).query) for link in parser.found]
+                    self.assertEqual(
+                        [(q["name"][0], q["url"][0]) for q in queries],
+                        [
+                            (f"TFS {kind} ({route})", f"{base}push/health_auto_export")
+                            for kind in ("metrics", "workouts")
+                        ],
+                    )
+                    self.assertEqual("Tailscale app is connected" in page, route == "Tailscale")
 
     def test_free_port_sets_up_once_and_start_shows_phone_and_push_links(self):
         # GIVEN a signed-in computer with no Serve config
         # WHEN setup runs twice and the engine starts again
-        self.assertIn(f"https://{self.host}/", self.run_cli())
+        setup_output = self.run_cli()
+        self.assertIn(
+            "Tailscale is already on this computer. Use it to open TFS away from home too? "
+            "It works anywhere and is more secure.",
+            setup_output,
+        )
+        self.assertNotIn("Do you have a Tailscale account?", setup_output)
+        self.assertIn(f"Push URL (Tailscale):     https://{self.host}/push/", setup_output)
         self.assertIn("already", self.run_cli().lower())
         banner = self.run_cli("start")
         # THEN only the first setup changed Serve and start shows both links
@@ -467,27 +539,57 @@ class TailscaleTest(TfsHomeTestCase):
             self.assertIn(f"Dashboard (phone): {url}\nPush token:", banner)
             stream.write(banner)
 
-    def test_missing_or_signed_out_prints_install_steps_and_finishes(self):
+    def test_signed_out_can_create_account_then_skip_after_recheck(self):
         # GIVEN Tailscale is missing or needs login
         for state in (None, {"BackendState": "NeedsLogin"}):
             with self.subTest(state=state):
                 self.state = state
                 # WHEN setup runs
-                output = self.run_cli()
+                output = self.run_cli(phone=[True, False, False])
                 # THEN the person can finish setup and come back after signing in
                 self.assertNotIn("█", self.run_cli("start"))
                 for text in (
-                    "tailscale.com/download",
-                    "same account",
-                    "tfs setup",
+                    "Create your account in the browser, then press Enter.",
+                    "Open Tailscale on this computer and sign in, then press Enter.",
+                    "Try again?",
                     "TFS is running",
                 ):
                     self.assertIn(text, output)
+                self.browser.assert_any_call("https://login.tailscale.com/start")
         self.assertTrue(
             all(
                 call == mock.call("tailscale", "status", "--json")
                 for call in self.commands.call_args_list
             )
+        )
+
+    def test_missing_program_can_be_installed_and_signed_in_on_retry(self):
+        # GIVEN no program, then an installation that needs one more sign-in attempt
+        self.state = {"BackendState": "NeedsLogin"}
+        programs = iter([None, "tailscale", "tailscale"])
+
+        def signed_in(*_):
+            if self.commands.call_count:
+                self.state = {"BackendState": "Running", "Self": {"DNSName": self.host}}
+
+        # WHEN the person creates an account, installs the program and retries
+        with (
+            mock.patch.object(_tailscale, "_program", side_effect=lambda: next(programs)),
+            mock.patch("builtins.input", side_effect=signed_in),
+            mock.patch.object(setup, "print_qr") as qr,
+        ):
+            out = self.run_cli(phone=[True, False, True])
+        # THEN the browser and QR codes lead to the requested destinations
+        self.browser.assert_any_call("https://login.tailscale.com/start")
+        self.browser.assert_any_call("https://tailscale.com/download")
+        self.assertIn("Install Tailscale on this computer and sign in, then press Enter.", out)
+        self.assertIn(
+            "Install Tailscale on your phone and sign in with the same account, then press Enter.",
+            out,
+        )
+        self.assertEqual(
+            [call.args[0] for call in qr.call_args_list[1:]],
+            ["https://tailscale.com/download/ios", f"https://{self.host}/"],
         )
 
     def test_busy_or_public_port_stays_untouched(self):
@@ -527,11 +629,15 @@ class TailscaleTest(TfsHomeTestCase):
 
     def test_declining_phone_access_skips_all_commands(self):
         # GIVEN the person declines phone access
+        self.which.return_value = None
+        self.enterContext(
+            mock.patch.dict(_tailscale._INSTALL_PATHS, {sys.platform: self.home / "missing"})
+        )
         # WHEN setup starts the engine
         output = self.run_cli(phone=False)
         # THEN no Tailscale command runs
         self.assertIn("TFS is running", output)
-        self.assertNotIn("█", output)
+        self.assertIn("Only phones that scan it can open TFS.", output)
         self.commands.assert_not_called()
 
     def test_setup_waits_for_approval_and_retries_once(self):
@@ -540,11 +646,14 @@ class TailscaleTest(TfsHomeTestCase):
         link = self.approval
         # WHEN the person approves it and presses Enter
         with mock.patch(
-            "builtins.input", side_effect=lambda *_: setattr(self, "approval", "")
-        ) as enter:
+            "builtins.input",
+            side_effect=lambda *args: setattr(self, "approval", "")
+            if args and "approval" in args[0]
+            else "",
+        ):
             output = self.run_cli()
         # THEN setup showed the approval link and the verified dashboard address
-        enter.assert_called_once()
+        self.browser.assert_any_call(link)
         self.assertIn(link, output)
         self.assertIn(f"https://{self.host}/", output)
         self.assertEqual(
@@ -558,13 +667,9 @@ class TailscaleTest(TfsHomeTestCase):
 class PhonePageTest(TfsHomeTestCase):
     CODE = "k7q2abcd"
 
-    def run_push_setup(self, picked, answers, port, on_enter=lambda: None):
+    def run_push_setup(self, picked, answers, on_enter=lambda url: None):
         questionary = FakeQuestionary(picked, *answers)
         out, err = io.StringIO(), io.StringIO()
-
-        def enter(*_):
-            on_enter()
-            return ""
 
         with (
             mock.patch("sys.stdin", mock.Mock(isatty=lambda: True)),
@@ -572,33 +677,25 @@ class PhonePageTest(TfsHomeTestCase):
             mock.patch("tfs.providers.shutil.which", FakeCommands(found=set()).which),
             mock.patch("tfs.cli.setup.connect_source"),
             mock.patch("tfs.cli.setup.import_.run") as imported,
-            mock.patch("tfs.cli.setup.start.run", return_value=0),
+            mock.patch("tfs.cli.setup.start.run", side_effect=run_without_engine),
             mock.patch("tfs.cli.setup.wifi_host", return_value="127.0.0.1"),
             mock.patch("tfs.cli.setup._BIND", "127.0.0.1"),
-            mock.patch("tfs.cli.setup.config.HOME_WIFI_PORT", port),
             mock.patch("tfs.cli.setup.secrets.token_urlsafe", return_value=self.CODE),
-            mock.patch("builtins.input", enter),
+            mock.patch.object(setup, "print_qr") as qr,
+            mock.patch("builtins.input", side_effect=lambda: on_enter(qr.call_args.args[0])),
             contextlib.redirect_stdout(out),
             contextlib.redirect_stderr(err),
         ):
-            code = main(["setup"])
-        return code, out.getvalue() + err.getvalue(), imported
-
-    def free_port(self):
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            return probe.getsockname()[1]
+            self.assertEqual(main(["setup"]), 0)
+        return qr, out.getvalue() + err.getvalue(), imported
 
     def test_given_the_first_page_request_then_the_terminal_confirms_the_phone_and_the_token_stays_hidden(
         self,
     ):
-        port = self.free_port()
-        url = f"http://127.0.0.1:{port}/setup/{self.CODE}"
         _, out, _ = self.run_push_setup(
             ["health_auto_export"],
             [],
-            port,
-            lambda: urllib.request.urlopen(url).read(),  # noqa: S310
+            lambda url: urllib.request.urlopen(url).read(),  # noqa: S310
         )
         token = password_store.get("push_token")
         self.assertTrue(token)
@@ -609,20 +706,14 @@ class PhonePageTest(TfsHomeTestCase):
     def test_given_enter_before_any_request_then_no_phone_line_and_the_address_stops_answering(
         self,
     ):
-        port = self.free_port()
-        _, out, _ = self.run_push_setup(["health_auto_export"], [], port)
+        qr, out, _ = self.run_push_setup(["health_auto_export"], [])
         self.assertNotIn("Your phone reached", out)
         with self.assertRaises(OSError):
-            urllib.request.urlopen(f"http://127.0.0.1:{port}/setup/{self.CODE}", timeout=5)
+            socket.create_connection(("127.0.0.1", urlsplit(qr.call_args.args[0]).port), timeout=5)
 
     def test_given_the_port_is_in_use_then_setup_says_so_and_goes_on_to_the_next_app(self):
-        with socket.socket() as taken:
-            taken.bind(("127.0.0.1", 0))
-            taken.listen()
-            port = taken.getsockname()[1]
-            _, out, imported = self.run_push_setup(
-                ["health_auto_export", "apple_health"], [""], port
-            )
+        with mock.patch.object(setup.setup_page, "SetupServer", side_effect=OSError):
+            _, out, imported = self.run_push_setup(["health_auto_export", "apple_health"], [""])
         self.assertIn("Close TFS, then run tfs setup again.", out)
         self.assertIn("2 of 2", out)
         imported.assert_not_called()
