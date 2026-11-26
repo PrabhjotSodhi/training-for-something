@@ -101,11 +101,17 @@ class ReaderReplayTest(SessionTest):
 
         self.assertEqual(self.labels(), [("fake_connector", "one"), ("fake_connector", "two")])
 
-    def test_a_missing_file_does_not_reset_the_connector_on_every_run(self) -> None:
-        first = self.save_for("fake_connector", b"a@one")
-        self.save_for("fake_connector", b"b@two")
+    def test_reader_change_keeps_missing_file_records_and_rereads_present_files_once(self) -> None:
+        # GIVEN
+        missing = self.save_for("fake_connector", b"a@one")
+        present = self.save_for("fake_connector", b"b@two")
         self.read_all_then_update_reader()
-        self.conn.execute("UPDATE files SET status = 'missing' WHERE sha256 = ?", (first,))
-        process_pending(self.conn, self.data_dir, module=THIS)
+        self.conn.execute("UPDATE files SET status = 'missing' WHERE sha256 = ?", (missing,))
 
+        # WHEN
+        results = process_pending(self.conn, self.data_dir, module=THIS)
+
+        # THEN
+        self.assertEqual([(r.sha256, r.inserted) for r in results], [(present, 1)])
+        self.assertEqual(self.labels(), [("fake_connector", "one"), ("fake_connector", "two")])
         self.assertEqual(process_pending(self.conn, self.data_dir, module=THIS), [])
