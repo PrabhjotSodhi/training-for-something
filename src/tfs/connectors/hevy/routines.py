@@ -137,10 +137,11 @@ def _request(
         if body is not None:
             headers["content-type"] = "application/json"
         status, _, response = http(method, _API + path, headers, body)
-        if status == 403 and _routine_limit(response):
+        if method == "POST" and status == 403 and _routine_limit(response):
             raise _DeliveryError(
                 "needs_you",
                 "Hevy allows 4 routines on the free plan. Pick an existing routine for TFS to update.",
+                safe_to_replace=True,
             )
         if status in (401, 403):
             raise _DeliveryError("needs_you", "Reconnect Hevy before sending.", auth_failed=True)
@@ -234,7 +235,7 @@ def _update(
             "unknown",
             "The prior Hevy update is unconfirmed. Check the routine before trying again.",
         )
-    if current.get("updated_at") != remote_version:
+    if not remote_version or current.get("updated_at") != remote_version:
         raise _DeliveryError("conflict", "The Hevy routine changed since TFS last saw it.")
     reply = request("PUT", path, {"routine": expected})
     return _readback(request, reply, expected, remote_id)
