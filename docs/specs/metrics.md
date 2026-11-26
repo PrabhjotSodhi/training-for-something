@@ -25,17 +25,19 @@ Daily facts, scores and forecasts. Every formula carries a version. Coefficients
 
 | Score | Method | Needs | Shows |
 |---|---|---|---|
-| **Readiness** | Your HRV, resting heart rate, sleep and recent load against your own normal. Robust z-scores over a 42 day baseline, weighted 0.35, 0.25, 0.25 and 0.15, mapped so 50 means your normal. | 21 valid days, and at least two of HRV, resting heart rate and sleep | "68, likely 61 to 74", inputs, baseline days |
+| **Readiness** | The beta compares HRV (SDNN), resting heart rate and sleep with your own normal over the previous 42 days. It weights the available inputs in proportion to 0.35, 0.25 and 0.25. A score of 50 means your normal. | At least two inputs, each with a reading today and at least 21 days of varying readings from the same source | Score, likely range, inputs and baseline days |
 | **Training load** | Three channels, never added together. Cardio: heart rate TRIMP. Strength: working sets x reps x weight, with RIR or RPE when logged. Perceived: RPE x minutes. | A workout with duration. Heart rate for cardio load. | Each channel against your own recent normal |
 | **Recovery time** | Each channel's load decays over time. Cardio and strength are kept apart. | Six weeks of history for a personal decay rate | A range, such as "18 to 30 h". Strength may say "unknown". |
 | **Workout heart rate** | Zones from heart rate reserve. Max heart rate measured, or estimated as 211 minus 0.64 x age and marked estimated. Heart rate recovery at 60 and 120 seconds. | A heart rate stream | Time in each zone, recovery |
 | **VO2 max** | Your device's latest VO2 max, placed on the HUNT study's age and sex reference curve. Never shown below or above the reference range. | Age, reference sex, VO2 max | "38, high for your age", percentile, source, confidence. No decimals. |
 
+Using recent training load as a fourth readiness input is planned for later.
+
 ## Forecasts
 
-The website promises a forecast range per goal. Two kinds exist.
+In the beta, the coach can propose a forecast range for any goal with `set_forecast`. Once you approve it, the dashboard shows the saved estimate. Until then it shows "No forecast yet".
 
-**1. Code forecasts**, for goals with a known formula. Exact and repeatable.
+### Formula forecasts (planned)
 
 | Goal | Method | Shows |
 |---|---|---|
@@ -45,5 +47,3 @@ The website promises a forecast range per goal. Two kinds exist.
 | Longevity | VO2 max now and its trend | VO2 max and percentile |
 
 Ironman adds a fixed transition estimate to the three leg forecasts.
-
-**2. Coach estimates**, for any other goal, such as Hyrox. The coach researches a method with the research rules (HLD section 9.4), applies it to the user's data through the ask TFS tool, and proposes a range with the `set_forecast` action. The user saves it like any change. It shows as "Coach estimate" with its method, sources and date, and the coach refreshes it at each weekly review.

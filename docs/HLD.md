@@ -73,7 +73,7 @@ TFS handles three kinds of work. Each has its own approval rule.
 
 v1.0 supports these journeys.
 
-1. On the first day, install the TFS plugin in your AI tool. On first use, it offers to install TFS and opens onboarding. Answer five questions about your goal, apps, AI tool order, phone use and starting at login. Import history, get a first plan with sources, and approve it.
+1. On the first day, run the installer in a terminal. Pick your AI tools and apps, follow each app's steps, and type your goal or skip it. Pair your phone on home Wi-Fi if you want to view TFS there. Paste the printed message into your AI tool to start your plan.
 2. Each morning, new data arrives. Readiness shows against your normal, and the phone shows today's session.
 3. Ask a question, read the answer and its sources, then Save or refuse a change. The plan goes to every connected app that accepts plans.
 4. To log food, type a sentence or take a photo. Review the estimate and Save it.
@@ -123,10 +123,10 @@ TFS uses one folder in the OS app data location. Sync tools skip this location b
 TFS/
   raw/<connector>/<format>/<sha256>.<ext>   every file as it arrived
   tfs.db                                     one SQLite file, WAL, synchronous=FULL
-  backups/                                   rotating verified backups
+  backups/                                   two newest database backups
 ```
 
-Secrets live in the OS password store, as described in section 12.
+App tokens and API keys live in `.env` in the TFS data folder, as described in section 12.
 
 All writes use short transactions in `tfs.db` with a busy timeout. SQLite allows one writer at a time. Parsing and network calls happen outside transactions.
 
@@ -278,12 +278,12 @@ Every connector must pass the same five contract tests.
 | Route | How data arrives | Examples |
 |---|---|---|
 | Fetch | The scheduler asks the app's API on an interval. The cursor moves only after the raw file is saved. | Strava, Hevy, Oura |
-| Phone push | An app on the phone posts JSON to the engine's push endpoint with a token in a header. This is how on-device health hubs reach a computer. The user picks the route: home Wi-Fi (default, works on the same network), Tailscale (works away from home), or both. | Health Auto Export for Apple Health, HC Webhook for Health Connect |
+| Phone push | A phone app posts JSON to the engine with a token in a header. Setup starts on home Wi-Fi. You can add Tailscale to send data away from home. | Health Auto Export for Apple Health, HC Webhook for Health Connect |
 | File | You hand a file in from the dashboard or phone | A full health export, lab PDFs, food photos |
 
 Each connector screen explains its connection route, requirements and risk of failure. It also lists needs specific to the app. For example, Strava requires the user's own API app and a paid subscription.
 
-An app counts as supported when a route exists for a user who meets its requirements. Garmin's connector needs `garminconnect`, a package outside the standard library. It installs as an optional extra when you connect Garmin, so other users never get it. Its login route is unofficial and can break when Garmin changes its login. The Garmin screen says so, and Apple Health, Health Connect and FIT files remain fallbacks.
+An app counts as supported when a route exists for a user who meets its requirements. TFS reads Garmin data with a Garmin Connect Personal API key.
 
 Fitbit data arrives through the phone's health hub. On iPhone, the Google Health app (version 5.05 or later) writes Fitbit data to Apple Health. On Android, it syncs to Health Connect. Google ends the Fitbit Web API on 30 October 2026, and its replacement is closed to new projects, so TFS reads no Fitbit API.
 
@@ -382,7 +382,7 @@ Distance, duration and pace always come from one source. This keeps pace from mi
 
 ### 7.3 Daily totals
 
-Each day and summed metric counts every moment once. Adding steps or energy across devices or apps risks counting them twice. Taking one device's total risks missing time when that device was off: on a real 3 year export, the phone's steps while the watch charged added about 10% on a typical day.
+Each day and summed metric counts every moment once. Adding steps or energy across devices or apps risks counting them twice.
 
 Here, a source means one connector stream from one device.
 
@@ -460,7 +460,7 @@ The views keep their columns when underlying tables change. A breaking change ad
 
 Every run that TFS starts begins with a short briefing. It includes the goal, limits, this week's plan, unsaved suggestions and recent chat. The AI uses `query` for anything else.
 
-If an AI tool cannot use MCP in the background, its adapter falls back to `tfs query` over the same reader. Proof tests decide which tools need this.
+AI tools use `query` through MCP. The CLI includes `tfs update` to install a release and `tfs phones forget` to remove access for all paired phones.
 
 TFS passes imported text and web pages to the AI as data. They carry no instruction authority.
 
@@ -550,7 +550,7 @@ Options considered. Manifest write-safety flags with engine branches move app kn
 
 The engine binds to 127.0.0.1. Tailscale Serve exposes it through HTTPS inside your private tailnet, the devices on your Tailscale network. It never exposes the engine to the public internet. The phone gets the same TFS chat, today's plan, food and notes. The computer must be on.
 
-Onboarding and Settings offer three phone data routes.
+Terminal setup starts on home Wi-Fi. You can add Tailscale for use away from home.
 
 | Route | How | Works |
 |---|---|---|
@@ -585,17 +585,17 @@ Options considered. A public tunnel with OAuth for 1.0 exposes health data befor
 
 ### 13.1 Install and onboarding
 
-1. Install the TFS plugin in your AI tool, for example with `/plugin install` in Claude Code. The website shows each tool's command using `PrabhjotSodhi/training-for-something`.
-2. On first use, the AI offers to install TFS. After approval, it runs the one-line install command. The command uses uv, so you need no separate Python installation. Terminal users can run the same command themselves.
-3. Onboarding opens in the browser. Its first screen states that TFS gives no medical advice. It then asks five questions. These cover your goal, apps, AI tool order, phone use and route, and starting at login. Phone routes are home Wi-Fi by default, Tailscale for use away from home, or both. TFS finds your AI tools and tests each login with one tiny question. It explains how to fix failed logins. Other settings start with the best defaults and remain editable in Settings.
-4. Import history, review the first plan and its sources, and approve it.
+1. Run the install command in a terminal. It installs TFS with uv and starts setup.
+2. Pick your AI tools, then pick your apps. Follow the steps for each app you picked.
+3. Type your goal once or press Enter to skip. Setup uses what you type in the first chat message. It does not save the goal.
+4. To view TFS on your phone, scan the pairing code on home Wi-Fi. You can add Tailscale for use away from home. Paste the printed message into your AI tool.
 
 ### 13.2 Upgrades
 
 ![An upgrade with backup](diagrams/hld-upgrade.png)
 
 1. The new version reads `PRAGMA user_version`. If the data is newer than it understands, it refuses to open and explains recovery.
-2. It makes a verified backup.
+2. Before changing an existing database's schema, TFS backs it up.
 3. It runs numbered migration scripts in one transaction. A migration can add, drop, rename or rebuild a table using SQLite's documented 12-step method. Two-release expand and contract applies only when something outside TFS reads the old shape, such as `coach_v1`.
 4. If a reader or formula version changed, TFS rebuilds derived tables beside the old tables inside `tfs.db`. It checks the results, then swaps the tables in one transaction.
 
@@ -605,10 +605,7 @@ Rollback restores the pre-upgrade backup and reinstalls the old version with uv.
 
 ### 13.3 Backups
 
-1. TFS backs up before every upgrade and daily, keeping the last 7 daily backups. Important saves also trigger a backup when the last one is more than a day old.
-2. A backup includes a SQLite online backup of `tfs.db`, missing raw files and a manifest. The manifest records its format version, TFS version, `user_version`, reader and formula versions, and file hashes.
-3. Backups use `backups/` by default. You can choose a second folder, such as one in Time Machine, Windows Backup or Dropbox. Settings warns that same-disk backups cannot survive a dead or stolen computer.
-4. CI runs one automated restore test.
+Before changing the schema of an existing `tfs.db`, TFS copies the database to `backups/` in the data folder. It keeps the two newest copies.
 
 ### 13.4 New computer
 
@@ -622,7 +619,7 @@ The backup restores data and history. It excludes secrets.
 
 Export everything writes raw files, a manifest and JSON for every user-created table. These tables include the journal, goals, plans, rules and chat.
 
-Delete my data removes the data folder and TFS entries in the password store. The confirmation screen lists the exact paths first. It also explains that external copies remain in your apps, backups and AI tool's history.
+Delete my data removes the data folder, including `.env`. The confirmation screen lists the exact paths first. It also explains that external copies remain in your apps, backups and AI tool's history.
 
 ### 13.6 Telemetry and bug reports
 

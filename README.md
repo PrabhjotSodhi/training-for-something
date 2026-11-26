@@ -62,17 +62,19 @@ Windows, in PowerShell:
 curl.exe -fsSLo install.ps1 https://raw.githubusercontent.com/PrabhjotSodhi/training-for-something/main/install.ps1; powershell -ExecutionPolicy ByPass -File install.ps1; del install.ps1
 ```
 
-Setup connects your AI tools and apps. For Health Auto Export, scan the setup QR on your home Wi-Fi and enable each automation. If you set up Tailscale, the page includes a second pair for use while Tailscale is connected on your phone.
+Setup connects your AI tools and apps. For Health Auto Export, scan its code on your home Wi-Fi. Turn on both Wi-Fi automations for health metrics and workouts. If you add Tailscale later in setup, scan its separate automation code and turn on both Tailscale automations.
 
-Run `tfs start --open` to open the dashboard on your computer. With Tailscale set up, scan the QR under “Dashboard (phone)” to open it on your phone. Run `tfs update` to update.
+To view TFS on your phone, scan the pairing code on your home Wi-Fi. On Windows, setup asks once for admin approval if the firewall needs a change. Home Wi-Fi traffic is not encrypted, so anyone on the same Wi-Fi network could read it. Add Tailscale to view TFS away from home, with encrypted traffic. Run `tfs phones forget` to remove home Wi-Fi access for all paired phones.
+
+Setup opens the dashboard on your computer. Keep that terminal open while you use TFS. After you stop TFS with Ctrl+C, run `tfs start --open` in a new terminal to reopen it. Run `tfs update` to update.
 
 ## Works with
 
 | AI tools | Apps |
 |---|---|
 | Claude Code (tested) | Apple Health export |
-| Codex (tested) | Health Auto Export |
-| Cursor (should work) | Hevy |
+| Codex (tested) | Health Auto Export (Premium) |
+| Cursor (should work) | Hevy (Pro and an API key) |
 | OpenCode (should work) | Garmin (read only, with a Garmin Connect Personal API key) |
 | Grok Build (should work) | |
 | Google Antigravity CLI (should work) | |
@@ -105,9 +107,10 @@ Keep the `save` tool set to ask for permission. An always allow setting skips th
 
 Before an update changes your database, TFS saves a copy in the `backups` folder of the TFS data folder. It keeps the 2 newest. To go back:
 
-1. Stop TFS with Ctrl+C.
+1. Stop TFS with Ctrl+C, and close your AI tools so nothing has the database open.
 2. Install the older release: `uv tool install --force <wheel URL>`
-3. Copy the backup you want over `tfs.db` in the data folder.
+3. In the data folder, move `tfs.db`, `tfs.db-wal` and `tfs.db-shm` into a new folder. Moving all three matters: a leftover `tfs.db-wal` can undo the restore.
+4. Copy the backup you want into the data folder and name it `tfs.db`.
 
 Data saved after the update is lost.
 
