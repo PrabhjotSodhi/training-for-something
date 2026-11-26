@@ -178,6 +178,7 @@ class EngineWorkerTest(unittest.TestCase):
         out = io.StringIO()
         with (
             mock.patch("tfs.cli._tailscale._run", return_value=None),
+            mock.patch.object(start, "_firewall_state", return_value=(True, [])),
             mock.patch.object(
                 start,
                 "Engine",

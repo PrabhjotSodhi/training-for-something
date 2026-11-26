@@ -1,15 +1,16 @@
-"""The phone setup page and the temporary server `tfs setup` runs while a phone scans its QR code."""
+"""The temporary phone setup page on the home Wi-Fi listener."""
 
 import threading
-from collections.abc import Callable
-from datetime import UTC, datetime
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from html import escape
+from time import monotonic
+from typing import TYPE_CHECKING
 
 from fastapi.responses import HTMLResponse
 
-from tfs import config
-from tfs.web import server
-from tfs.web.overview import read_overview
+if TYPE_CHECKING:
+    from tfs.web.server import HomeWifi
 
 SERVER_LIFETIME_S = 600
 
@@ -72,55 +73,26 @@ def scan_page() -> str:
 <body><main><p class="card">Scan the QR code from <code>tfs setup</code> on your computer.</p></main></body></html>"""
 
 
-class SetupServer:
-    """Serve setup links and the paired dashboard until setup ends."""
+@contextmanager
+def show(
+    wifi: "HomeWifi", code: str, page: str, on_reach: Callable[[], None]
+) -> Iterator[threading.Event]:
+    """Publish the page for this setup step and signal its first visit."""
+    reached = threading.Event()
+    lock = threading.Lock()
+    expires = monotonic() + SERVER_LIFETIME_S
 
-    def __init__(
-        self,
-        bind: str,
-        port: int,
-        code: str,
-        title: str,
-        buttons: list[tuple[str, str]],
-        on_reach: Callable[[], None],
-        lifetime_s: float = SERVER_LIFETIME_S,
-        *,
-        tailscale: bool = False,
-    ) -> None:
-        page = render_page(title, buttons, tailscale=tailscale)
-        reached = False
-        lock = threading.Lock()
+    def visit() -> HTMLResponse:
+        with lock:
+            if monotonic() >= expires:
+                return HTMLResponse(scan_page(), 404, {"Cache-Control": "no-store"})
+            if not reached.is_set():
+                reached.set()
+                on_reach()
+        return HTMLResponse(page, headers={"Cache-Control": "no-store"})
 
-        def show_setup() -> HTMLResponse:
-            nonlocal reached
-            with lock:
-                if not reached:
-                    reached = True
-                    on_reach()
-            return HTMLResponse(page, headers={"Cache-Control": "no-store"})
-
-        db = config.db_path()
-        self._server = server.make_server(
-            bind,
-            port,
-            push_handler=None,
-            home_wifi=server.HomeWifi(db, (f"/setup/{code}", show_setup)),
-            overview=lambda: read_overview(db, datetime.now(UTC).astimezone()),
-        )
-        self.port = self._server.sock.getsockname()[1]
-        self._timer = threading.Timer(lifetime_s, self.stop)
-        self._timer.daemon = True
-        self._stopped = False
-
-    def start(self) -> None:
-        """Start serving and set the setup deadline."""
-        self._server.start()
-        self._timer.start()
-
-    def stop(self) -> None:
-        """Stop answering and release the port. Safe to call twice."""
-        if self._stopped:
-            return
-        self._stopped = True
-        self._timer.cancel()
-        self._server.stop()
+    wifi.setup = (code, visit)
+    try:
+        yield reached
+    finally:
+        wifi.setup = None

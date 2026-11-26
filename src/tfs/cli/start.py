@@ -1,15 +1,19 @@
 """`tfs start`: run the engine in the foreground until Ctrl+C."""
 
 import argparse
+import base64
 import io
+import json
 import os
 import sqlite3
+import subprocess
 import sys
 import threading
 import webbrowser
 from collections.abc import Callable
-from contextlib import closing
+from contextlib import closing, suppress
 from datetime import UTC, datetime
+from pathlib import Path
 from time import sleep
 from typing import TextIO
 
@@ -22,6 +26,96 @@ from tfs.engine import Engine, EngineAlreadyRunningError, PortInUseError
 from tfs.persistence import sqlite
 from tfs.persistence.migrations import BackupFailedError, DatabaseTooNewError
 from tfs.web.pairing import wifi_host
+from tfs.web.server import HomeWifi
+
+
+def _firewall_script(*, repair: bool) -> str:
+    # PowerShell also treats curly quotes in a file name as string delimiters.
+    python = sys._base_executable.translate(
+        {ord(ch): "'" + ch for ch in "'\u2018\u2019\u201a\u201b"}
+    )
+    store = "PersistentStore" if repair else "ActiveStore"
+    query = f"""$ErrorActionPreference = 'Stop'
+$python = '{python}'
+$name = 'TFS home Wi-Fi'
+$rules = Get-NetFirewallRule -PolicyStore {store}
+$allow = $rules | Where-Object Name -eq $name
+$blocks = @($rules | Where-Object {{ $_.Direction -eq 'Inbound' -and $_.Action -eq 'Block' -and $_.Enabled -eq 'True' }} |
+    Where-Object {{ $_.Profile -eq 'Any' -or ([int]$_.Profile -band 2) }} |
+    Where-Object {{
+        $app = ($_ | Get-NetFirewallApplicationFilter).Program
+        $app -and [Environment]::ExpandEnvironmentVariables($app) -eq $python
+    }})
+"""
+    if repair:
+        return (
+            query
+            + f"""if (!$allow) {{
+    New-NetFirewallRule -Name $name -DisplayName $name -Direction Inbound -Action Allow -Protocol TCP -LocalPort {config.HOME_WIFI_PORT} -Profile Private -RemoteAddress LocalSubnet
+}} elseif ($allow.Enabled -ne 'True') {{
+    $allow | Enable-NetFirewallRule
+}}
+foreach ($block in $blocks) {{ $block | Disable-NetFirewallRule }}
+"""
+        )
+    return (
+        query
+        + """[Console]::OutputEncoding = [Text.Encoding]::UTF8
+@{allowed = ($allow.Enabled -eq 'True'); blocks = @($blocks | ForEach-Object { $_.DisplayName })} | ConvertTo-Json -Compress
+"""
+    )
+
+
+def _powershell(script: str) -> str:
+    program = Path(os.environ["SYSTEMROOT"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    return subprocess.run(
+        [program, "-NoProfile", "-NonInteractive", "-Command", script],
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+    ).stdout
+
+
+def _firewall_state() -> tuple[bool, list[str]] | None:
+    try:
+        state = json.loads(_powershell(_firewall_script(repair=False)))
+        return state["allowed"], state["blocks"]
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+
+
+def _elevate_firewall() -> None:
+    # EncodedCommand passes one Unicode script through both PowerShell command lines.
+    script = base64.b64encode(_firewall_script(repair=True).encode("utf-16-le")).decode("ascii")
+    _powershell(
+        "$ErrorActionPreference = 'Stop'; "
+        "$p = Start-Process (Join-Path $PSHOME 'powershell.exe') -Verb RunAs -Wait -PassThru "
+        f"-ArgumentList '-NoProfile -NonInteractive -EncodedCommand {script}'; exit $p.ExitCode"
+    )
+
+
+def _check_firewall(*, setup: bool) -> None:
+    if sys.platform != "win32":
+        return
+    allowed, blocks = _firewall_state() or (False, [])
+    if allowed and not blocks:
+        return
+    if setup:
+        print(
+            "Windows needs your OK once so your phone can reach TFS on your home Wi-Fi.", flush=True
+        )
+        with suppress(OSError, subprocess.SubprocessError):
+            _elevate_firewall()
+        if state := _firewall_state():
+            allowed, remaining = state
+            for name in sorted(set(blocks) - set(remaining)):
+                print(f"Turned off firewall rule: {name}")
+            if allowed and not remaining:
+                return
+        print("Phone viewing over Wi-Fi will not work until you run tfs setup again.")
+    else:
+        print("Your phone cannot reach TFS over Wi-Fi. Run tfs setup to fix it.")
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -37,12 +131,17 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def run(
-    args: argparse.Namespace, *, finish_setup: Callable[[], tuple[str, str | None]] | None = None
+    args: argparse.Namespace,
+    *,
+    finish_setup: Callable[[HomeWifi], tuple[str, str | None]] | None = None,
 ) -> int:
     """Start the engine, finish any setup, then show the banner and wait for Ctrl+C."""
     home_wifi = args.home_wifi or _home_wifi_enabled()
     data_dir = config.data_dir()
     engine = Engine(data_dir, home_wifi=home_wifi, new_version=lambda: update.available(data_dir))
+    # Set up the rule before listening so Windows does not ask about Python first.
+    if home_wifi:
+        _check_firewall(setup=finish_setup is not None)
     try:
         engine.start()
     except (
@@ -60,7 +159,9 @@ def run(
     footer = None
     try:
         running.write_text(str(os.getpid()))
-        footer, phone_url = finish_setup() if finish_setup else ("", _tailscale.phone_link())
+        footer, phone_url = (
+            finish_setup(engine.home_wifi) if finish_setup else ("", _tailscale.phone_link())
+        )
         manifests = load_manifests()
         push_connectors = [
             (name, manifest["label"])

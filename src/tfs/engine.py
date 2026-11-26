@@ -55,7 +55,7 @@ class Engine:
     ) -> None:
         self._data_dir = data_dir
         self._new_version = new_version
-        self._home_wifi = home_wifi
+        self.home_wifi = HomeWifi(data_dir / "tfs.db") if home_wifi else None
         self._screen_port = screen_port
         self._home_wifi_port = home_wifi_port
         self._now_fn = now_fn or (lambda: datetime.now(UTC))
@@ -88,13 +88,13 @@ class Engine:
         servers: list[WebServer] = []
         try:
             servers.append(_bind(SCREEN_HOST, self._screen_port, handler, overview=overview))
-            if self._home_wifi:
+            if self.home_wifi:
                 servers.append(
                     _bind(
                         HOME_WIFI_HOST,
                         self._home_wifi_port,
                         handler,
-                        home_wifi=HomeWifi(db_path),
+                        home_wifi=self.home_wifi,
                         overview=overview,
                     )
                 )

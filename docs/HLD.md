@@ -278,7 +278,7 @@ Every connector must pass the same five contract tests.
 | Route | How data arrives | Examples |
 |---|---|---|
 | Fetch | The scheduler asks the app's API on an interval. The cursor moves only after the raw file is saved. | Strava, Hevy, Oura |
-| Phone push | An app on the phone posts JSON to the engine's push endpoint with a token in a header. This is how on-device health hubs reach a computer. The user picks the route: Tailscale (recommended, works anywhere), home Wi-Fi (no extra install, works on the same network), or both. | Health Auto Export for Apple Health, HC Webhook for Health Connect |
+| Phone push | An app on the phone posts JSON to the engine's push endpoint with a token in a header. This is how on-device health hubs reach a computer. The user picks the route: home Wi-Fi (default, works on the same network), Tailscale (works away from home), or both. | Health Auto Export for Apple Health, HC Webhook for Health Connect |
 | File | You hand a file in from the dashboard or phone | A full health export, lab PDFs, food photos |
 
 Each connector screen explains its connection route, requirements and risk of failure. It also lists needs specific to the app. For example, Strava requires the user's own API app and a paid subscription.
@@ -554,17 +554,17 @@ Onboarding and Settings offer three phone data routes.
 
 | Route | How | Works |
 |---|---|---|
-| Tailscale (recommended) | Push apps post through Tailscale Serve | Anywhere the phone has a connection and Tailscale is on |
-| Home Wi-Fi | A second, small door on the local network, reached by the computer's local name (for example `name.local`). It only accepts data pushes with a token, and serves no screens. | When the phone is on the same network |
+| Home Wi-Fi (default) | Apps send pushes with a token. Only phones that scanned the pairing code can open the dashboard. During setup, a one-time link opens the phone setup page. | When the phone is on the same network |
+| Tailscale | Phones open the dashboard and apps send pushes through Tailscale Serve. | Away from home, while Tailscale is connected |
 | Both | Push apps use whichever is reachable | Most of the time |
 
 Push apps resend recent days. Data sent at home fills gaps from time away.
 
-The phone page needs no sign-in. Tailscale is the sign-in: only devices on your tailnet can reach the computer. The engine refuses any request whose Host header is not the computer's own name. This blocks DNS rebinding, where a web page in your browser points a name at the engine.
+Away from home, Tailscale handles sign-in: only devices on your tailnet can reach the computer. The engine refuses any request whose Host header is not the computer's own name. This blocks DNS rebinding, where a web page in your browser points a name at the engine.
 
 | Request | How it proves itself |
 |---|---|
-| Browser on the computer or phone | Nothing beyond the network. Tailscale limits the phone to your tailnet. |
+| Browser on the computer or phone | The computer uses its local listener. A phone uses its pairing cookie on home Wi-Fi or connects through the private tailnet. |
 | Phone push app | A token in a header. It can only send data in. |
 
 Uvicorn parses each request, and FastAPI routes it. TFS adds checks for Host, Origin, request size and a body that stops arriving. Pages escape displayed content. The engine closes the connection on any refused push.
@@ -587,7 +587,7 @@ Options considered. A public tunnel with OAuth for 1.0 exposes health data befor
 
 1. Install the TFS plugin in your AI tool, for example with `/plugin install` in Claude Code. The website shows each tool's command using `PrabhjotSodhi/training-for-something`.
 2. On first use, the AI offers to install TFS. After approval, it runs the one-line install command. The command uses uv, so you need no separate Python installation. Terminal users can run the same command themselves.
-3. Onboarding opens in the browser. Its first screen states that TFS gives no medical advice. It then asks five questions. These cover your goal, apps, AI tool order, phone use and route, and starting at login. Phone routes are Tailscale, which is recommended, home Wi-Fi, or both. TFS finds your AI tools and tests each login with one tiny question. It explains how to fix failed logins. Other settings start with the best defaults and remain editable in Settings.
+3. Onboarding opens in the browser. Its first screen states that TFS gives no medical advice. It then asks five questions. These cover your goal, apps, AI tool order, phone use and route, and starting at login. Phone routes are home Wi-Fi by default, Tailscale for use away from home, or both. TFS finds your AI tools and tests each login with one tiny question. It explains how to fix failed logins. Other settings start with the best defaults and remain editable in Settings.
 4. Import history, review the first plan and its sources, and approve it.
 
 ### 13.2 Upgrades

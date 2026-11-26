@@ -1,6 +1,7 @@
 import hashlib
 import http.client
 import tempfile
+import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
@@ -10,12 +11,12 @@ from pathlib import Path
 from unittest import mock
 from urllib.parse import urlsplit
 
+from tests.test_setup_page import SetupListener
 from tfs import config
 from tfs.cli import main, start
 from tfs.engine import Engine
 from tfs.persistence.migrations import migrate
 from tfs.persistence.sqlite import connect
-from tfs.web import setup_page
 from tfs.web.pairing import make_pairing_link
 
 
@@ -35,7 +36,7 @@ class PhonePairingTest(unittest.TestCase):
             migrate(conn)
 
     def setup_server(self):
-        server = setup_page.SetupServer("127.0.0.1", 0, "example", "Example", [], lambda: None)
+        server = SetupListener("127.0.0.1", 0, "example", "Example", [], lambda: None)
         server.start()
         self.addCleanup(server.stop)
         return server
@@ -104,6 +105,22 @@ class PhonePairingTest(unittest.TestCase):
         # THEN access is refused
         self.assertEqual(status, 404)
         self.assertNotIn("Set-Cookie", headers)
+
+    def test_only_the_pairing_code_on_screen_ends_the_wait(self):
+        # GIVEN two fresh links and setup waiting for the second
+        engine = Engine(self.home, home_wifi=True, home_wifi_port=0, screen_port=0)
+        engine.start()
+        self.addCleanup(engine.stop)
+        port = engine._running[1].sock.getsockname()[1]
+        first, shown = (urlsplit(make_pairing_link(port=port)).path for _ in range(2))
+        reached = threading.Event()
+        engine.home_wifi.pairing_scan = (shown.rsplit("/", 1)[1], reached)
+        # WHEN another phone pairs before the displayed link is scanned
+        self.assertEqual(self.request(port, first)[0], 303)
+        self.assertFalse(reached.is_set())
+        # THEN the displayed code still works and releases the wait
+        self.assertEqual(self.request(port, shown)[0], 303)
+        self.assertTrue(reached.is_set())
 
     def test_two_scans_issue_only_one_token_and_store_only_hashes(self):
         # GIVEN one fresh link stored as a hash

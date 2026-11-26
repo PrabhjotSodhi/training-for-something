@@ -41,12 +41,13 @@ BUILD_HINT = "The dashboard is not built. Run: npm --prefix dashboard install &&
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
+@dataclass
 class HomeWifi:
     """The pairing database and optional public setup link on this listener."""
 
     db: Path
     setup: tuple[str, Callable[[], Response]] | None = None
+    pairing_scan: tuple[str, threading.Event] | None = None
 
 
 class _Body(io.RawIOBase):
@@ -201,18 +202,22 @@ def _add_paired_dashboard(
     check_host: Callable[[Request], Awaitable[None]],
     overview: Callable[[], Overview] | None,
 ) -> None:
-    if home_wifi.setup:
-        path, page = home_wifi.setup
-        app.get(path)(page)
-
     def scan() -> Response:
         return HTMLResponse(setup_page.scan_page(), 404, {"Cache-Control": "no-store"})
+
+    @app.get("/setup/{code}")
+    def setup(code: str) -> Response:
+        active = home_wifi.setup
+        return active[1]() if active and active[0] == code else scan()
 
     @app.get("/pair/{code}")
     def pair(code: str) -> Response:
         token = pairing.redeem(home_wifi.db, code)
         if token is None:
             return scan()
+        waiting = home_wifi.pairing_scan
+        if waiting and waiting[0] == code:
+            waiting[1].set()
         response = RedirectResponse(
             "/", 303, {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
         )

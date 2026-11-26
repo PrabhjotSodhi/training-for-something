@@ -6,8 +6,10 @@ import urllib.error
 import urllib.request
 from html.parser import HTMLParser
 
+from tfs import config
 from tfs.cli import setup
 from tfs.web import setup_page
+from tfs.web.server import HomeWifi, make_server
 
 CODE = "k7q2abcd"
 BUTTONS = [
@@ -36,11 +38,31 @@ def get(server, path):
         return error
 
 
+class SetupListener:
+    """Test a setup step on the same listener that handles pairing."""
+
+    def __init__(self, bind, port, code, title, buttons, on_reach):
+        wifi = HomeWifi(config.db_path())
+        self.server = make_server(bind, port, push_handler=None, home_wifi=wifi)
+        self.port = self.server.sock.getsockname()[1]
+        self.page = setup_page.show(wifi, code, setup_page.render_page(title, buttons), on_reach)
+        self.active = False
+
+    def start(self):
+        self.page.__enter__()
+        self.active = True
+        self.server.start()
+
+    def stop(self):
+        if self.active:
+            self.page.__exit__(None, None, None)
+            self.server.stop()
+            self.active = False
+
+
 class SetupServerTest(unittest.TestCase):
     def start(self, on_reach=lambda: None):
-        server = setup_page.SetupServer(
-            "127.0.0.1", 0, CODE, "Connect Example App", BUTTONS, on_reach
-        )
+        server = SetupListener("127.0.0.1", 0, CODE, "Connect Example App", BUTTONS, on_reach)
         server.start()
         self.addCleanup(server.stop)
         return server
@@ -89,7 +111,7 @@ class SetupServerTest(unittest.TestCase):
             taken.bind(("127.0.0.1", 0))
             taken.listen()
             with self.assertRaises(OSError):
-                setup_page.SetupServer(
+                SetupListener(
                     "127.0.0.1", taken.getsockname()[1], CODE, "Connect Example App", BUTTONS, bool
                 )
 
