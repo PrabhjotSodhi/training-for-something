@@ -147,9 +147,7 @@ class GarminFetchTest(unittest.TestCase):
 
 
 class GarminSetupTest(unittest.TestCase):
-    def test_given_a_valid_key_then_setup_fetches_a_token_and_stores_the_data(self):
-        # GIVEN a Garmin that accepts the key
-        garmin = FakeGarmin()
+    def run_setup(self, garmin: FakeGarmin) -> Path:
         home = tempfile.TemporaryDirectory()
         self.addCleanup(home.cleanup)
         out = io.StringIO()
@@ -164,16 +162,37 @@ class GarminSetupTest(unittest.TestCase):
             mock.patch("tfs.cli.setup.start.run", side_effect=run_without_engine),
             contextlib.redirect_stdout(out),
         ):
-            # WHEN setup connects Garmin
             main(["setup"])
-            # THEN light sleep counts as core and each stage has its own stored record
-            with contextlib.closing(connect(config.db_path())) as conn:
-                stored = conn.execute("SELECT COUNT(*) FROM source_records").fetchone()[0]
-                sleep = dict(
-                    conn.execute(
-                        "SELECT metric, json_extract(values_json, '$.value') FROM source_records WHERE stream='sleep'"
-                    )
+            return config.db_path()
+
+    def test_empty_account_stays_enabled(self):
+        # GIVEN every data endpoint returns an empty result list
+        empty = {
+            path: {key: [] for key in reply} if isinstance(reply, dict) else []
+            for path, reply in REPLIES.items()
+        }
+        # WHEN setup connects Garmin
+        with mock.patch.dict(REPLIES, empty):
+            database = self.run_setup(FakeGarmin())
+        # THEN the source stays enabled and stores no empty pages
+        with contextlib.closing(connect(database)) as conn:
+            enabled = conn.execute("SELECT enabled FROM sources WHERE connector = 'garmin'")
+            self.assertEqual(enabled.fetchone()[0], 1)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 0)
+
+    def test_given_a_valid_key_then_setup_fetches_a_token_and_stores_the_data(self):
+        # GIVEN a Garmin that accepts the key
+        garmin = FakeGarmin()
+        # WHEN setup connects Garmin
+        database = self.run_setup(garmin)
+        # THEN light sleep counts as core and each stage has its own stored record
+        with contextlib.closing(connect(database)) as conn:
+            stored = conn.execute("SELECT COUNT(*) FROM source_records").fetchone()[0]
+            sleep = dict(
+                conn.execute(
+                    "SELECT metric, json_extract(values_json, '$.value') FROM source_records WHERE stream='sleep'"
                 )
+            )
         self.assertEqual(
             sleep,
             {

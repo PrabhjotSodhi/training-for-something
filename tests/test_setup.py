@@ -211,12 +211,18 @@ class SetupTest(TfsHomeTestCase):
         self.assertNotIn("add", [word for call in commands.calls for word in call])
 
     def test_given_a_tfs_entry_with_another_command_then_setup_reports_it_and_leaves_it(self):
-        entry = {"command": "/opt/other-tfs", "args": ["serve"]}
+        # GIVEN an existing entry with a private token
+        entry = {"command": "/opt/other-tfs", "env": {"TOKEN": "invented-secret"}}
         folder = self.cursor_config(json.dumps({"mcpServers": {"tfs": entry}}))
         before = self.snapshot(folder)
-        _, out, _, _ = self.run_setup(FakeQuestionary([CURSOR], []), FakeCommands(found=set()))
+        # WHEN setup finds the conflict
+        _, out, err, _ = self.run_setup(FakeQuestionary([CURSOR], []), FakeCommands(found=set()))
+        # THEN it identifies the entry without showing its contents
         self.assertEqual(self.snapshot(folder), before)
-        self.assertIn(entry["command"], out)
+        self.assertNotIn(entry["env"]["TOKEN"], out + err)
+        self.assertNotIn(entry["command"], out + err)
+        self.assertIn(str(folder / "mcp.json"), out)
+        self.assertIn("tfs entry", out)
 
     def test_given_no_supported_tools_then_setup_names_them_and_continues(self):
         code, out, _, started = self.run_setup(FakeQuestionary([]), FakeCommands(found=set()))

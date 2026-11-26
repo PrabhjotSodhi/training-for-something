@@ -59,7 +59,7 @@ curl -fsSL https://raw.githubusercontent.com/PrabhjotSodhi/training-for-somethin
 Windows, in PowerShell:
 
 ```powershell
-curl.exe -fsSLo install.ps1 https://raw.githubusercontent.com/PrabhjotSodhi/training-for-something/main/install.ps1; powershell -ExecutionPolicy ByPass -File install.ps1; del install.ps1
+$f = "$env:TEMP\tfs-install-$(Get-Random).ps1"; curl.exe -fsSLo $f https://raw.githubusercontent.com/PrabhjotSodhi/training-for-something/main/install.ps1; if ($?) { powershell -ExecutionPolicy ByPass -File $f }; Remove-Item $f -ErrorAction Ignore
 ```
 
 Setup connects your AI tools and apps. For Health Auto Export, scan its code on your home Wi-Fi. Turn on both Wi-Fi automations for health metrics and workouts. If you add Tailscale later in setup, scan its separate automation code and turn on both Tailscale automations.

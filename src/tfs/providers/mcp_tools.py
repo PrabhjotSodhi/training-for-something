@@ -92,7 +92,7 @@ def add(
         if servers.get("tfs") == wanted:
             return None
         if "tfs" in servers:
-            return f"{path} already has a different tfs entry, {json.dumps(servers['tfs'])}. Left unchanged."
+            return f"{path} already has a different tfs entry. Rename the entry and run tfs setup again."
         servers["tfs"] = wanted
         for name, value in tool.top.items():
             data.setdefault(name, value)
