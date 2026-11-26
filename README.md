@@ -64,7 +64,7 @@ $f = "$env:TEMP\tfs-install-$(Get-Random).ps1"; curl.exe -fsSLo $f https://raw.g
 
 Setup connects your AI tools and apps. For Health Auto Export, scan its code on your home Wi-Fi. Turn on both Wi-Fi automations for health metrics and workouts. If you add Tailscale later in setup, scan its separate automation code and turn on both Tailscale automations.
 
-To view TFS on your phone, scan the pairing code on your home Wi-Fi. On Windows, setup asks once for admin approval if the firewall needs a change. Home Wi-Fi traffic is not encrypted, so anyone on the same Wi-Fi network could read it. Add Tailscale to view TFS away from home, with encrypted traffic. Run `tfs phones forget` to remove home Wi-Fi access for all paired phones.
+To view TFS on your phone, scan the pairing code on your home Wi-Fi. On Windows, setup asks for admin approval when it needs to add or repair its own firewall rule. It changes no other rules. If Windows blocks Python on home networks, setup offers Tailscale. Home Wi-Fi traffic is not encrypted, so anyone on the same Wi-Fi network could read it. Add Tailscale to view TFS away from home, with encrypted traffic. Run `tfs phones forget` to remove home Wi-Fi access for all paired phones.
 
 Setup opens the dashboard on your computer. Keep that terminal open while you use TFS. After you stop TFS with Ctrl+C, run `tfs start --open` in a new terminal to reopen it. Run `tfs update` to update.
 
