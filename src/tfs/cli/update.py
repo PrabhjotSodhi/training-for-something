@@ -74,22 +74,21 @@ def update(
     *,
     fetch: Callable[[str], bytes],
     uv: str | None,
-    helpers: Callable[[], list[str]],
+    helpers: Callable[[], list[tuple[int, str]]],
     stop: Callable[[], bool],
-    install: Callable[[str, Path, bool], int],
+    install: Callable[[str, Path, bool, str], int],
 ) -> int:
     """Install the newest release this install takes, if it is newer, and return the exit code.
 
-    uv is the path of uv, if found. helpers names the AI tool of each running `tfs mcp` that
-    the install would break. stop stops a running `tfs start`, says whether one ran and raises
-    TimeoutError if it does not end in time. install gets uv, the wheel and whether to start
-    TFS again, and returns the exit code.
+    helpers lists each helper launcher's process ID and AI tool. stop stops a running
+    `tfs start` and says whether one ran. install gets uv, the wheel, whether to start
+    TFS again and a notice to print on success.
     """
     wheel = None
     try:
         version, name, wheel_bytes = _download(current, fetch, uv)
         wheel = _save(name, wheel_bytes)
-        _wait_for(helpers)
+        stopped = _stop_helpers(helpers)
         restart = _stop_with(stop)
     except _EarlyExitError as ended:
         if wheel:
@@ -98,7 +97,8 @@ def update(
         return ended.code
     print(f"Installing TFS {version}", flush=True)
     try:
-        return install(uv, wheel, restart)
+        notice = f"TFS updated to {version}. Restart your AI tools to use the new version."
+        return install(uv, wheel, restart, notice if stopped else "")
     except OSError as error:
         print(f"Could not install TFS: {error}", file=sys.stderr)
         return 1
@@ -138,14 +138,29 @@ def _save(name: str, wheel_bytes: bytes) -> Path:
     return wheel
 
 
-def _wait_for(helpers: Callable[[], list[str]]) -> None:
-    """Name each AI tool that uses TFS and wait until none does."""
+def _stop_helpers(helpers: Callable[[], list[tuple[int, str]]]) -> bool:
+    """Stop this install's helper trees and say whether any were stopped."""
+    stopped = False
     try:
-        if names := helpers():
-            for name in sorted(set(names)):
-                print(f"{name} is using TFS. Close it, and the update continues.", flush=True)
-            while helpers():
-                sleep(POLL_SECONDS)
+        for process_id, tool in helpers():
+            failure = f"Could not stop the TFS helper for {tool}. TFS is unchanged."
+            try:
+                result = subprocess.run(
+                    [shutil.which("taskkill") or "taskkill", "/PID", str(process_id), "/T", "/F"],
+                    capture_output=True,
+                    timeout=STOP_TIMEOUT_SECONDS,
+                    check=False,
+                )
+                if result.returncode:
+                    if (process_id, tool) not in helpers():
+                        continue
+                    raise _EarlyExitError(1, failure)
+                if not _ended(process_id, STOP_TIMEOUT_SECONDS):
+                    raise _EarlyExitError(1, failure)
+            except (OSError, subprocess.SubprocessError) as error:
+                raise _EarlyExitError(1, failure) from error
+            stopped = True
+        return stopped
     except KeyboardInterrupt:
         raise _EarlyExitError(1, "Update cancelled. TFS is unchanged.") from None
     except (OSError, subprocess.SubprocessError, ValueError) as error:
@@ -260,22 +275,24 @@ def _processes() -> dict[int, dict]:
     return {process["ProcessId"]: process for process in json.loads(listing)}
 
 
-def _helpers() -> list[str]:
-    """Name the AI tool that runs each `tfs mcp` from this install, from its parent process."""
+def _helpers() -> list[tuple[int, str]]:
+    """Find each helper launcher's process ID and the AI tool that owns it."""
     processes = _processes()
-    names = []
+    helpers = []
+    executable = sys.executable.lower()
     for process in processes.values():
         line = (process["CommandLine"] or "").lower()
         launcher = processes.get(process["ParentProcessId"], {})
         # tfs.exe starts this install's python, whose command line names it and ends in mcp.
         if (
-            sys.executable.lower() in line
+            line.startswith((f'"{executable}" ', f"{executable} "))
             and line.split()[-1].strip('"') == "mcp"
             and launcher.get("Name") == "tfs.exe"
         ):
             tool = processes.get(launcher["ParentProcessId"], {}).get("Name") or ""
-            names.append(_AI_TOOLS.get(tool.lower().removesuffix(".exe"), "An AI tool"))
-    return names
+            name = _AI_TOOLS.get(tool.lower().removesuffix(".exe"), "An AI tool")
+            helpers.append((launcher["ProcessId"], name))
+    return helpers
 
 
 def _updater_ids(processes: dict[int, dict]) -> list[int]:
@@ -330,12 +347,14 @@ def _ended(process_id: int, timeout: float) -> bool:
     return False
 
 
-def _install(uv: str, wheel: Path, restart: bool) -> int:
+def _install(uv: str, wheel: Path, restart: bool, notice: str) -> int:
     installed = (
         subprocess.run([uv, "tool", "install", "--force", wheel], check=False).returncode == 0
     )
     if installed:
         shutil.rmtree(wheel.parent)
+        if notice:
+            print(notice, flush=True)
     else:
         print(f"{_RETRY} uv tool install --force {shlex.quote(str(wheel))}", file=sys.stderr)
     if restart:
@@ -347,7 +366,7 @@ def _install(uv: str, wheel: Path, restart: bool) -> int:
     return 0 if installed else 1
 
 
-def _hand_off(uv: str, wheel: Path, restart: bool) -> int:
+def _hand_off(uv: str, wheel: Path, restart: bool, notice: str) -> int:
     """Install from a new window once this process ends, because Windows locks a running tfs.exe."""
     try:
         waits = ", ".join(str(process_id) for process_id in _updater_ids(_processes()))
@@ -364,7 +383,8 @@ def _hand_off(uv: str, wheel: Path, restart: bool) -> int:
         f"Wait-Process -Id {waits} -ErrorAction SilentlyContinue\n"
         f"& {_quoted(uv)} tool install --force {_quoted(wheel)}\n"
         "if ($? -and $LASTEXITCODE -eq 0) {"
-        f" Remove-Item -LiteralPath {_quoted(wheel.parent)} -Recurse; Write-Host 'TFS is updated.' }}\n"
+        f" Remove-Item -LiteralPath {_quoted(wheel.parent)} -Recurse;"
+        f" Write-Host {_quoted(notice or 'TFS is updated.')} }}\n"
         f"else {{ Write-Host {_quoted(_RETRY)}; Write-Host {_quoted(retry)} }}\n"
         f"{start}\n"
     )
